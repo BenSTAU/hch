@@ -35,5 +35,38 @@
       "Bash(gh api:*)"
     ],
     "deny": ["Read(./.env)", "Read(./.env.local)"]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Task|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh .claude/hooks/testeur-sentinel-arm.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh .claude/hooks/testeur-write-guard.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Task|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh .claude/hooks/testeur-sentinel-disarm.sh"
+          }
+        ]
+      }
+    ]
   }
 }

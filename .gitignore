@@ -40,6 +40,9 @@ yarn-error.log*
 # journal des refus du garde testeur — trace locale d'exécution, pas un
 # artefact versionné. Ce qui remonte au jury est la synthèse dans docs/ia/.
 .claude/logs/
+# sentinelle du testeur — état d'exécution, levée pendant qu'il tourne et
+# retirée à son arrêt. Si elle traîne après un plantage, la supprimer.
+.claude/.testeur-actif
 
 # vercel
 .vercel

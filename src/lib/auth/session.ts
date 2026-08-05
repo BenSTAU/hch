@@ -60,10 +60,21 @@ export async function readSessionToken(): Promise<SessionPayload | null> {
   if (!token) return null;
 
   try {
-    const { payload } = await jwtVerify(token, secret());
+    // `algorithms` épinglé : sans lui, jose accepte HS256, HS384 **et** HS512
+    // alors que `createSession` n'émet que du HS256. La surface acceptée doit
+    // être exactement la surface émise — durcissement OWASP standard, relevé
+    // par l'agent testeur sur T-J0-04.
+    const { payload } = await jwtVerify(token, secret(), {
+      algorithms: ["HS256"],
+    });
     const sub = payload.sub;
     const roles = payload["roles"];
-    if (typeof sub !== "string" || !Array.isArray(roles)) return null;
+    // `sub` non vide : la chaîne vide est une chaîne, et elle traverserait le
+    // `typeof`. Elle atteindrait `findUserById("")` sur une colonne UUID, que
+    // Postgres rejette en 22P02 — une erreur 500 là où une redirection est
+    // attendue.
+    if (typeof sub !== "string" || sub.length === 0) return null;
+    if (!Array.isArray(roles)) return null;
     return {
       sub,
       roles: roles.filter((r): r is string => typeof r === "string"),

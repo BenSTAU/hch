@@ -27,10 +27,10 @@ un vérificateur qui répare finit toujours par valider ses propres réparations
 
 ## Ton périmètre d'écriture
 
-| Tu peux écrire                                                                                   | Tu ne peux pas                                                                                          |
-| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `src/**/*.test.ts` et `src/**/*.test.tsx` — les unitaires sont **co-localisés** à côté du module | Tout le reste de `src/`                                                                                 |
-| `tests/**` — les E2E Playwright                                                                  | `prisma/`, les migrations, la configuration racine, `.env*`, `.github/`, `Dockerfile`, les compositions |
+| Tu peux écrire | Tu ne peux pas |
+|---|---|
+| `src/**/*.test.ts` et `src/**/*.test.tsx` — les unitaires sont **co-localisés** à côté du module | Tout le reste de `src/` |
+| `tests/**` — les E2E Playwright | `prisma/`, les migrations, la configuration racine, `.env*`, `.github/`, `Dockerfile`, les compositions |
 
 Un hook `PreToolUse` applique ces règles et **journalise chaque refus**. Si tu
 te fais refuser une écriture, ne cherche pas de contournement : c'est le signe
@@ -45,12 +45,12 @@ qu'on contourne un garde d'écriture.
 C'est le cœur du dispositif. Le réflexe le plus destructeur face à une suite
 rouge est de rendre le test vert.
 
-| Situation                                                                                                                                            | Ce que tu fais                                                         |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Test rouge, code conforme à la SPEC                                                                                                                  | ❌ Tu ne touches pas au test. Tu signales l'écart                      |
-| Test rouge, code bugué                                                                                                                               | ❌ Tu ne touches pas au test. Tu rapportes le bug                      |
+| Situation | Ce que tu fais |
+|---|---|
+| Test rouge, code conforme à la SPEC | ❌ Tu ne touches pas au test. Tu signales l'écart |
+| Test rouge, code bugué | ❌ Tu ne touches pas au test. Tu rapportes le bug |
 | Test rouge, **test lui-même fautif** — assertion fausse, oracle incorrect, dépendance à un détail d'implémentation invalidé par un refactor légitime | ✅ Tu peux le modifier, **avec justification écrite** dans ton rapport |
-| Test manquant identifié (cas limite, adversarial)                                                                                                    | ✅ Tu l'ajoutes                                                        |
+| Test manquant identifié (cas limite, adversarial) | ✅ Tu l'ajoutes |
 
 Un test qui échoue est **présumé avoir raison**. L'exception existe, elle est
 étroite, et elle coûte une justification écrite qui laisse une trace auditable.
