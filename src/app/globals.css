@@ -1,0 +1,105 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Variante `dark` en mode classe. Aucune classe `.dark` n'est posée en v1 :
+   ADR-012 §D4 ne spécifie pas de palette sombre, les utilitaires `dark:` des
+   composants shadcn restent donc inertes. Sans cette ligne ils basculeraient
+   sur `prefers-color-scheme` et s'appliqueraient avec les tokens clairs. */
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-container: var(--primary-container);
+  --color-primary-fixed: var(--primary-fixed);
+  --color-tertiary-fixed: var(--tertiary-fixed);
+  --color-tertiary-fixed-foreground: var(--tertiary-fixed-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-manrope);
+  --font-heading: var(--font-plus-jakarta-sans);
+}
+
+/* Palette « Kinetic Urbanist » — ADR-012 §D4, hex fixes, traduits en
+   vocabulaire shadcn. Les noms Material 3 de la maquette Stitch
+   (`surface-container-low`, `primary-fixed`…) sont rappelés en commentaire :
+   ils ne doivent pas apparaître comme tokens. */
+:root {
+  --background: #f8faf8; /* surface */
+  --foreground: #191c1b;
+
+  --card: #ffffff; /* surface-container-lowest */
+  --card-foreground: #191c1b;
+  --popover: #ffffff;
+  --popover-foreground: #191c1b;
+
+  --primary: #005344; /* vert forêt profond, couleur brand */
+  --primary-foreground: #f8faf8;
+  --primary-container: #006d5b; /* gradients CTA */
+  --primary-fixed: #9df3dc; /* accents doux : badges, sélection */
+  --tertiary-fixed: #ffe16d; /* jaune safety, CTA urgents */
+  --tertiary-fixed-foreground: #191c1b;
+
+  --secondary: #f2f4f2; /* surface-container-low */
+  --secondary-foreground: #191c1b;
+  --muted: #f2f4f2;
+  --muted-foreground: #3e4945;
+  --accent: #9df3dc;
+  --accent-foreground: #00382e;
+
+  --destructive: #ba1a1a;
+  --destructive-foreground: #f8faf8;
+
+  /* `border` est décoratif (séparateurs, filets de card).
+     `input` borde un composant d'interface et tient le 3:1 du critère
+     RGAA 1.4.11 contraste des éléments non textuels — 3.45:1 sur
+     `--background`. Ne pas les confondre ni les aligner. */
+  --border: #dbe5e1;
+  --input: #7a8a85;
+  --ring: #005344;
+
+  /* Angles ADR-012 §D4 : boutons et inputs 0.75rem, cards 1rem,
+     grands containers 1.5rem. L'échelle Tailwind est laissée intacte —
+     `rounded-xl` vaut bien 0.75rem, aucune valeur n'est remappée. */
+  --radius: 0.75rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+  /* Plus Jakarta Sans sur les titres, weights 700-800, tight letterspacing
+     — ADR-012 §D4. Manrope reste le corps, via `html`. */
+  h1,
+  h2,
+  h3 {
+    @apply font-heading font-bold tracking-tight;
+  }
+}
