@@ -37,6 +37,10 @@ yarn-error.log*
 !.env.example
 !.env.prod.example
 
+# journal des refus du garde testeur — trace locale d'exécution, pas un
+# artefact versionné. Ce qui remonte au jury est la synthèse dans docs/ia/.
+.claude/logs/
+
 # vercel
 .vercel
 

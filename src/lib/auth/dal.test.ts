@@ -9,7 +9,9 @@ vi.mock("./session", () => ({ readSessionToken: () => readSessionToken() }));
 const redirect = vi.fn((url: string) => {
   throw new Error(`NEXT_REDIRECT:${url}`);
 });
-vi.mock("next/navigation", () => ({ redirect: (url: string) => redirect(url) }));
+vi.mock("next/navigation", () => ({
+  redirect: (url: string) => redirect(url),
+}));
 
 const findUserById = vi.fn();
 vi.mock("@/lib/db/queries/auth", () => ({
@@ -28,7 +30,10 @@ describe("verifySession", () => {
   });
 
   it("renvoie la charge utile quand la session est valide", async () => {
-    readSessionToken.mockResolvedValue({ sub: "user-1", roles: ["ROLE_ADMIN"] });
+    readSessionToken.mockResolvedValue({
+      sub: "user-1",
+      roles: ["ROLE_ADMIN"],
+    });
     await expect(verifySession()).resolves.toEqual({
       sub: "user-1",
       roles: ["ROLE_ADMIN"],
@@ -45,7 +50,10 @@ describe("getCurrentUser", () => {
   });
 
   it("ne renvoie qu'un DTO, jamais l'entité complète", async () => {
-    readSessionToken.mockResolvedValue({ sub: "user-1", roles: ["ROLE_ADMIN"] });
+    readSessionToken.mockResolvedValue({
+      sub: "user-1",
+      roles: ["ROLE_ADMIN"],
+    });
     findUserById.mockResolvedValue({
       id: "user-1",
       email: "admin@homecyclhome.fr",

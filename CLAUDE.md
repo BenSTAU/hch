@@ -91,12 +91,19 @@ dont les permissions interdisent d'écrire le code qu'il teste.
 | Domaine | Droit |
 |---|---|
 | Lecture | code source, SPEC, tests existants, diff Git, doc |
-| Écriture | `tests/**` et `**/*.test.ts` **uniquement** |
-| Exécution | Vitest, Playwright, commandes Git de lecture |
-| Interdit | `src/`, migrations Prisma, configuration, secrets |
+| Écriture | `src/**/*.test.ts` et `src/**/*.test.tsx` (unitaires **co-localisés**) · `tests/**` (E2E) — rien d'autre |
+| Exécution | Vitest, Playwright, Git en **lecture seule** — liste blanche, sans chaînage ni redirection |
+| Interdit | tout `src/` **hors `.test.*`**, `prisma/`, configuration racine, `.env*`, `.github/`, `Dockerfile` |
 | Sortie | constats, tests, recommandations — **jamais de correction de code** |
 
 L'interdiction est appliquée par un hook `PreToolUse`, pas seulement demandée.
+Il couvre **`Bash` autant que `Write`/`Edit`** : un garde qui ne filtre que les
+outils d'écriture se contourne par une redirection shell. Chaque refus est
+journalisé — un testeur qui tente de sortir de son périmètre est un signal.
+
+**Quand tu l'invoques** : étape 6 du workflow ci-dessus, sur les tâches `[T]`
+seulement, une fois le code et les tests initiaux livrés. Les bugs qu'il
+rapporte, **c'est toi qui les corriges** — il n'a pas le droit d'y toucher.
 
 ### Règle du test rouge
 
@@ -133,11 +140,19 @@ commits.
 4. **1 commit = 1 tâche**, message `feat(T-J0-01): squelette Next.js + outillage`.
 5. Commits `Co-Authored-By` — assumé et visible, jamais masqué
    ([[adr-013-cadre-ia|ADR-013]] §D5).
-6. PR à trois champs → revue assistée → **revue humaine de Benjamin,
+6. **Tâche marquée `[T]` : passer la main à l'agent `testeur` avant d'ouvrir
+   la PR.** Une fois le code **et** les tests initiaux écrits — pas avant, il
+   vérifie, il ne spécifie pas. Tu l'invoques par le sous-agent `testeur`,
+   tu lui donnes la tâche et son périmètre, et tu **n'écris rien pendant
+   qu'il travaille**. Son rapport (bugs, tests ajoutés, écarts SPEC, usages
+   de la règle du test rouge) va dans le champ *Divergences* de la PR. Les
+   bugs qu'il trouve, c'est **toi** qui les corriges — il n'y touche pas,
+   c'est tout l'intérêt. Une tâche `[B]` sans tests ne l'invoque pas.
+7. PR à trois champs → revue assistée → **revue humaine de Benjamin,
    non délégable** → squash sur `main`.
-7. Le merge sur `main` déclenche le pipeline. Trunk-based : pas de branche
+8. Le merge sur `main` déclenche le pipeline. Trunk-based : pas de branche
    `develop`, `release` ni `hotfix`.
-8. Toute décision technique prise pendant le code → **writeback vers le vault**
+9. Toute décision technique prise pendant le code → **writeback vers le vault**
    dans la même session, pas seulement dans le code.
 
 La DoD d'une tâche est **exécutable** : un test qui passe, une commande qui

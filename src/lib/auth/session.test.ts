@@ -1,3 +1,10 @@
+// @vitest-environment node
+//
+// Environnement Node et non jsdom : `jose` signe via WebCrypto et vérifie
+// `payload instanceof Uint8Array`. Le `TextEncoder` de jsdom produit un
+// Uint8Array d'un autre realm, dont l'`instanceof` échoue — la signature
+// devient impossible alors que le code est correct. Le runtime réel de ce
+// module est Node, l'environnement du test doit le refléter.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 process.env["SESSION_SECRET"] = "secret-de-test-au-moins-32-octets-long!!";
