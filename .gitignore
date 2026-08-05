@@ -31,9 +31,11 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files — aucun secret dans le dépôt.
-# .env.example est la seule exception : commité, et vide de valeurs.
+# Deux exceptions, commitées et vides de valeurs : le modèle du .env.local de
+# chaque poste, et celui du .env.prod de chaque pile VPS.
 .env*
 !.env.example
+!.env.prod.example
 
 # vercel
 .vercel
