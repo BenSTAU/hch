@@ -23,25 +23,27 @@ une fenêtre dédiée — la base de développement est distante, cf. CLAUDE.md
 
 ## Commandes
 
-| Commande | Effet |
-|---|---|
-| `pnpm dev` | Serveur de développement (Turbopack) |
-| `pnpm build` | Build de production |
-| `pnpm start` | Sert le build de production |
-| `pnpm lint` | ESLint (flat config, `eslint-config-next`) |
-| `pnpm format` | Biome — format **et** tri des classes Tailwind |
-| `pnpm typecheck` | `next typegen` puis `tsc --noEmit` |
-| `pnpm test` | Vitest |
+| Commande         | Effet                                      |
+| ---------------- | ------------------------------------------ |
+| `pnpm dev`       | Serveur de développement (Turbopack)       |
+| `pnpm build`     | Build de production                        |
+| `pnpm start`     | Sert le build de production                |
+| `pnpm lint`      | ESLint (flat config, `eslint-config-next`) |
+| `pnpm format`    | Prettier + tri des classes Tailwind        |
+| `pnpm typecheck` | `next typegen` puis `tsc --noEmit`         |
+| `pnpm test`      | Vitest                                     |
 
 `pnpm typecheck` appelle `next typegen` d'abord : les types globaux de routage
 (`LayoutProps`, `PageProps`) sont générés par Next dans `.next/types/`, et
 `tsc` échoue sans eux sur un arbre de travail qui n'a jamais été buildé.
 
-`pnpm format` passe `--unsafe` volontairement : chez Biome, le tri des classes
-Tailwind (`useSortedClasses`) est une règle de lint dont le correctif est classé
-*unsafe*, et non une transformation du formateur. Sans ce drapeau, le tri ne
-s'applique jamais. Aucune autre règle de lint n'est activée côté Biome — le lint
-reste à ESLint.
+`pnpm format` est Prettier, avec `prettier-plugin-tailwindcss` pour le tri des
+classes. L'option `tailwindStylesheet` de `.prettierrc` pointe sur
+`src/app/globals.css` : Tailwind v4 est CSS-first, il n'y a aucun fichier de
+configuration à lire, et c'est par cette feuille de style que le plugin découvre
+nos utilitaires `@theme` (`font-heading`, `bg-primary-fixed`,
+`text-tertiary-fixed`). Sans elle il les traiterait comme des classes inconnues
+et les rejetterait en tête de liste. Le lint reste à ESLint, séparément.
 
 ## Stack
 

@@ -121,15 +121,23 @@ commits.
 
 1. Lire la tâche complète dans `spec-kit/04-tasks-hch/` **et ses sources**
    (chaque tâche les cite) avant d'écrire une ligne.
-2. Branche courte : `feat/T-J0-01-bootstrap-repo`.
-3. **1 commit = 1 tâche**, message `feat(T-J0-01): squelette Next.js + outillage`.
-4. Commits `Co-Authored-By` — assumé et visible, jamais masqué
+2. **Présenter un plan d'implémentation détaillé et attendre le GO.**
+   Avant la première ligne de code : ce que tu vas écrire fichier par
+   fichier, les paquets que tu installes, les commandes que tu lances,
+   et surtout **la liste des points que les sources ne tranchent pas**.
+   Un trou dans l'amont (une valeur absente d'un ADR, une consigne
+   inapplicable, deux artefacts qui se contredisent) **se remonte, il ne
+   se comble pas**. Tu proposes une lecture, Benjamin tranche, puis tu
+   écris. Aucun code avant son GO explicite.
+3. Branche courte : `feat/T-J0-01-bootstrap-repo`.
+4. **1 commit = 1 tâche**, message `feat(T-J0-01): squelette Next.js + outillage`.
+5. Commits `Co-Authored-By` — assumé et visible, jamais masqué
    ([[adr-013-cadre-ia|ADR-013]] §D5).
-5. PR à trois champs → revue assistée → **revue humaine de Benjamin,
+6. PR à trois champs → revue assistée → **revue humaine de Benjamin,
    non délégable** → squash sur `main`.
-6. Le merge sur `main` déclenche le pipeline. Trunk-based : pas de branche
+7. Le merge sur `main` déclenche le pipeline. Trunk-based : pas de branche
    `develop`, `release` ni `hotfix`.
-7. Toute décision technique prise pendant le code → **writeback vers le vault**
+8. Toute décision technique prise pendant le code → **writeback vers le vault**
    dans la même session, pas seulement dans le code.
 
 La DoD d'une tâche est **exécutable** : un test qui passe, une commande qui
@@ -151,7 +159,7 @@ code, la case est mal écrite — remonte-le.
 | Carto | Google Maps + Geocoding + Drawing Library | [[adr-015-provider-carto\|ADR-015]] |
 | Server state client | TanStack Query, **3 vues seulement** | [[s1-archi-stack\|S1]] §6.1 |
 | Tests | Vitest + RTL + Playwright + MSW, Testing Trophy | [[adr-014-testing-hch\|ADR-014]] |
-| Runtime | Node 22 LTS, pnpm 10+ | [[s3-infra-ci-cd\|S3]] |
+| Runtime | Node 24 LTS, pnpm 10+ | [[s3-infra-ci-cd\|S3]] (amendé 2026-08-05 : 22 → 24, EOL 22 le 30/04/2027) |
 | Déploiement | Docker, VPS OVH `glanford.eu`, GitHub Actions | [[adr-010-ci-cd\|ADR-010]] |
 
 **MongoDB n'existe pas en v1.** [[adr-011-nosql|ADR-011]] pose son
@@ -255,9 +263,9 @@ dans les 12 pages d'axe de [[conventions-react-next]].
 
 - **MUST** `src/` à la racine, tout le code applicatif dedans. Configs
   (`next.config.ts`, `tsconfig.json`, `package.json`, `.env*`,
-  `eslint.config.mjs`, `biome.json`, `vitest.config.mts`, `playwright.config.ts`,
-  `components.json`) à la racine. `src/proxy.ts` dans `src/`. `public/` et
-  `prisma/` à la racine.
+  `eslint.config.mjs`, `.prettierrc`, `.prettierignore`, `vitest.config.mts`,
+  `playwright.config.ts`, `components.json`) à la racine. `src/proxy.ts` dans
+  `src/`. `public/` et `prisma/` à la racine.
 - **MUST** `src/app/` ne contient que le routing + les private folders
   `_components/` co-localisés.
 - **MUST** unidirectionnalité : `src/lib/` n'importe **jamais** depuis
@@ -439,10 +447,14 @@ Arborescence de référence : [[adr-006-archi-applicative-hch|ADR-006 v2]]
   `eslint-config-next/core-web-vitals` + `eslint-config-next/typescript`. Les 21
   règles `@next/next/*` couvrent des pièges App Router qu'aucun autre linter
   n'attrape.
-- **MUST** Biome pour le **format** uniquement, avec **le tri des classes
-  Tailwind activé**. Sans cette règle, le format Biome fait perdre un acquis
-  (`prettier-plugin-tailwindcss` côté Argo) sans contrepartie — vérifier au
-  scaffold et writeback si la règle n'est pas disponible.
+- **MUST** Prettier pour le **format**, avec `prettier-plugin-tailwindcss`
+  pour le tri des classes. Biome a été essayé au scaffold et écarté : son
+  tri est une règle de lint *nursery* qui ne trie pas les variants d'écran
+  et ignore les utilitaires `@theme` custom — inutilisable sur une palette
+  entièrement en tokens.
+- **MUST** `tailwindStylesheet` pointé sur `src/app/globals.css` dans
+  `.prettierrc`. En Tailwind v4 CSS-first il n'y a pas de config à lire :
+  sans cette option le plugin ignore nos utilitaires custom.
 - **MUST** `--frozen-lockfile` en CI.
 - **MUST NOT** `next lint` — retiré en Next 16. ESLint CLI directement.
 - **MUST NOT** `.eslintrc.*` legacy — ESLint 10 ne supporte que la flat config.
@@ -498,7 +510,7 @@ Les quatre pièges ci-dessous ont été payés en production sur Argo (PR #121-#
 - **MUST NOT** `docker build` local comme unique vérification d'un Dockerfile de
   production — déléguer au job `build-push`.
 - **DEFAULT** `output: 'standalone'`, multi-stage `deps` → `builder` → `runner`,
-  base `node:22-alpine`, `USER nextjs` (UID 1001).
+  base `node:24-alpine`, `USER nextjs` (UID 1001).
 
 Détail applicatif complet : [[s3-infra-ci-cd|PLAN S3]].
 
@@ -665,7 +677,7 @@ repli documenté est Neon, à activer si la latence du tunnel dépasse 80 ms.
 pnpm dev              # serveur de développement
 pnpm build            # build de production
 pnpm lint             # ESLint
-pnpm format           # Biome
+pnpm format           # Prettier + tri des classes Tailwind
 pnpm typecheck        # tsc --noEmit
 pnpm test             # Vitest
 pnpm test:e2e         # Playwright
@@ -692,6 +704,9 @@ Test-NetConnection localhost -Port 5433     # contrôle, dans une AUTRE fenêtre
 - **Aucune écriture dans `raw/`** du vault, jamais, sous aucun prétexte.
 - **Aucune donnée personnelle réelle** en seed, en fixture ou en test. Le projet
   est pédagogique, le dépôt bascule public avant le 18 août 2026.
+- **Aucune décision laissée ouverte par le vault tranchée en autonomie.**
+  Une valeur absente d'un ADR ne s'invente pas, même bien raisonnée, même
+  documentée après coup dans la PR. Elle se remonte avant d'écrire.
 - **Aucun `any`.**
 - **Aucun test rendu vert** sans que la règle du test rouge ait été appliquée.
 

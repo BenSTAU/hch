@@ -1,0 +1,9 @@
+.next/
+node_modules/
+pnpm-lock.yaml
+src/app/favicon.ico
+
+# CLAUDE.md est le contenu littéral de [[claude-md-hch]], copié tel quel depuis
+# le vault (DoD T-J0-01). Prettier repadde les tableaux Markdown et romprait
+# cette identité octet pour octet.
+CLAUDE.md

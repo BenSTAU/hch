@@ -11,7 +11,7 @@ export default function AccueilPage() {
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-8 px-6 py-16">
       <header className="flex flex-col gap-3">
-        <p className="font-semibold text-primary text-sm">HomeCycl&apos;Home</p>
+        <p className="text-sm font-semibold text-primary">HomeCycl&apos;Home</p>
         <h1 className="text-4xl">La réparation de vélo vient à vous</h1>
         <p className="max-w-xl text-muted-foreground">
           Le technicien se déplace à votre adresse. Vous choisissez un forfait
