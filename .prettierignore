@@ -7,3 +7,8 @@ src/app/favicon.ico
 # le vault (DoD T-J0-01). Prettier repadde les tableaux Markdown et romprait
 # cette identité octet pour octet.
 CLAUDE.md
+
+# Même régime, même motif : la déclaration de l'agent testeur est le contenu
+# littéral d'[[agent-testeur-hch]] (ADR-013 §D6). Constaté en T-J0-04 — Prettier
+# l'avait déjà repaddée avant que la règle soit posée.
+.claude/agents/
