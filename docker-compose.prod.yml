@@ -1,0 +1,86 @@
+# Composition de production, déployée par le pipeline (T-J0-08) dans
+# /opt/hch-staging/ et /opt/hch-prod/ sur le VPS. Le même fichier sert les
+# deux environnements : tout ce qui les distingue vit dans le `.env.prod`
+# local à chaque pile, hors dépôt (cf. .env.prod.example).
+#
+# AUCUNE directive `build:` — l'image est construite une fois par la CI puis
+# promue de staging vers production sans reconstruction. Ce qui est validé en
+# staging est littéralement ce qui part en production (ADR-010, PLAN S3 §3).
+#
+# ┌───────────────────────────────────────────────────────────────────────┐
+# │ TOUTE invocation exige `--env-file .env.prod` :                       │
+# │   docker compose --env-file .env.prod -f docker-compose.prod.yml …    │
+# └───────────────────────────────────────────────────────────────────────┘
+# `env_file:` injecte des variables DANS le conteneur ; il ne participe pas à
+# la substitution des `${VAR}` de ce fichier-ci, qui lit le shell ou le `.env`
+# par défaut du répertoire. Sans le drapeau, `container_name` se résout à la
+# chaîne vide et compose refuse le fichier. Constaté à la validation de
+# T-J0-02 — le script de déploiement de PLAN S3 §3 ne le porte pas encore,
+# c'est à corriger en T-J0-08.
+
+services:
+  hch-app:
+    image: benstau/hch:${IMAGE_TAG}
+    container_name: ${HCH_ENV_CONTAINER_NAME}
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    networks:
+      - proxy
+      - hch_internal
+    depends_on:
+      hch-postgres:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/app/uploads
+    healthcheck:
+      # 127.0.0.1 EXPLICITE, jamais `localhost` : sous Alpine `localhost`
+      # résout en IPv6 (::1) alors que Next écoute en IPv4
+      # (HOSTNAME=0.0.0.0), et le wget de BusyBox ne bascule pas. Argo a payé
+      # ce piège en production (PLAN S3 §2). La même règle vaut pour la boucle
+      # de vérification post-deploy du workflow (T-J0-08).
+      #
+      # La route /api/health arrive en T-J0-03 avec le client Prisma : elle
+      # sonde la base. Ce compose ne tourne pas avant T-J0-06.
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1:3000/api/health",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  hch-postgres:
+    image: postgis/postgis:16-3.4
+    container_name: ${HCH_ENV_POSTGRES_CONTAINER_NAME}
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    networks:
+      - hch_internal
+    volumes:
+      - hch_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hch -d hch"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  # Partagé avec nginx-central, créé hors de ce compose par l'infra VPS.
+  proxy:
+    external: true
+  # Privé, un par environnement : hch-postgres n'est joignable ni depuis
+  # internet, ni depuis l'autre environnement. Aucun port publié.
+  hch_internal:
+    name: ${HCH_ENV_NETWORK_NAME}
+
+volumes:
+  hch_postgres_data:
+    name: ${HCH_ENV_VOLUME_NAME}

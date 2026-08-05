@@ -1,0 +1,47 @@
+# Base jetable des tests d'intégration lourds et des E2E Playwright — les
+# requêtes PostGIS ne se mockent pas (ADR-014 §3). Montée par le job `test`
+# du pipeline (T-J0-08) et localement au PC maison (T-J0-09).
+#
+# C'est le SEUL usage local de Docker sur ce projet : la base de développement
+# est distante et jointe par tunnel SSH (setup-poste-hch).
+#
+# Éphémère par construction — aucun volume, l'état part avec le conteneur.
+# `docker compose -f docker-compose.test.yml down` suffit à repartir propre,
+# et c'est ce qui garantit qu'elle n'introduit aucune divergence d'état avec
+# la base de dev.
+#
+# Même tag que dev, staging et production : une seule version de PostGIS sur
+# toute la chaîne, pour un cœur métier bâti sur ST_Contains et un index
+# EXCLUDE USING gist. Une montée de version est une décision de PLAN,
+# appliquée aux quatre environnements à la fois.
+
+services:
+  hch-postgres-test:
+    image: postgis/postgis:16-3.4
+    container_name: hch-postgres-test
+    # Le préfixe 127.0.0.1 n'est pas décoratif : Docker publie ses ports par
+    # DNAT dans PREROUTING, qui ne traverse jamais INPUT — un pare-feu ne les
+    # voit pas.
+    #
+    # 5435 et non 5432 : la carte des ports du PC maison est déjà peuplée.
+    #   5432  argo-postgres, l'autre projet de la machine
+    #   5433  extrémité locale du tunnel SSH vers la base de dev HCH
+    #   5434  côté VPS du même tunnel (jamais lié en local)
+    #   5435  ← ici
+    # setup-poste-hch §Le tunnel écrit encore que ce compose « occupe déjà le
+    # 5432 » : c'est faux au PC maison, Argo le tient. Write-back en cours.
+    ports:
+      - "127.0.0.1:5435:5432"
+    # Identifiants en clair, assumés : base éphémère, liée à la loopback
+    # seule, détruite à chaque run, et qui ne portera jamais de donnée
+    # personnelle réelle (interdit absolu du projet). Ce n'est pas un secret,
+    # et les vrais mots de passe vivent dans les .env hors dépôt.
+    environment:
+      POSTGRES_USER: hch
+      POSTGRES_PASSWORD: hch
+      POSTGRES_DB: hch
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hch -d hch"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

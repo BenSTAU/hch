@@ -1,0 +1,44 @@
+# Ce qui n'entre pas dans le contexte de build.
+#
+# Le `COPY . .` du stage builder copie le RÉPERTOIRE DE TRAVAIL, pas l'index
+# Git : `.gitignore` ne protège de rien ici. Ce fichier est la seule garde.
+
+# node_modules de l'hôte — écraserait ceux que le stage `deps` installe pour
+# Alpine. Sur un poste Windows ce sont des binaires natifs inutilisables, et
+# `bcrypt` (module natif, T-J0-03) est le premier qui le fera savoir.
+node_modules
+.pnp
+.pnp.*
+
+# Secrets. `next build` LIT les fichiers .env : sans cette ligne, l'image de
+# production se construirait sur la configuration du poste, et toute variable
+# NEXT_PUBLIC_* serait inlinée dans les bundles client — qui sont copiés, eux,
+# dans l'image finale. Le fichier lui-même resterait dans la couche du stage
+# builder. Vérifié au passage : la sortie standalone de Next 16 ne recopie pas
+# `.env.local` (aucun fichier .env sous `.next/standalone`).
+.env
+.env.*
+!.env.example
+!.env.prod.example
+
+# Artefacts de build et de test, reconstruits dans l'image.
+.next
+out
+build
+coverage
+playwright-report
+test-results
+*.tsbuildinfo
+
+# Historique, outillage et tests — aucun usage au runtime.
+.git
+.gitignore
+.github
+.claude
+.vscode
+tests
+
+# Compositions : elles pilotent des conteneurs, elles n'entrent pas dedans.
+Dockerfile
+.dockerignore
+docker-compose*.yml
