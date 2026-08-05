@@ -485,6 +485,11 @@ Arborescence de référence : [[adr-006-archi-applicative-hch|ADR-006 v2]]
 - **MUST NOT** supprimer physiquement un utilisateur porteur d'interventions :
   `is_active = false` (soft-delete admin) ou pseudonymisation in-place
   (droit à l'oubli), jamais une FK cassée (Constitution §4.1).
+- **MUST NOT** créer un `docker-compose.dev.yml`. La base de développement est
+  **distante et déjà en service** — `hch-postgres-dev` sur le VPS depuis le
+  2026-08-04. Il n'y en a pas, il ne doit pas y en avoir : on s'y raccorde par
+  le tunnel (§Deux postes de développement), on ne la remonte pas en local. Le
+  seul compose local est celui des tests, éphémère.
 
 ### Docker et déploiement
 
@@ -710,18 +715,16 @@ Test-NetConnection localhost -Port 5433     # contrôle, dans une AUTRE fenêtre
 - **Aucun `any`.**
 - **Aucun test rendu vert** sans que la règle du test rouge ait été appliquée.
 
-## Tâche en cours
+## Où trouver la tâche à faire
 
-Voir `spec-kit/04-tasks-hch.md` du vault. Phase ouverte : **J0 — le squelette
-déployé**, 10 tâches, sprint S0.
+`spec-kit/04-tasks-hch.md` et son dossier `04-tasks-hch/` **font foi** sur ce qui
+est ouvert, clos et reporté. Le titre d'une tâche close porte `✅ (clos par PR
+#N)`, ses DoD sont cochées, et ses écarts vivent dans un bloc *Notes write-back*.
 
-Première tâche : **T-J0-01** — repo initialisé et squelette Next.js.
-
-Un prérequis est **déjà satisfait**, hors sprint : la base de développement
-existe et répond (2026-08-04). `T-J0-03` n'a donc pas à monter une base, il a à
-s'y raccorder — tunnel, `.env.local`, puis prouver que Prisma la joint. Ne pas
-recréer un `docker-compose.dev.yml` : il n'y en a pas, et il ne doit pas y en
-avoir.
+**Cette page ne duplique jamais cet état.** Un « tâche en cours » écrit ici
+serait faux dès la tâche suivante et coûterait une synchronisation à chaque
+clôture — pour une information que l'étape 1 de ton workflow t'oblige déjà à
+lire à la source.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
