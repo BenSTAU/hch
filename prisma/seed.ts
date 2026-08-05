@@ -1,0 +1,134 @@
+// Seed du référentiel initial — migration 013 de PLAN S2 §6.
+//
+// Rejouable : chaque écriture est un upsert. Le seed ÉTABLIT un état initial,
+// il ne le rétablit pas — une valeur modifiée depuis l'application n'est pas
+// écrasée. Seul le hash de mot de passe fait exception, pour qu'un changement
+// de SEED_ADMIN_PASSWORD suffise à retrouver l'accès sans toucher à la base.
+//
+// Aucune donnée personnelle réelle ici, et il ne doit jamais y en avoir : le
+// dépôt bascule public avant la présentation intermédiaire. Les numéros
+// appartiennent à la plage de fiction réservée par l'ARCEP (+336 39 98 xx xx),
+// les noms sont des fonctions, pas des personnes.
+import { config as loadEnvFile } from "dotenv";
+loadEnvFile({ path: ".env.local", quiet: true });
+loadEnvFile({ path: ".env", quiet: true });
+
+import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcrypt";
+
+const db = new PrismaClient();
+
+/// Cost 10 — plancher OWASP retenu par ADR-005 v2.
+const BCRYPT_COST = 10;
+
+/// Deux administrateurs, et non un. Avec un seul compte, le trigger « dernier
+/// administrateur protégé » (PLAN S2 §5.2) n'est pas démontrable : toute
+/// tentative de suppression tomberait sur le garde, sans jamais prouver que le
+/// cas nominal fonctionne. Décidé par l'audit du 2026-07-06 (F2).
+const ADMINS = [
+  {
+    email: "admin@homecyclhome.fr",
+    firstname: "Admin",
+    lastname: "Principal",
+    phone: "+33639980001",
+  },
+  {
+    email: "admin2@homecyclhome.fr",
+    firstname: "Admin",
+    lastname: "Secours",
+    phone: "+33639980002",
+  },
+] as const;
+
+/// Configuration société. Les clés doivent PRÉEXISTER : `app_settings` est une
+/// table clé-valeur, et le critère de fin du jalon 0 demande qu'un
+/// administrateur « modifie un paramètre société ». On ne modifie pas une clé
+/// absente.
+const APP_SETTINGS = [
+  {
+    key: "company.name",
+    value: "LeCycleLyonnais",
+    valueType: "string",
+    description: "Raison sociale affichée sur le site et les factures",
+  },
+  {
+    key: "company.email",
+    value: "contact@homecyclhome.fr",
+    valueType: "string",
+    description: "Adresse de contact publique",
+  },
+  {
+    key: "company.phone",
+    value: "+33639980000",
+    valueType: "string",
+    description: "Téléphone de contact publique, au format E.164",
+  },
+  {
+    key: "company.address",
+    value: "",
+    valueType: "string",
+    description: "Adresse postale du siège",
+  },
+  {
+    key: "company.siret",
+    value: "",
+    valueType: "string",
+    description: "Numéro SIRET, mentionné sur les factures",
+  },
+] as const;
+
+async function main() {
+  const password = process.env["SEED_ADMIN_PASSWORD"];
+  if (!password) {
+    throw new Error(
+      "SEED_ADMIN_PASSWORD absente. Le seed ne pose pas de mot de passe par " +
+        "défaut : une valeur en dur dans le dépôt deviendrait un identifiant " +
+        "public le jour de la bascule. La renseigner dans .env.local (poste) " +
+        "ou dans le .env.prod de la pile (VPS).",
+    );
+  }
+
+  const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
+
+  for (const admin of ADMINS) {
+    const user = await db.user.upsert({
+      where: { email: admin.email },
+      // Aucune mise à jour : le seed ne réécrit pas une identité existante.
+      update: {},
+      create: { ...admin, roles: ["ROLE_ADMIN"] },
+    });
+
+    await db.authProvider.upsert({
+      where: { userId_provider: { userId: user.id, provider: "local" } },
+      // Le hash, lui, est rafraîchi — c'est le seul moyen de reprendre la main
+      // sur un compte seedé sans intervention manuelle en base.
+      update: { passwordHash },
+      // providerUid reste NULL : un provider `local` n'a pas d'identifiant
+      // côté fournisseur, il n'y a pas de fournisseur.
+      create: { userId: user.id, provider: "local", passwordHash },
+    });
+
+    console.log(`administrateur  ${admin.email}`);
+  }
+
+  for (const setting of APP_SETTINGS) {
+    await db.appSetting.upsert({
+      where: { key: setting.key },
+      // Une clé déjà modifiée par un administrateur n'est pas ramenée à sa
+      // valeur de seed.
+      update: {},
+      // updatedBy reste NULL : personne n'a encore touché à cette clé, et
+      // c'est cette nullabilité qui rend l'entité autoportante au seed.
+      create: setting,
+    });
+  }
+  console.log(`paramètres      ${APP_SETTINGS.length} clés société`);
+}
+
+main()
+  .then(() => db.$disconnect())
+  .catch(async (error: unknown) => {
+    console.error(error instanceof Error ? error.message : error);
+    await db.$disconnect();
+    process.exit(1);
+  });
