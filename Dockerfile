@@ -35,8 +35,8 @@ RUN corepack enable pnpm
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Le client Prisma est généré avant le build : Next trace ses fichiers pendant
-# la compilation, et `outputFileTracingIncludes` ne peut inclure que ce qui
-# existe déjà. `prisma.config.ts` est lu ici et ne réclame pas de
+# la compilation, et il ne peut tracer que ce qui existe déjà.
+# `prisma.config.ts` est lu ici et ne réclame pas de
 # DATABASE_URL — c'est délibéré, le stage builder n'en a pas.
 RUN pnpm prisma generate
 RUN pnpm build
@@ -66,7 +66,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # `prisma/` porte le schema et les migrations que lit `migrate deploy` au
 # déploiement. Pas de `COPY node_modules/.prisma` : ce chemin n'existe pas
-# sous pnpm, le client est embarqué par `outputFileTracingIncludes`.
+# sous pnpm — le client est embarqué par le File Tracing de Next, qui le
+# trace seul depuis le retrait d'`outputFileTracingIncludes` (cf. next.config.ts).
 #
 # `prisma.config.ts` reste à la racine et n'est PAS copié : il importe dotenv,
 # absent de l'installation globale du CLI. Sans lui le CLI reprend ses
