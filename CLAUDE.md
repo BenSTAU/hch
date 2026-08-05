@@ -264,8 +264,25 @@ dans les 12 pages d'axe de [[conventions-react-next]].
 - **MUST** `src/` à la racine, tout le code applicatif dedans. Configs
   (`next.config.ts`, `tsconfig.json`, `package.json`, `.env*`,
   `eslint.config.mjs`, `.prettierrc`, `.prettierignore`, `.dockerignore`,
+  `prisma.config.ts`, `pnpm-workspace.yaml`,
   `vitest.config.mts`, `playwright.config.ts`, `components.json`) à la racine.
   `src/proxy.ts` dans `src/`. `public/` et `prisma/` à la racine.
+- **MUST** `prisma.config.ts` comme **source unique** de configuration du CLI
+  Prisma. Depuis la 6.19, `prisma init` le scaffolde et le CLI l'utilise dès
+  qu'il existe (`Prisma config detected, skipping environment variable
+  loading`) : la clé `package.json#prisma` est **ignorée**, le seed vit dans
+  `migrations.seed`. C'est aussi ce fichier qui charge `.env.local`, que le CLI
+  ne lit pas nativement — donc **pas de `dotenv-cli`**. Deux pièges dedans :
+  le helper `env()` de `prisma/config` lève **au chargement du fichier**, donc
+  pour `prisma generate` aussi (le stage builder du Dockerfile n'a pas de
+  `DATABASE_URL`) — utiliser `process.env[…] ?? ""` ; et le bloc `datasource`
+  est **obligatoire** sous `engine: "classic"`.
+- **MUST** déclarer dans `onlyBuiltDependencies` (`pnpm-workspace.yaml`) tout
+  paquet qui a besoin d'un script d'installation. pnpm 10 n'en exécute aucun
+  sans autorisation, et **échoue en silence** : `bcrypt` se retrouve sans
+  binaire, `tsx` ne démarre pas. `pnpm approve-builds` est interactif, donc
+  inutilisable en CI — la liste est la seule voie. Aujourd'hui :
+  `@prisma/client`, `prisma`, `bcrypt`, `esbuild`.
 - **MUST** `.dockerignore` à jour dès qu'un dossier apparaît à la racine. Le
   `COPY . .` du stage builder copie le **répertoire de travail**, pas l'index
   Git : `.gitignore` n'y protège de rien. Sans lui, les `node_modules` de
@@ -512,8 +529,14 @@ Les quatre pièges ci-dessous ont été payés en production sur Argo (PR #121-#
   Alpine, `localhost` résout en IPv6 alors que Next écoute en IPv4, et le `wget`
   de BusyBox ne bascule pas. À appliquer aux **deux** endroits — healthcheck du
   compose **et** boucle de vérification post-deploy du workflow.
-- **MUST** `outputFileTracingIncludes` dans `next.config.ts` pour Prisma sous
-  pnpm — le File Tracing rate les `require()` dynamiques des engines.
+- **MUST NOT** `outputFileTracingIncludes` pour Prisma dans `next.config.ts`.
+  L'inverse était prescrit ici jusqu'au 2026-08-05 (fix Argo T-T11-02, établi
+  sur Next 16.0.x + Prisma 6.1). Sur **Next 16.3 + Prisma 6.19.2 + pnpm 10**
+  les globs font échouer le traçage sur un lien symbolique du store pnpm
+  (`@prisma+engines/…/@prisma/debug`, lu comme un fichier) : `pnpm build` et
+  `docker build` cassent tous les deux. Sans eux, le client est embarqué de
+  lui-même. Le filet perdu est réel — un moteur absent ne se voit plus qu'au
+  503 de `/api/health`, donc après déploiement.
 - **MUST** engines CLI Prisma pré-téléchargés au build, sans `--ignore-scripts`,
   parce que le runtime tourne en `USER nextjs` non-root et ne peut plus écrire.
 - **MUST** `set -euo pipefail` en tête de chaque script SSH du pipeline — sans
