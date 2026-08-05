@@ -263,9 +263,18 @@ dans les 12 pages d'axe de [[conventions-react-next]].
 
 - **MUST** `src/` à la racine, tout le code applicatif dedans. Configs
   (`next.config.ts`, `tsconfig.json`, `package.json`, `.env*`,
-  `eslint.config.mjs`, `.prettierrc`, `.prettierignore`, `vitest.config.mts`,
-  `playwright.config.ts`, `components.json`) à la racine. `src/proxy.ts` dans
-  `src/`. `public/` et `prisma/` à la racine.
+  `eslint.config.mjs`, `.prettierrc`, `.prettierignore`, `.dockerignore`,
+  `vitest.config.mts`, `playwright.config.ts`, `components.json`) à la racine.
+  `src/proxy.ts` dans `src/`. `public/` et `prisma/` à la racine.
+- **MUST** `.dockerignore` à jour dès qu'un dossier apparaît à la racine. Le
+  `COPY . .` du stage builder copie le **répertoire de travail**, pas l'index
+  Git : `.gitignore` n'y protège de rien. Sans lui, les `node_modules` de
+  l'hôte Windows écrasent ceux qu'Alpine a compilés, et `next build` lit le
+  `.env.local` du poste au lieu de la configuration de la pile visée.
+- **MUST** deux modèles d'environnement commités et vides de valeurs :
+  `.env.example` (le `.env.local` de chaque poste) et `.env.prod.example`
+  (le `.env.prod` de chaque pile VPS). Tous deux exigent une exception
+  explicite dans `.gitignore`, que la règle `.env*` avalerait sinon.
 - **MUST** `src/app/` ne contient que le routing + les private folders
   `_components/` co-localisés.
 - **MUST** unidirectionnalité : `src/lib/` n'importe **jamais** depuis
@@ -389,7 +398,10 @@ Arborescence de référence : [[adr-006-archi-applicative-hch|ADR-006 v2]]
 - **MUST NOT** virtualiser sous 200 items DOM.
 - **DEFAULT** `next/dynamic` + `<Suspense>` pour le client lourd hors du fold —
   carte Google Maps, calendrier, modales.
-- **DEFAULT** `optimizePackageImports` pour `lucide-react` et `zod`.
+- **DEFAULT** `experimental.optimizePackageImports` pour `lucide-react` et `zod`.
+  L'option vit sous **`experimental`**, et `lucide-react` figure **déjà dans la
+  liste optimisée par défaut** de Next 16 — il y est listé pour l'intention,
+  `zod` est le seul des deux à rendre l'option utile.
 - **DEFAULT** Node runtime. Pas d'Edge (Prisma + PostGIS l'excluent).
 
 ### Styling / UI
