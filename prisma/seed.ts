@@ -70,13 +70,26 @@ const APP_SETTINGS = [
   },
   {
     key: "company.address",
-    value: "",
+    // Voie inexistante, dans un arrondissement qui existe : l'écran et les
+    // mentions légales ont une adresse plausible, et elle ne désigne le
+    // domicile de personne.
+    value: "12 rue de la Bicyclette, 69003 Lyon",
     valueType: "string",
     description: "Adresse postale du siège",
   },
   {
     key: "company.siret",
-    value: "",
+    // SIRET **volontairement invalide**, et c'est la seule façon sûre de le
+    // remplir : un SIRET est une donnée publique qui désigne une entreprise
+    // réelle, et il n'existe aucune plage de fiction réservée comme l'ARCEP en
+    // offre une pour les numéros de téléphone (celle qu'utilisent les deux
+    // administrateurs plus haut).
+    //
+    // Deux garde-fous cumulés : le SIREN `999999999` n'est pas alloué par
+    // l'INSEE, et la clé de Luhn — que tout SIRET réel satisfait — est fausse
+    // ici. Ce numéro ne peut donc appartenir à personne, tout en ayant la
+    // forme d'un SIRET à l'écran. Le dépôt bascule public avant le 18 août.
+    value: "99999999900001",
     valueType: "string",
     description: "Numéro SIRET, mentionné sur les factures",
   },
@@ -141,6 +154,26 @@ async function main() {
       SET description = ${setting.description}, value_type = ${setting.valueType}
       WHERE key = ${setting.key}
     `;
+
+    // Une clé jamais renseignée reçoit la valeur du seed, même si sa ligne
+    // existe déjà. Ce n'est pas un retour en arrière : `updated_by IS NULL`
+    // signifie qu'aucun administrateur ne l'a jamais touchée, et une valeur
+    // vide n'est pas un choix qu'on écraserait — c'est le trou que le seed est
+    // là pour combler. Sans cette passe, `company.address` et `company.siret`
+    // resteraient vides sur toute base seedée avant qu'ils ne portent une
+    // valeur, et l'écran d'administration afficherait deux champs vides à la
+    // démonstration.
+    //
+    // Ici en Prisma et non en SQL brut, à l'inverse du bloc précédent : la
+    // valeur change vraiment, donc `updatedAt` DOIT bouger.
+    await db.appSetting.updateMany({
+      where: {
+        key: setting.key,
+        updatedBy: null,
+        OR: [{ value: null }, { value: "" }],
+      },
+      data: { value: setting.value },
+    });
   }
   console.log(`paramètres      ${APP_SETTINGS.length} clés société`);
 }
