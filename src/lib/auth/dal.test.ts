@@ -200,10 +200,9 @@ describe("révocation et fraîcheur des rôles", () => {
       // Toute garde d'autorisation bâtie sur `verifySession().roles` héritera
       // de ce délai.
       //
-      // CLAUDE.md §Authentication impose la « vérification réelle du rôle dans
-      // chaque Server Action […] via src/lib/auth/permissions.ts » — module qui
-      // n'existe pas encore au HEAD courant. Ce test fixe la propriété AVANT
-      // qu'il soit écrit, pour que sa source de vérité soit un choix conscient.
+      // C'est pourquoi `src/lib/auth/permissions.ts` bâtit `requireAdmin` sur
+      // `getCurrentUser` et non sur `verifySession` : la garde de rôle lit la
+      // base, pas le jeton.
       readSessionToken.mockResolvedValue({
         sub: "user-1",
         roles: ["ROLE_ADMIN"],
@@ -271,9 +270,10 @@ describe("révocation et fraîcheur des rôles", () => {
     });
 
     it("ne recopie jamais un champ ajouté au `select` de la requête", async () => {
-      // `dal.test.ts` vérifie déjà la forme du DTO sur un jeu de champs donné.
-      // Celui-ci vérifie la propriété générale : quoi qu'ajoute demain le
-      // `select` de `findUserById`, la projection de la DAL reste fermée.
+      // Le bloc `getCurrentUser` plus haut vérifie la forme du DTO sur un jeu
+      // de champs donné. Celui-ci vérifie la propriété générale : quoi
+      // qu'ajoute demain le `select` de `findUserById`, la projection reste
+      // fermée.
       readSessionToken.mockResolvedValue({
         sub: "user-1",
         roles: ["ROLE_ADMIN"],
