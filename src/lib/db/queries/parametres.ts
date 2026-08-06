@@ -76,16 +76,22 @@ export async function updateAppSettings(
       const row = byKey.get(entry.key);
       if (!row) continue; // inatteignable : `unknownKeys` a déjà filtré
 
+      // `null` en base et chaîne vide dans le formulaire décrivent le même
+      // état — « non renseigné ». Les distinguer ferait passer un champ vide
+      // resoumis tel quel pour une modification.
+      if ((row.value ?? "") === entry.value) continue;
+
+      // La validation ne porte QUE sur ce qui change. Sinon une ligne dont la
+      // valeur stockée ne respecte pas son `value_type` — posée par un seed,
+      // une migration ou un UPDATE SQL manuel — rendrait le formulaire entier
+      // insoumettable, y compris pour des champs sans rapport, puisque le lot
+      // est tout-ou-rien. Relevé par l'agent testeur sur T-J0-05 (B6).
       if (!validateSettingValue(row.valueType, entry.value).ok) {
         invalidKeys.push(entry.key);
         continue;
       }
-      // `null` en base et chaîne vide dans le formulaire décrivent le même
-      // état — « non renseigné ». Les distinguer ferait passer un champ vide
-      // resoumis tel quel pour une modification.
-      if ((row.value ?? "") !== entry.value) {
-        changed.push({ key: entry.key, before: row.value, after: entry.value });
-      }
+
+      changed.push({ key: entry.key, before: row.value, after: entry.value });
     }
 
     if (invalidKeys.length > 0) {

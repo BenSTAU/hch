@@ -192,3 +192,235 @@ describe("updateAppSettings — refus", () => {
     expect(update).not.toHaveBeenCalled();
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// Sondes ajoutées par l'agent testeur (T-J0-05).
+//
+// Constitution §4.2 : le journal d'audit est la pièce qu'on produit en cas de
+// contestation. Deux défauts symétriques le rendent inutilisable — une trace
+// qui décrit une modification qui n'a pas eu lieu, et une modification qui
+// n'en laisse aucune. `NULL` en base et chaîne vide au formulaire décrivent le
+// même état ; c'est là que la confusion se produirait.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("updateAppSettings — frontière NULL / chaîne vide", () => {
+  const NULLABLE = [
+    {
+      key: "company.siret",
+      value: null,
+      valueType: "string",
+      description: "Numéro SIRET",
+      updatedAt: new Date("2026-08-05T10:00:00Z"),
+    },
+  ];
+
+  it("ne voit pas une modification là où une ligne NULL reçoit une chaîne vide", async () => {
+    // Le cas se produit à CHAQUE soumission du formulaire : un champ jamais
+    // renseigné arrive en `""` alors que la base porte `NULL`. Les distinguer
+    // produirait une entrée d'audit par soumission sur chaque champ vide, et
+    // tamponnerait `updated_by` sur des lignes que personne n'a touchées.
+    findMany.mockResolvedValue(NULLABLE);
+
+    const result = await updateAppSettings(
+      [{ key: "company.siret", value: "" }],
+      "admin-1",
+    );
+
+    expect(result).toEqual({ ok: true, changedKeys: [] });
+    expect(update).not.toHaveBeenCalled();
+    expect(writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("trace `before: null` quand une ligne NULL est renseignée", async () => {
+    // Le diff doit dire `null`, pas `""` : la première écriture d'une clé et
+    // la modification d'une clé déjà vide ne sont pas le même événement.
+    findMany.mockResolvedValue(NULLABLE);
+
+    await updateAppSettings(
+      [{ key: "company.siret", value: "12345678900011" }],
+      "admin-1",
+    );
+
+    expect(writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityId: "company.siret",
+        details: { before: null, after: "12345678900011" },
+      }),
+      tx,
+    );
+  });
+
+  it("écrit une chaîne vide, pas un NULL, quand un champ est effacé", async () => {
+    // Constat : l'effacement d'un champ rempli stocke `''`. La colonne reste
+    // NULLable et le seed pose des `''`, donc les deux valeurs coexistent en
+    // base pour un même état métier « non renseigné ». Sans conséquence tant
+    // que toute lecture passe par `value ?? ""` — mais une requête SQL directe
+    // écrite plus tard avec `WHERE value IS NULL` ne verrait pas ces lignes.
+    const result = await updateAppSettings(
+      [{ key: "company.name", value: "" }],
+      "admin-1",
+    );
+
+    expect(result).toEqual({ ok: true, changedKeys: ["company.name"] });
+    expect(update).toHaveBeenCalledWith({
+      where: { key: "company.name" },
+      data: { value: "", updatedBy: "admin-1" },
+    });
+    expect(writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: { before: "LeCycleLyonnais", after: "" },
+      }),
+      tx,
+    );
+  });
+});
+
+describe("updateAppSettings — ordre des contrôles", () => {
+  it("annonce la clé inconnue avant la valeur invalide", async () => {
+    // L'ordre n'est pas cosmétique : `invalid_values` renvoie les clés
+    // fautives à l'utilisateur, `unknown_keys` non. Si une clé inconnue
+    // pouvait ressortir par la branche `invalid_values`, le message d'erreur
+    // réfléchirait une valeur choisie par l'appelant. Ce test est ce qui
+    // interdit d'inverser les deux blocs.
+    findMany.mockResolvedValue([
+      {
+        key: "company.tva",
+        value: "20",
+        valueType: "number",
+        description: "Taux de TVA",
+        updatedAt: new Date("2026-08-05T10:00:00Z"),
+      },
+    ]);
+
+    const result = await updateAppSettings(
+      [
+        { key: "company.tva", value: "vingt" },
+        { key: "<img src=x onerror=alert(1)>", value: "x" },
+      ],
+      "admin-1",
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "unknown_keys",
+      keys: ["<img src=x onerror=alert(1)>"],
+    });
+    expect(update).not.toHaveBeenCalled();
+    expect(writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("valide TOUT le lot avant d'écrire quoi que ce soit", async () => {
+    // La première entrée est valide et modifiée, la seconde est invalide.
+    // Écrire au fil de la boucle laisserait la première appliquée et sa trace
+    // écrite, pour une soumission refusée. Le `$transaction` ne suffirait pas
+    // à le rattraper ici : la fonction RETOURNE le refus, elle ne lève pas,
+    // donc la transaction serait committée.
+    findMany.mockResolvedValue([
+      ...CURRENT,
+      {
+        key: "company.tva",
+        value: "20",
+        valueType: "number",
+        description: "Taux de TVA",
+        updatedAt: new Date("2026-08-05T10:00:00Z"),
+      },
+    ]);
+
+    const result = await updateAppSettings(
+      [
+        { key: "company.name", value: "Le Cycle Lyonnais" },
+        { key: "company.tva", value: "vingt" },
+      ],
+      "admin-1",
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "invalid_values",
+      keys: ["company.tva"],
+    });
+    expect(update).not.toHaveBeenCalled();
+    expect(writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("laisse passer une ligne INCHANGÉE dont la valeur stockée est invalide", async () => {
+    // Ce test était un CONSTAT vert de l'agent testeur, et il décrivait un
+    // piège : la validation s'appliquait à toutes les entrées soumises, pas
+    // aux seules entrées modifiées. Une ligne dont la valeur stockée ne
+    // respecte pas son `value_type` — posée par un seed, une migration ou un
+    // UPDATE SQL manuel — rendait le formulaire entier insoumettable, y
+    // compris pour des champs sans rapport, puisque le lot est tout-ou-rien.
+    //
+    // Corrigé : on ne valide que ce qui change. Une ligne invalide qu'on ne
+    // touche pas ne bloque plus les autres, et le lot passe.
+    findMany.mockResolvedValue([
+      {
+        key: "company.tva",
+        value: "vingt",
+        valueType: "number",
+        description: "Taux de TVA",
+        updatedAt: new Date("2026-08-05T10:00:00Z"),
+      },
+      ...CURRENT,
+    ]);
+
+    const result = await updateAppSettings(
+      [
+        { key: "company.tva", value: "vingt" },
+        { key: "company.name", value: "Le Cycle Lyonnais" },
+      ],
+      "admin-1",
+    );
+
+    expect(result).toEqual({ ok: true, changedKeys: ["company.name"] });
+    expect(update).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { key: "company.name" } }),
+    );
+  });
+});
+
+describe("updateAppSettings — signature de l'écriture", () => {
+  it("signe chaque ligne modifiée du même acteur, et aucune autre", async () => {
+    // `updated_by` (dictionnaire §app_settings) et `actor_id`
+    // (§audit_logs) doivent désigner le même compte, et n'apparaître que sur
+    // les lignes réellement touchées. Une signature posée sur une ligne
+    // intacte ferait porter à un administrateur une modification qu'il n'a pas
+    // faite.
+    await updateAppSettings(
+      [
+        { key: "company.name", value: "Le Cycle Lyonnais" },
+        { key: "company.email", value: "contact@homecyclhome.fr" },
+      ],
+      "admin-1",
+    );
+
+    expect(update).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { key: "company.name" } }),
+    );
+    expect(writeAuditLog).toHaveBeenCalledOnce();
+    expect(writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityType: "app_settings",
+        action: "UPDATE",
+        actorId: "admin-1",
+      }),
+      tx,
+    );
+  });
+
+  it("nomme la TABLE dans `entityType`, pas le modèle Prisma", async () => {
+    // L'index `(entity_type, entity_id)` de la migration 003 sert à relire le
+    // journal en SQL. `AppSetting` y serait introuvable.
+    await updateAppSettings(
+      [{ key: "company.name", value: "Autre" }],
+      "admin-1",
+    );
+
+    expect(writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ entityType: "app_settings" }),
+      tx,
+    );
+  });
+});

@@ -203,3 +203,138 @@ describe("SettingsForm — soumission", () => {
     resolve({ data: { changedKeys: [] } });
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// Sondes ajoutées par l'agent testeur (T-J0-05).
+//
+// Le fichier corrige lui-même un montage incomplet (`mockResolvedValue` par
+// défaut dans `beforeEach`). La correction est juste et n'affaiblit aucun
+// oracle : elle donne à `useAction` de quoi résoudre sa promesse, ce que
+// l'action réelle fait toujours. Elle a en revanche un effet de bord —
+// **tous** les cas non stubés passent désormais par la branche « succès sans
+// changement ». Les tests ci-dessous couvrent les branches que ce défaut
+// rendait invisibles.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("SettingsForm — état de la valeur", () => {
+  it("affiche un champ vide quand la valeur est NULL en base", () => {
+    // `app_settings.value` est NULLable. Un `null` rendu tel quel produirait
+    // un champ non contrôlé portant la chaîne « null ».
+    render(<SettingsForm settings={[{ ...SETTINGS[0]!, value: null }]} />);
+
+    expect(
+      screen.getByLabelText(
+        "Raison sociale affichée sur le site et les factures",
+      ),
+    ).toHaveValue("");
+  });
+
+  it("soumet la chaîne vide pour un champ effacé, pas la valeur d'origine", async () => {
+    // C'est la soumission qui porte l'effacement. Si le formulaire retombait
+    // sur `setting.value` faute de saisie, un champ vidé se réécrirait tout
+    // seul et l'administrateur ne pourrait plus jamais effacer une clé.
+    const user = userEvent.setup();
+    render(<SettingsForm settings={SETTINGS} />);
+
+    await user.clear(
+      screen.getByLabelText(
+        "Raison sociale affichée sur le site et les factures",
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Enregistrer" }));
+
+    await waitFor(() =>
+      expect(updateSettings).toHaveBeenCalledWith({
+        settings: [
+          { key: "company.name", value: "" },
+          { key: "company.siret", value: "" },
+        ],
+      }),
+    );
+  });
+});
+
+describe("SettingsForm — accessibilité (contrôles manuels, jest-axe en T-J0-09)", () => {
+  it("associe chaque champ à une description qui existe réellement", () => {
+    // `aria-describedby` pointant sur un `id` absent est un attribut mort :
+    // le lecteur d'écran n'annonce rien et rien ne le signale à l'écran
+    // (RGAA 11.x). Le lien doit être vérifié, pas supposé.
+    render(<SettingsForm settings={SETTINGS} />);
+
+    for (const champ of screen.getAllByRole("textbox")) {
+      const describedBy = champ.getAttribute("aria-describedby");
+      expect(describedBy).toBeTruthy();
+      for (const id of (describedBy ?? "").split(/\s+/)) {
+        expect(document.getElementById(id)).not.toBeNull();
+      }
+    }
+  });
+
+  it("expose ses deux régions d'annonce dès le premier rendu", () => {
+    // Une région live insérée en même temps que son contenu n'est pas
+    // annoncée de façon fiable : elle doit préexister. `alert` et `status`
+    // sont bien dans le DOM avant toute soumission.
+    //
+    // Limite explicite de ce test : jsdom n'applique pas Tailwind, donc il ne
+    // dit rien de `empty:hidden`, qui pose `display:none` tant que la région
+    // est vide en conditions réelles. Ce point-là ne se vérifie qu'au
+    // navigateur.
+    render(<SettingsForm settings={SETTINGS} />);
+
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeInTheDocument();
+  });
+
+  it("efface le message d'erreur quand la soumission suivante réussit", async () => {
+    // Une erreur qui survit à la correction fait croire à un échec permanent.
+    updateSettings
+      .mockResolvedValueOnce({ data: { error: "Valeur invalide." } })
+      .mockResolvedValueOnce({ data: { changedKeys: ["company.name"] } });
+    const user = userEvent.setup();
+    render(<SettingsForm settings={SETTINGS} />);
+
+    await user.click(screen.getByRole("button", { name: "Enregistrer" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent("Valeur invalide."),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Enregistrer" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(/enregistr/i),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("");
+  });
+
+  it("ne laisse jamais une soumission échouer en silence", async () => {
+    // ⚠️ CE TEST EST ROUGE — bug rapporté, pas corrigé ici.
+    //
+    // `SettingsForm` lit `result.data?.error` et `result.serverError`, jamais
+    // `result.validationErrors`. Quand Zod refuse la charge utile, l'action
+    // renvoie donc un résultat que le formulaire n'interprète pas : le bouton
+    // se réactive, aucune région ne bouge, et l'administrateur voit un clic
+    // sans effet.
+    //
+    // Atteignable : `updateSettingsSchema` exige `settings.min(1)`, et la page
+    // rend zéro champ si `app_settings` est vide (base fraîche non seedée,
+    // lignes supprimées). Le formulaire soumet alors `settings: []`.
+    //
+    // Le formulaire frère traite déjà ce cas
+    // (`src/app/(auth)/connexion/_components/login-form.tsx:21-23`), ce qui
+    // rend l'écart d'autant plus visible. WCAG 3.3.1 « Identification des
+    // erreurs » (niveau A) demande que l'erreur soit signalée en texte.
+    updateSettings.mockResolvedValue({
+      validationErrors: {
+        settings: { _errors: ["Aucun paramètre à enregistrer"] },
+      },
+    });
+    const user = userEvent.setup();
+    render(<SettingsForm settings={SETTINGS} />);
+
+    await user.click(screen.getByRole("button", { name: "Enregistrer" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent ?? "").not.toHaveLength(0),
+    );
+  });
+});

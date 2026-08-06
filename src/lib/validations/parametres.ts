@@ -55,15 +55,20 @@ export function validateSettingValue(
   valueType: string,
   value: string,
 ): SettingValueCheck {
+  // Le type est contrôlé AVANT la porte du vide : dans l'ordre inverse, un
+  // `value_type` inconnu passait tant que la valeur était vide et échouait dès
+  // qu'elle ne l'était plus — deux verdicts contradictoires sur la même ligne.
+  // Le CHECK SQL de la migration 002 rend le cas inatteignable aujourd'hui ;
+  // l'ordre, lui, ne dépend pas de la base. Relevé par l'agent testeur (T-J0-05).
+  if (!isSettingValueType(valueType)) {
+    return { ok: false, reason: `Type de valeur inconnu : ${valueType}` };
+  }
+
   // Le vide est « non renseigné », pas une valeur mal typée : `value` est
   // NULLable en base, et `company.siret` comme `company.address` sont seedées
   // vides. Sans cette porte, un champ typé ne pourrait plus jamais être effacé
   // une fois rempli.
   if (value === "") return { ok: true };
-
-  if (!isSettingValueType(valueType)) {
-    return { ok: false, reason: `Type de valeur inconnu : ${valueType}` };
-  }
 
   switch (valueType) {
     case "string":

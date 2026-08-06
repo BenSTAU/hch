@@ -29,7 +29,14 @@ export function proxy(request: NextRequest) {
   url.pathname = LOGIN_PATH;
   // Conserve la page demandée pour y revenir après connexion — le `next=`
   // qu'attend US-COMPTE-CONNECTER §Cas nominal.
-  url.search = `?next=${encodeURIComponent(request.nextUrl.pathname)}`;
+  //
+  // `pathname + search`, et non le seul `pathname` : sans la query string,
+  // `/admin/parametres?onglet=societe` revenait en `/admin/parametres` et
+  // l'utilisateur perdait son filtre en traversant la connexion. Relevé par
+  // l'agent testeur sur T-J0-05 (B7). Le fragment, lui, n'est jamais envoyé
+  // au serveur — il n'y a rien à en conserver.
+  const demandee = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+  url.search = `?next=${encodeURIComponent(demandee)}`;
   return NextResponse.redirect(url);
 }
 

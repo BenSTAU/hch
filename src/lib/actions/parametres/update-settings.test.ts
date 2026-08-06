@@ -132,7 +132,7 @@ describe("updateSettings — non-administrateur", () => {
 });
 
 describe("updateSettings — entrées hostiles", () => {
-  it("refuse une charge utile vide sans convoquer la garde de rôle", async () => {
+  it("refuse une charge utile vide", async () => {
     const result = await updateSettings({ settings: [] });
 
     expect(result?.validationErrors).toBeDefined();
@@ -159,5 +159,97 @@ describe("updateSettings — entrées hostiles", () => {
 
     expect(JSON.stringify(result)).not.toContain("5433");
     expect(JSON.stringify(result)).not.toContain("motdepasse");
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Sondes ajoutées par l'agent testeur (T-J0-05).
+//
+// Le fichier corrige lui-même un oracle faux (`forbiddenError` porte désormais
+// un `digest`). La correction est juste — vérifiée dans le code de
+// next-safe-action 8.6.0 : `isHTTPAccessFallbackError` lit `error.digest`
+// (`errors-9ViDxi_K.mjs:23-27`) et `buildResultAndRunCallbacks` relance
+// l'erreur telle quelle (`index.mjs:441`). Mais `rejects.toThrow()` accepte
+// n'importe quel throw : les tests ci-dessous ferment cet angle mort en
+// exigeant que ce soit BIEN le 403 qui traverse, et que ce soit BIEN le
+// `digest` qui décide.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("updateSettings — le 403 traverse next-safe-action", () => {
+  it("relance l'interruption avec son `digest` intact", async () => {
+    // C'est le `digest` que Next relit pour choisir `src/app/forbidden.tsx` et
+    // poser un vrai 403. Une erreur qui arriverait au client sans lui donnerait
+    // une page d'erreur générique — visuellement un bug, pas un refus.
+    requireAdmin.mockRejectedValue(forbiddenError());
+
+    await expect(updateSettings(PAYLOAD)).rejects.toMatchObject({
+      digest: "NEXT_HTTP_ERROR_FALLBACK;403",
+    });
+  });
+
+  it("relance aussi la redirection émise quand il n'y a pas de session", async () => {
+    // `requireAdmin` délègue l'absence de session à la DAL, qui appelle
+    // `redirect("/connexion")`. Les deux échecs sont distincts et doivent
+    // TOUS DEUX sortir de l'action : l'un en 403, l'autre en navigation.
+    const redirectError = Object.assign(new Error("NEXT_REDIRECT"), {
+      digest: "NEXT_REDIRECT;replace;/connexion;307;",
+    });
+    requireAdmin.mockRejectedValue(redirectError);
+
+    await expect(updateSettings(PAYLOAD)).rejects.toMatchObject({
+      digest: "NEXT_REDIRECT;replace;/connexion;307;",
+    });
+    expect(updateAppSettings).not.toHaveBeenCalled();
+  });
+
+  it("n'a pas relancé par hasard : sans `digest`, l'erreur est absorbée", async () => {
+    // Contre-épreuve du correctif d'oracle. Si next-safe-action relançait tout
+    // ce qui lève, les deux tests ci-dessus passeraient même avec une garde
+    // cassée. Ici la garde échoue sur une erreur ordinaire : l'action ne lève
+    // pas, elle renvoie un `serverError` générique. Aucune écriture non plus —
+    // c'est ce qui compte.
+    requireAdmin.mockRejectedValue(new Error("garde en panne"));
+
+    const result = await updateSettings(PAYLOAD);
+
+    expect(result?.serverError).toBeDefined();
+    expect(JSON.stringify(result)).not.toContain("garde en panne");
+    expect(updateAppSettings).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateSettings — où se place la garde dans la chaîne", () => {
+  it("exécute la garde de rôle AVANT la validation Zod", async () => {
+    // Ce test était un CONSTAT vert de l'agent testeur, et il constatait
+    // l'inverse : next-safe-action exécute les middlewares, puis
+    // `validateInputs`, puis le corps (`index.mjs:535-570`). `requireAdmin()`
+    // vivant dans le corps, une charge utile malformée était refusée par Zod
+    // sans qu'aucune authentification ait eu lieu — un appelant anonyme lisait
+    // la forme du schéma dans `validationErrors`.
+    //
+    // Aucune écriture n'était atteignable par ce chemin, ce n'était pas un
+    // contournement d'autorisation. La garde est passée en `.use()` sur
+    // `adminActionClient` : elle s'exécute maintenant en premier, et la
+    // validation ne tourne plus pour un anonyme.
+    const result = await updateSettings({ settings: [] });
+
+    expect(requireAdmin).toHaveBeenCalledOnce();
+    expect(result?.validationErrors).toBeDefined();
+    expect(updateAppSettings).not.toHaveBeenCalled();
+  });
+
+  it("n'écrit rien tant que la garde n'a pas rendu un administrateur", async () => {
+    // La vraie propriété de sécurité, elle, tient : quelle que soit la charge
+    // utile, `updateAppSettings` n'est jamais atteint sans `requireAdmin()`
+    // résolu.
+    requireAdmin.mockRejectedValue(forbiddenError());
+
+    await updateSettings(PAYLOAD).catch(() => undefined);
+    await updateSettings({
+      settings: [{ key: "company.name", value: "X" }],
+    }).catch(() => undefined);
+
+    expect(updateAppSettings).not.toHaveBeenCalled();
   });
 });

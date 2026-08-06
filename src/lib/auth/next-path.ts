@@ -9,14 +9,21 @@
 ///
 /// Pas de `server-only` ici : la fonction est pure, sans I/O ni secret.
 
-/// Caractères de contrôle C0 et DEL, testés par point de code plutôt que par
-/// une classe de caractères : un `\r` ou un `\t` posé tel quel dans un
+/// Caractères de contrôle C0, DEL et C1, testés par point de code plutôt que
+/// par une classe de caractères : un `\r` ou un `\t` posé tel quel dans un
 /// littéral de regex est invisible à la relecture, et sa variante échappée
 /// oblige à désactiver `no-control-regex`. La boucle dit ce qu'elle refuse.
+///
+/// C1 (U+0080–U+009F) a été ajouté après le passage de l'agent testeur, qui
+/// avait relevé l'asymétrie : U+0085 NEXT LINE est traité comme un saut de
+/// ligne par plusieurs couches. Aucun vecteur connu — Next encode la valeur
+/// avant de la poser en en-tête — mais la garde n'a pas de raison de couvrir
+/// une famille de contrôles et pas l'autre.
 function hasControlCharacter(value: string): boolean {
   for (const character of value) {
     const code = character.codePointAt(0) ?? 0;
     if (code < 0x20 || code === 0x7f) return true;
+    if (code >= 0x80 && code <= 0x9f) return true;
   }
   return false;
 }
