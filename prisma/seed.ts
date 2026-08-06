@@ -55,23 +55,41 @@ const APP_SETTINGS = [
     key: "company.email",
     value: "contact@homecyclhome.fr",
     valueType: "string",
-    description: "Adresse de contact publique",
+    description: "Adresse email affichée aux clients",
   },
   {
     key: "company.phone",
     value: "+33639980000",
     valueType: "string",
-    description: "Téléphone de contact publique, au format E.164",
+    // Les `description` sont les LIBELLÉS du formulaire d'administration
+    // (dictionnaire §app_settings, champ 4). Elles s'adressent à un
+    // gestionnaire, pas à un développeur : aucune contrainte de schéma, aucun
+    // nom de norme. « au format E.164 » y figurait par recopie de `users.phone`
+    // — qui, lui, porte bien un CHECK. Cette colonne-ci n'en a aucun.
+    description: "Téléphone affiché aux clients",
   },
   {
     key: "company.address",
-    value: "",
+    // Voie inexistante, dans un arrondissement qui existe : l'écran et les
+    // mentions légales ont une adresse plausible, et elle ne désigne le
+    // domicile de personne.
+    value: "12 rue de la Bicyclette, 69003 Lyon",
     valueType: "string",
     description: "Adresse postale du siège",
   },
   {
     key: "company.siret",
-    value: "",
+    // SIRET **volontairement invalide**, et c'est la seule façon sûre de le
+    // remplir : un SIRET est une donnée publique qui désigne une entreprise
+    // réelle, et il n'existe aucune plage de fiction réservée comme l'ARCEP en
+    // offre une pour les numéros de téléphone (celle qu'utilisent les deux
+    // administrateurs plus haut).
+    //
+    // Deux garde-fous cumulés : le SIREN `999999999` n'est pas alloué par
+    // l'INSEE, et la clé de Luhn — que tout SIRET réel satisfait — est fausse
+    // ici. Ce numéro ne peut donc appartenir à personne, tout en ayant la
+    // forme d'un SIRET à l'écran. Le dépôt bascule public avant le 18 août.
+    value: "99999999900001",
     valueType: "string",
     description: "Numéro SIRET, mentionné sur les factures",
   },
@@ -120,6 +138,41 @@ async function main() {
       // updatedBy reste NULL : personne n'a encore touché à cette clé, et
       // c'est cette nullabilité qui rend l'entité autoportante au seed.
       create: setting,
+    });
+
+    // Le LIBELLÉ et le TYPE, eux, sont rafraîchis : ce sont des métadonnées de
+    // présentation dont le dépôt est la source, pas des valeurs saisies. Sans
+    // ça, corriger un libellé maladroit n'atteindrait jamais une base déjà
+    // seedée.
+    //
+    // En SQL brut et non par Prisma, parce que `updatedAt` porte `@updatedAt` :
+    // un `update` Prisma le repousserait à maintenant, et l'écran afficherait
+    // « Modifié le <aujourd'hui> » sur une valeur que personne n'a touchée. La
+    // date doit dater la VALEUR, sinon elle ne sert à rien.
+    await db.$executeRaw`
+      UPDATE app_settings
+      SET description = ${setting.description}, value_type = ${setting.valueType}
+      WHERE key = ${setting.key}
+    `;
+
+    // Une clé jamais renseignée reçoit la valeur du seed, même si sa ligne
+    // existe déjà. Ce n'est pas un retour en arrière : `updated_by IS NULL`
+    // signifie qu'aucun administrateur ne l'a jamais touchée, et une valeur
+    // vide n'est pas un choix qu'on écraserait — c'est le trou que le seed est
+    // là pour combler. Sans cette passe, `company.address` et `company.siret`
+    // resteraient vides sur toute base seedée avant qu'ils ne portent une
+    // valeur, et l'écran d'administration afficherait deux champs vides à la
+    // démonstration.
+    //
+    // Ici en Prisma et non en SQL brut, à l'inverse du bloc précédent : la
+    // valeur change vraiment, donc `updatedAt` DOIT bouger.
+    await db.appSetting.updateMany({
+      where: {
+        key: setting.key,
+        updatedBy: null,
+        OR: [{ value: null }, { value: "" }],
+      },
+      data: { value: setting.value },
     });
   }
   console.log(`paramètres      ${APP_SETTINGS.length} clés société`);

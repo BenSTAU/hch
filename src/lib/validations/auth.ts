@@ -40,6 +40,12 @@ export const loginSchema = z.object({
   // l'inscription. La contrôler ici révélerait la politique appliquée aux
   // comptes existants, et refuserait un ancien mot de passe encore valide.
   password: z.string().min(1, "Renseignez votre mot de passe"),
+  // Destination demandée par `src/proxy.ts`. Facultative, et surtout **non
+  // validée ici** : le schéma dit que c'est du texte, `safeNextPath` dit si
+  // c'est une destination. Rejeter la soumission sur un `next` hostile ferait
+  // échouer une connexion par ailleurs valide, et transformerait un paramètre
+  // d'URL en moyen de bloquer la connexion d'autrui par un simple lien.
+  next: z.string().optional(),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
