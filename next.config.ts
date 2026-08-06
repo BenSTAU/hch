@@ -23,6 +23,13 @@ const nextConfig: NextConfig = {
   // disparaît est réel, et c'est le pipeline qui le remplace : un moteur
   // manquant fait répondre 503 à /api/health, donc rollback automatique.
   experimental: {
+    // Active `forbidden()` et le fichier `src/app/forbidden.tsx`
+    // (node_modules/next/dist/docs/01-app/03-api-reference/04-functions/forbidden.md).
+    // Sans lui, un rôle insuffisant ne peut être refusé que par une redirection
+    // ou une page vide — ce que la DoD de T-J0-05 exclut explicitement. Le
+    // drapeau est marqué `experimental` en amont ; c'est le prix d'un 403 qui
+    // pose `noindex` et interrompt le rendu sans être réimplémenté à la main.
+    authInterrupts: true,
     // `lucide-react` figure déjà dans la liste optimisée par défaut de Next 16
     // (node_modules/next/dist/docs/01-app/03-api-reference/05-config/
     // 01-next-config-js/optimizePackageImports.md) — il est listé pour

@@ -8,7 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function LoginForm() {
+/// `next` vient du rendu serveur, déjà filtré par `safeNextPath` dans
+/// `page.tsx`. Il est renvoyé tel quel à l'action, qui le refiltre — le
+/// formulaire n'est pas une frontière de sécurité, il est manipulable.
+export function LoginForm({ next }: { next?: string | undefined }) {
   const emailRef = useRef<HTMLInputElement>(null);
   const { execute, result, isPending } = useAction(login);
 
@@ -35,6 +38,9 @@ export function LoginForm() {
         execute({
           email: String(data.get("email") ?? ""),
           password: String(data.get("password") ?? ""),
+          // Omis plutôt que transmis à `undefined` : le schéma le rend
+          // facultatif, une clé présente et vide n'aurait pas le même sens.
+          ...(next === undefined ? {} : { next }),
         });
       }}
     >

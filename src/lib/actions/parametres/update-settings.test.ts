@@ -11,7 +11,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const requireAdmin = vi.fn();
-vi.mock("@/lib/auth/permissions", () => ({ requireAdmin: () => requireAdmin() }));
+vi.mock("@/lib/auth/permissions", () => ({
+  requireAdmin: () => requireAdmin(),
+}));
 
 const updateAppSettings = vi.fn();
 vi.mock("@/lib/db/queries/parametres", () => ({
@@ -20,9 +22,31 @@ vi.mock("@/lib/db/queries/parametres", () => ({
 }));
 
 const revalidatePath = vi.fn();
-vi.mock("next/cache", () => ({ revalidatePath: (p: string) => revalidatePath(p) }));
+vi.mock("next/cache", () => ({
+  revalidatePath: (p: string) => revalidatePath(p),
+}));
 
 const { updateSettings } = await import("./update-settings");
+
+/// Reproduit l'erreur que lève réellement `forbidden()` de Next.
+///
+/// Le premier jet de ce fichier levait une `Error` dont le MESSAGE valait
+/// `NEXT_HTTP_ERROR_FALLBACK;403`, et le test échouait : next-safe-action
+/// 8.6.0 ne reconnaît une erreur de framework que par sa propriété **`digest`**
+/// (`errors-9ViDxi_K.mjs:22-26`), et ne la relance que dans ce cas
+/// (`index.mjs:441`). Une erreur ordinaire est convertie en `serverError`
+/// générique par `handleServerError`.
+///
+/// L'oracle était donc faux sur le mécanisme, pas sur le comportement attendu.
+/// Le corriger est aussi ce qui rend le test utile : il vérifie maintenant que
+/// le 403 **traverse** next-safe-action au lieu d'être avalé — un garde qui
+/// lèverait autre chose qu'un `forbidden()` rendrait une erreur 500 générique
+/// là où Next doit rendre une page 403.
+function forbiddenError(): Error {
+  const error = new Error("NEXT_HTTP_ERROR_FALLBACK;403");
+  Object.assign(error, { digest: "NEXT_HTTP_ERROR_FALLBACK;403" });
+  return error;
+}
 
 const ADMIN = {
   id: "admin-1",
@@ -57,9 +81,7 @@ describe("updateSettings — administrateur", () => {
     // pourrait attribuer sa modification à un autre administrateur — et le
     // journal d'audit désignerait un innocent.
     await updateSettings({
-      settings: [
-        { key: "company.name", value: "X", updatedBy: "victime" },
-      ],
+      settings: [{ key: "company.name", value: "X", updatedBy: "victime" }],
     } as unknown as typeof PAYLOAD);
 
     expect(updateAppSettings).toHaveBeenCalledWith(
@@ -90,9 +112,7 @@ describe("updateSettings — administrateur", () => {
 
 describe("updateSettings — non-administrateur", () => {
   it("refuse un client sans jamais atteindre la base", async () => {
-    requireAdmin.mockRejectedValue(
-      new Error("NEXT_HTTP_ERROR_FALLBACK;403"),
-    );
+    requireAdmin.mockRejectedValue(forbiddenError());
 
     await expect(updateSettings(PAYLOAD)).rejects.toThrow();
     expect(updateAppSettings).not.toHaveBeenCalled();
@@ -101,9 +121,7 @@ describe("updateSettings — non-administrateur", () => {
   it("garde la garde EN TÊTE d'action, avant toute lecture", async () => {
     // L'ordre est la garde. Une vérification placée après la lecture ou
     // l'écriture protège le résultat affiché, pas la donnée.
-    requireAdmin.mockRejectedValue(
-      new Error("NEXT_HTTP_ERROR_FALLBACK;403"),
-    );
+    requireAdmin.mockRejectedValue(forbiddenError());
 
     await updateSettings(PAYLOAD).catch(() => undefined);
 

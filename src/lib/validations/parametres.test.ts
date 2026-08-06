@@ -13,10 +13,7 @@
 // doit fonctionner sans qu'aucun schéma soit retouché.
 import { describe, expect, it } from "vitest";
 
-import {
-  updateSettingsSchema,
-  validateSettingValue,
-} from "./parametres";
+import { updateSettingsSchema, validateSettingValue } from "./parametres";
 
 describe("updateSettingsSchema — structure", () => {
   it("accepte une liste de couples clé/valeur", () => {
@@ -111,7 +108,13 @@ describe("validateSettingValue — typage par `value_type`", () => {
     // `value` est NULLable en base, et une chaîne vide exprime la même chose.
     // Sans cette exception, un SIRET typé `number` ne pourrait jamais être
     // effacé une fois posé.
-    for (const type of ["string", "number", "boolean", "json", "url"] as const) {
+    for (const type of [
+      "string",
+      "number",
+      "boolean",
+      "json",
+      "url",
+    ] as const) {
       expect(validateSettingValue(type, "").ok).toBe(true);
     }
   });

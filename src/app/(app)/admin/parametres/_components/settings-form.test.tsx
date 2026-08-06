@@ -40,7 +40,14 @@ const SETTINGS = [
   },
 ];
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // `useAction` appelle `.then()` sur le retour de l'action : une valeur par
+  // défaut est nécessaire, sans quoi chaque test qui soumet sans stub explicite
+  // échoue sur `Cannot read properties of undefined`. Défaut du premier jet de
+  // ce fichier — l'oracle était bon, le montage incomplet.
+  updateSettings.mockResolvedValue({ data: { changedKeys: [] } });
+});
 
 describe("SettingsForm — structure accessible", () => {
   it("rend un champ par paramètre, étiqueté par sa description", () => {
@@ -61,9 +68,7 @@ describe("SettingsForm — structure accessible", () => {
     // inutilisable au lecteur d'écran (RGAA 11.1) — la clé est laide mais
     // elle est un label.
     render(
-      <SettingsForm
-        settings={[{ ...SETTINGS[0]!, description: null }]}
-      />,
+      <SettingsForm settings={[{ ...SETTINGS[0]!, description: null }]} />,
     );
 
     expect(screen.getByLabelText("company.name")).toBeInTheDocument();

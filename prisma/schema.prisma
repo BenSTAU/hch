@@ -5,9 +5,15 @@
 // Toute divergence entre ce fichier et le dictionnaire se remonte avant
 // d'écrire la migration — elle ne s'absorbe pas ici.
 //
-// Périmètre actuel : migrations 001 et 002 de PLAN S2 §6. Les 11 autres
-// arrivent avec leurs tâches (géo en 003, catalogue en 005, interventions
-// en 007…).
+// Périmètre actuel : migrations 001, 002 et 003 de PLAN S2 §6. Les 10 autres
+// arrivent avec leurs tâches (géo, catalogue, interventions…).
+//
+// ⚠️ Le rang 003 revient à `audit_logs`, que PLAN S2 §6 plaçait en 009.
+// Avancé en T-J0-05 : PLAN S2 §7 fait passer l'historique d'`app_settings`
+// par `audit_logs` en v1, et §6 exige que la table existe AVANT les Server
+// Actions qui écrivent l'audit — or la première d'entre elles naît ici. Les
+// rangs `init_geo` à `init_payments` décalent tous d'un. Signalé pour
+// writeback ; T-V3-01 reste propriétaire de la dette `users.phone`.
 //
 // Conventions :
 //   · noms physiques snake_case (@map / @@map), noms Prisma camelCase
@@ -54,6 +60,7 @@ model User {
   authProviders      AuthProvider[]
   verificationTokens VerificationToken[]
   appSettingsUpdated AppSetting[]
+  auditLogs          AuditLog[]
 
   @@map("users")
 }
@@ -123,4 +130,36 @@ model AppSetting {
   updatedByUser User? @relation(fields: [updatedBy], references: [id])
 
   @@map("app_settings")
+}
+
+/// Journal des actions administratives sensibles (Constitution §4.2). La
+/// cible est désignée par un couple `(entityType, entityId)` et non par une
+/// FK : SQL ne connaît pas les clés étrangères polymorphiques, et une table
+/// d'audit par entité serait redondante (dictionnaire §audit_logs).
+///
+/// L'intégrité de la cible est donc applicative — rien en base n'empêche
+/// d'écrire une trace vers une entité disparue. C'est le prix du
+/// polymorphisme, et il est acceptable ici : un journal décrit ce qui s'est
+/// passé, pas ce qui existe encore.
+model AuditLog {
+  id String @id @default(uuid(4)) @db.Uuid
+  /// Nom de la TABLE cible, pas du modèle Prisma — `app_settings`, `users`.
+  entityType String @map("entity_type") @db.VarChar(50)
+  /// VARCHAR et non UUID : les cibles ont des identifiants hétérogènes.
+  /// `app_settings` est même clé-valeur, son identifiant est sa clé.
+  entityId String @map("entity_id") @db.VarChar(255)
+  /// CREATE | UPDATE | DELETE | ANONYMIZE — CHECK SQL posé en migration 003.
+  action String @db.VarChar(50)
+  /// L'acteur, lui, est une vraie FK : il existe forcément, et c'est la
+  /// colonne par laquelle on retrace les actions d'un compte.
+  actorId String @map("actor_id") @db.Uuid
+  /// Diff avant/après pour UPDATE, charge supprimée pour DELETE.
+  details   Json?    @db.JsonB
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@map("audit_logs")
 }
