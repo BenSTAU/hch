@@ -129,16 +129,23 @@ export function SettingsForm({ settings }: { settings: SettingField[] }) {
             name={setting.key}
             defaultValue={setting.value ?? ""}
             aria-invalid={invalidKeys.has(setting.key) || undefined}
-            // La clé est la seule chose que le serveur accepte, et elle vient
-            // du rendu serveur. Elle est visible, jamais éditable.
             aria-describedby={`${setting.key}-meta`}
             {...inputAttributes(setting.valueType)}
           />
+          {/* La clé technique (`company.email`) n'apparaît PAS à l'écran :
+              c'est du vocabulaire de schéma, il n'apprend rien à
+              l'administrateur et il expose la forme du modèle sur une page
+              qu'un poste partagé peut avoir sous les yeux. Elle reste le seul
+              identifiant accepté par le serveur, transportée par `name` et
+              par le rendu serveur — jamais affichée, jamais éditable.
+
+              Ne subsiste que la date, qui est l'information que
+              US-SOCIETE-AFFICHER motive : « vérifier qu'elles sont à jour ». */}
           <span
             id={`${setting.key}-meta`}
             className="text-xs text-muted-foreground"
           >
-            {setting.key} · modifié le{" "}
+            Modifié le{" "}
             <time dateTime={setting.updatedAt}>
               {DATE_FORMAT.format(new Date(setting.updatedAt))} UTC
             </time>

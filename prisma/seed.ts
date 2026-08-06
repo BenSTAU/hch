@@ -55,13 +55,18 @@ const APP_SETTINGS = [
     key: "company.email",
     value: "contact@homecyclhome.fr",
     valueType: "string",
-    description: "Adresse de contact publique",
+    description: "Adresse email affichée aux clients",
   },
   {
     key: "company.phone",
     value: "+33639980000",
     valueType: "string",
-    description: "Téléphone de contact publique, au format E.164",
+    // Les `description` sont les LIBELLÉS du formulaire d'administration
+    // (dictionnaire §app_settings, champ 4). Elles s'adressent à un
+    // gestionnaire, pas à un développeur : aucune contrainte de schéma, aucun
+    // nom de norme. « au format E.164 » y figurait par recopie de `users.phone`
+    // — qui, lui, porte bien un CHECK. Cette colonne-ci n'en a aucun.
+    description: "Téléphone affiché aux clients",
   },
   {
     key: "company.address",
@@ -121,6 +126,21 @@ async function main() {
       // c'est cette nullabilité qui rend l'entité autoportante au seed.
       create: setting,
     });
+
+    // Le LIBELLÉ et le TYPE, eux, sont rafraîchis : ce sont des métadonnées de
+    // présentation dont le dépôt est la source, pas des valeurs saisies. Sans
+    // ça, corriger un libellé maladroit n'atteindrait jamais une base déjà
+    // seedée.
+    //
+    // En SQL brut et non par Prisma, parce que `updatedAt` porte `@updatedAt` :
+    // un `update` Prisma le repousserait à maintenant, et l'écran afficherait
+    // « Modifié le <aujourd'hui> » sur une valeur que personne n'a touchée. La
+    // date doit dater la VALEUR, sinon elle ne sert à rien.
+    await db.$executeRaw`
+      UPDATE app_settings
+      SET description = ${setting.description}, value_type = ${setting.valueType}
+      WHERE key = ${setting.key}
+    `;
   }
   console.log(`paramètres      ${APP_SETTINGS.length} clés société`);
 }
