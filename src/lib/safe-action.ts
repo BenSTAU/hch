@@ -5,12 +5,9 @@ import { createSafeActionClient } from "next-safe-action";
 import { requireAdmin } from "@/lib/auth/permissions";
 
 /// Client d'action de base. Rappel d'ADR-006 v2 : **chaque Server Action
-/// exportée est un endpoint POST public**. La page qui protège ne protège pas
-/// l'action — c'est ici, et dans chaque action, que la garde se pose.
-///
-/// `handleServerError` renvoie un message générique : une erreur Prisma non
-/// interceptée porte l'hôte et l'utilisateur de la base, et remonterait
-/// jusqu'au navigateur. Le détail part dans les logs du serveur.
+/// exportée est un endpoint POST public** — la page qui protège ne protège pas
+/// l'action. `handleServerError` renvoie un message générique parce qu'une
+/// erreur Prisma non interceptée porte l'hôte et l'utilisateur de la base.
 export const actionClient = createSafeActionClient({
   handleServerError(error) {
     console.error("[action] erreur serveur :", error);
@@ -20,16 +17,11 @@ export const actionClient = createSafeActionClient({
 
 /// Client des actions réservées à l'administration.
 ///
-/// La garde vit en **middleware**, pas dans le corps de l'action. Ce n'est pas
-/// cosmétique : next-safe-action exécute les middlewares, PUIS la validation
-/// Zod, PUIS le corps (`index.mjs:535-570`). Une garde écrite en première
-/// ligne du corps laissait donc un appelant anonyme déclencher le parsing de
-/// la charge utile et lire la forme du schéma dans `validationErrors`.
-/// CLAUDE.md §Server Actions demande d'authentifier « au début de chaque
-/// action » — avec cette bibliothèque, le début, c'est ici.
-///
-/// Relevé par l'agent testeur sur T-J0-05 (B4). Aucune écriture n'était
-/// atteignable par ce chemin ; c'est l'ordre qui était faux, pas la garde.
+/// La garde vit en **middleware** et non dans le corps de l'action, parce que
+/// next-safe-action exécute les middlewares PUIS la validation Zod PUIS le
+/// corps : dans le corps, un appelant anonyme déclenche le parsing et lit la
+/// forme du schéma. Avec cette bibliothèque, « au début de l'action » c'est
+/// ici — cf. TASKS T-J0-05 §Divergences (B4).
 export const adminActionClient = actionClient.use(async ({ next }) => {
   const admin = await requireAdmin();
   return next({ ctx: { admin } });

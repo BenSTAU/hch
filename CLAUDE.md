@@ -96,10 +96,26 @@ dont les permissions interdisent d'écrire le code qu'il teste.
 | Interdit | tout `src/` **hors `.test.*`**, `prisma/`, configuration racine, `.env*`, `.github/`, `Dockerfile` |
 | Sortie | constats, tests, recommandations — **jamais de correction de code** |
 
-L'interdiction est appliquée par un hook `PreToolUse`, pas seulement demandée.
-Il couvre **`Bash` autant que `Write`/`Edit`** : un garde qui ne filtre que les
-outils d'écriture se contourne par une redirection shell. Chaque refus est
-journalisé — un testeur qui tente de sortir de son périmètre est un signal.
+L'interdiction est appliquée par un hook `PreToolUse` déclaré dans
+`.claude/settings.json` — **pas dans le frontmatter de l'agent, qui n'est jamais
+lu**. Il couvre **`Bash` autant que `Write`/`Edit`** : un garde qui ne filtre que
+les outils d'écriture se contourne par une redirection shell. Chaque refus est
+journalisé dans `.claude/logs/` — un testeur qui tente de sortir de son périmètre
+est un signal.
+
+Un hook de `settings.json` s'applique à toute la session et **ne distingue pas**
+le sous-agent de toi (`session_id`, `transcript_path`, `prompt_id` identiques).
+D'où la **sentinelle** : deux hooks sur `Task|Agent` posent puis retirent
+`.claude/.testeur-actif`, et le garde se retire d'emblée sans lui. La fenêtre où
+il mord est exactement celle où l'étape 6 t'interdit déjà d'écrire.
+**Fail-closed** : si le désarmement ne tourne pas, le garde reste actif et tes
+écritures sont bloquées — pénible mais visible, et c'est voulu.
+
+> **Ce que le garde fait, et ce qu'il ne fait pas.** Il **borne l'accident et rend
+> l'intention visible**. Il n'arrête pas un agent décidé : le périmètre autorisé
+> (`src/**/*.test.ts`) est du code Node et `pnpm test` est sur la liste blanche —
+> écriture autorisée + commande autorisée = privilèges complets. Mesuré et
+> documenté en T-J0-04. Ne présente jamais ce cloisonnement comme étanche.
 
 **Quand tu l'invoques** : étape 6 du workflow ci-dessus, sur les tâches `[T]`
 seulement, une fois le code et les tests initiaux livrés. Les bugs qu'il
@@ -298,6 +314,13 @@ dans les 12 pages d'axe de [[conventions-react-next]].
   binaire, `tsx` ne démarre pas. `pnpm approve-builds` est interactif, donc
   inutilisable en CI — la liste est la seule voie. Aujourd'hui :
   `@prisma/client`, `prisma`, `bcrypt`, `esbuild`.
+- **MUST** lancer `pnpm exec prisma generate` **après tout clone neuf**. La
+  liste ci-dessus ne suffit pas : constaté le 2026-08-06 sur un poste vierge,
+  `pnpm install` affiche `Ignored build scripts: @prisma/engines` et le client
+  n'est **pas** généré, alors que `@prisma/client` y figure. Le premier
+  `prisma db seed` échoue sur `did not initialize yet`. Faux positif à
+  connaître : `pnpm exec prisma -v` répond — il prouve le **CLI**, pas le
+  **client**, ce sont deux artefacts distincts.
 - **MUST** `.dockerignore` à jour dès qu'un dossier apparaît à la racine. Le
   `COPY . .` du stage builder copie le **répertoire de travail**, pas l'index
   Git : `.gitignore` n'y protège de rien. Sans lui, les `node_modules` de
@@ -400,6 +423,26 @@ Arborescence de référence : [[adr-006-archi-applicative-hch|ADR-006 v2]]
 - **DEFAULT** branded types pour les IDs critiques : `UserId`, `InterventionId`,
   `ZoneId`.
 - **DEFAULT** `satisfies` plutôt qu'annotation, pour préserver l'inférence.
+
+### Commentaires
+
+- **MUST** le code porte le **quoi** et le **pourquoi immédiat**, en 1 à 3
+  lignes. Le raisonnement arbitré, les alternatives écartées et les
+  conséquences futures vivent dans le vault, et le code y **pointe**
+  (`// cf. ADR-014 §3`).
+- **MUST** commenter ce qui n'est pas déductible du code : une règle métier,
+  un piège de bibliothèque, un ordre d'exécution qui compte, un choix
+  contre-intuitif. Jamais ce que le code dit déjà.
+- **MUST NOT** déposer dans le code une délibération : constat d'agent
+  testeur, analyse de risque résiduel, DoD d'une tâche future,
+  recommandation d'évolution. Ça appartient à `points-ouverts-hch` ou à
+  `TASKS` — et écrit dans un fichier source, **personne ne le relira au
+  moment où il compte**.
+- **MUST NOT** laisser un commentaire que le code a rendu faux. Un
+  commentaire qui affirme une vulnérabilité corrigée est pire que pas de
+  commentaire du tout.
+- **Signal de dérive** : un fichier dont plus de ~30 % des lignes sont du
+  commentaire porte probablement un ADR déguisé.
 
 ### Patterns composants
 
@@ -586,6 +629,13 @@ Détail applicatif complet : [[s3-infra-ci-cd|PLAN S3]].
   savent pas les dérouler.
 - **MUST** tests co-localisés : `*.test.ts` à côté du module. E2E Playwright
   dans `tests/`.
+- **MUST** un seul `<module>.test.ts` par module. Deux suffixes seulement sont
+  autorisés à ouvrir un fichier de plus, et ils décrivent une **intention de
+  test**, pas un découpage de confort :
+  - `<module>.adversarial.test.ts` — tentatives d'attaque et cas hostiles ;
+  - `<module>.timing.test.ts` — mesures de temps constant.
+  Tout autre suffixe (`.cache`, `.revocation`, `.next`…) est un `describe`
+  imbriqué dans le fichier du module, pas un fichier.
 - **MUST NOT** `vi.mock(fetch)` — MSW à la place.
 - **MUST NOT** `getByTestId` par défaut (query de dernier recours).
 - **MUST NOT** viser 100 % de couverture. Cible indicative ~70 % lignes,

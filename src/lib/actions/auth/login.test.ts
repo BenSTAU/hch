@@ -1,13 +1,10 @@
 // @vitest-environment node
 //
-// Server Action de connexion — ajoutée par l'agent testeur.
-//
-// Aucun test ne couvrait cette action, alors qu'elle est le seul point où les
-// trois couches se rencontrent : validation Zod, authentification, pose de
-// session. Rappel d'ADR-006 v2 repris dans `src/lib/safe-action.ts:5-7` —
-// **une Server Action exportée est un endpoint POST public**. Elle est donc
-// appelable avec n'importe quelle charge utile, y compris celles qu'aucun
-// formulaire n'enverrait.
+// Server Action de connexion. C'est le seul point où les trois couches se
+// rencontrent : validation Zod, authentification, pose de session. Rappel
+// d'ADR-006 v2 repris dans `src/lib/safe-action.ts` — **une Server Action
+// exportée est un endpoint POST public**, donc appelable avec n'importe quelle
+// charge utile, y compris celles qu'aucun formulaire n'enverrait.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const authenticateWithPassword = vi.fn();
@@ -22,6 +19,21 @@ vi.mock("@/lib/auth/session", () => ({
     createSession(userId, roles),
 }));
 
+// `redirect()` de Next fonctionne par throw, et next-safe-action ne relance une
+// interruption de framework que si elle porte un `digest` de la bonne forme —
+// sans quoi elle est absorbée en `serverError`. Le mock reproduit les deux
+// moitiés du contrat : il enregistre la destination ET lève avec un digest
+// conforme. Un mock qui se contenterait d'enregistrer laisserait passer un code
+// qui continue son exécution après la redirection.
+const redirect = vi.fn((url: string) => {
+  throw Object.assign(new Error("NEXT_REDIRECT"), {
+    digest: `NEXT_REDIRECT;push;${url};307;`,
+  });
+});
+vi.mock("next/navigation", () => ({
+  redirect: (url: string) => redirect(url),
+}));
+
 const { login } = await import("./login");
 const { LOGIN_REFUSED_MESSAGE } = await import("@/lib/validations/auth");
 
@@ -29,6 +41,10 @@ const CREDENTIALS = {
   email: "admin@homecyclhome.fr",
   password: "bon-mot-de-passe",
 };
+
+/// Destination par défaut, créée par T-J0-05. Avant elle, le chemin nominal de
+/// la connexion aboutissait sur un 404.
+const DEFAULT_DESTINATION = "/admin/parametres";
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -82,10 +98,9 @@ describe("login — succès", () => {
   });
 
   it("redirige, et la redirection n'est pas absorbée en erreur serveur", async () => {
-    // `redirect()` fonctionne par throw. Si next-safe-action le confondait
-    // avec une erreur applicative, `handleServerError` le convertirait en
-    // `{ serverError }` et l'utilisateur resterait sur le formulaire, connecté
-    // mais sans le savoir.
+    // Si next-safe-action confondait le throw de `redirect()` avec une erreur
+    // applicative, `handleServerError` le convertirait en `{ serverError }` et
+    // l'utilisateur resterait sur le formulaire, connecté mais sans le savoir.
     authenticateWithPassword.mockResolvedValue({
       ok: true,
       user: { id: "user-1", roles: ["ROLE_ADMIN"] },
@@ -113,11 +128,10 @@ describe("login — entrées hostiles", () => {
   });
 
   it("transmet l'email NORMALISÉ à l'authentification, pas la saisie brute", async () => {
-    // Ajouté après le correctif de casse. `validations/auth.test.ts` prouve que
-    // le schéma transforme ; ce test-ci prouve que la transformation ARRIVE
-    // jusqu'à la recherche en base. C'est la moitié qui manquait : un schéma
-    // qui normalise dans son coin ne sert à rien si l'action lit la valeur
-    // brute plutôt que `parsedInput`.
+    // `validations/auth.test.ts` prouve que le schéma transforme ; celui-ci
+    // prouve que la transformation ARRIVE jusqu'à la recherche en base. Un
+    // schéma qui normalise dans son coin ne sert à rien si l'action lit la
+    // valeur brute plutôt que `parsedInput`.
     authenticateWithPassword.mockResolvedValue({ ok: false });
 
     await login({
@@ -132,9 +146,9 @@ describe("login — entrées hostiles", () => {
   });
 
   it("ne normalise pas le mot de passe", async () => {
-    // Symétrique du précédent, et il compte : un `.toLowerCase()` appliqué par
-    // erreur au mot de passe amputerait silencieusement l'espace de recherche
-    // et invaliderait tous les hashs existants portant une majuscule.
+    // Un `.toLowerCase()` appliqué par erreur au mot de passe amputerait
+    // l'espace de recherche et invaliderait tous les hashs portant une
+    // majuscule.
     authenticateWithPassword.mockResolvedValue({ ok: false });
 
     await login({ email: "admin@homecyclhome.fr", password: "MoTdEpAsSe-42" });
@@ -147,9 +161,8 @@ describe("login — entrées hostiles", () => {
 
   it("ignore les champs surnuméraires — les rôles ne se soumettent pas", async () => {
     // Élévation de privilège par affectation de masse : on POSTe des rôles
-    // avec les identifiants. Ils doivent être écartés par le schéma, et la
-    // session doit être posée avec les rôles LUS EN BASE, jamais avec ceux
-    // reçus du client.
+    // avec les identifiants. Le schéma les écarte, et la session est posée
+    // avec les rôles LUS EN BASE.
     authenticateWithPassword.mockResolvedValue({
       ok: true,
       user: { id: "user-1", roles: ["ROLE_CLIENT"] },
@@ -168,5 +181,77 @@ describe("login — entrées hostiles", () => {
       CREDENTIALS.email,
       CREDENTIALS.password,
     );
+  });
+});
+
+describe("destination post-connexion", () => {
+  // `src/proxy.ts` pose `?next=<chemin>` sur sa redirection. La valeur est donc
+  // contrôlée par l'attaquant et atterrit dans un `redirect()` : c'est la
+  // définition de l'open redirect. Un lien portant le vrai domaine, servant la
+  // vraie page et encaissant une vraie connexion dépose ensuite l'utilisateur
+  // ailleurs.
+
+  beforeEach(() => {
+    authenticateWithPassword.mockResolvedValue({
+      ok: true,
+      user: { id: "admin-1", roles: ["ROLE_ADMIN"] },
+    });
+  });
+
+  describe("destination acceptée", () => {
+    it("suit un `next` interne", async () => {
+      await login({
+        ...CREDENTIALS,
+        next: "/admin/parametres?onglet=societe",
+      }).catch(() => undefined);
+
+      expect(redirect).toHaveBeenCalledWith("/admin/parametres?onglet=societe");
+    });
+
+    it("retombe sur la destination par défaut sans `next`", async () => {
+      await login(CREDENTIALS).catch(() => undefined);
+
+      expect(redirect).toHaveBeenCalledWith(DEFAULT_DESTINATION);
+    });
+  });
+
+  describe("`next` hostile", () => {
+    // Un `next` refusé ne doit pas faire échouer la connexion : elle a réussi.
+    // Il est ignoré au profit de la destination par défaut.
+    const HOSTILES = [
+      "https://phishing.example",
+      "//phishing.example",
+      "/\\phishing.example",
+      "/%2Fphishing.example",
+      "javascript:alert(1)",
+      "admin/parametres",
+    ];
+
+    for (const next of HOSTILES) {
+      it(`ignore \`${next}\` et redirige vers la destination par défaut`, async () => {
+        await login({ ...CREDENTIALS, next }).catch(() => undefined);
+
+        expect(redirect).toHaveBeenCalledWith(DEFAULT_DESTINATION);
+      });
+    }
+
+    it("ne redirige jamais hors du site, quelle que soit la forme", async () => {
+      for (const next of HOSTILES) {
+        redirect.mockClear();
+        await login({ ...CREDENTIALS, next }).catch(() => undefined);
+        const [destination] = redirect.mock.calls[0] ?? [];
+        expect(destination).toMatch(/^\/[^/\\]/);
+      }
+    });
+
+    it("n'ouvre pas la redirection à un échec de connexion", async () => {
+      // Le `next` n'est consommé qu'APRÈS authentification. Sans cela, la page
+      // de connexion serait un redirecteur ouvert utilisable sans compte.
+      authenticateWithPassword.mockResolvedValue({ ok: false });
+
+      await login({ ...CREDENTIALS, next: "/admin/parametres" });
+
+      expect(redirect).not.toHaveBeenCalled();
+    });
   });
 });

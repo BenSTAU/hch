@@ -8,11 +8,8 @@ import { createSession } from "@/lib/auth/session";
 import { actionClient } from "@/lib/safe-action";
 import { LOGIN_REFUSED_MESSAGE, loginSchema } from "@/lib/validations/auth";
 
-/// Destination post-connexion par défaut. La SPEC prévoit trois espaces
-/// distincts selon le rôle — `/mes-interventions/a-venir`,
-/// `/interventions/du-jour`, back-office — mais **aucun n'existe au jalon 0**,
-/// dont la seule entité de bout en bout est `app_settings`. Écart signalé en
-/// PR, à rouvrir quand les trois espaces existeront.
+/// Destination post-connexion par défaut. La SPEC prévoit trois espaces selon
+/// le rôle, dont aucun n'existe au jalon 0 — cf. TASKS T-J0-05 §Divergences.
 const AFTER_LOGIN = "/admin/parametres";
 
 export const login = actionClient
@@ -20,21 +17,18 @@ export const login = actionClient
   .action(async ({ parsedInput: { email, password, next } }) => {
     const result = await authenticateWithPassword(email, password);
 
-    // Une seule branche d'échec, un seul message. Le temps de réponse diffère
-    // encore selon la cause — bcrypt n'est pas appelé sur un email inconnu —
-    // c'est une fuite par canal auxiliaire, signalée en PR.
+    // Une seule branche d'échec, un seul message — et un seul temps de
+    // réponse : les quatre causes passent toutes par bcrypt
+    // (`src/lib/auth/authenticate.ts`, leurre `DECOY_HASH`).
     if (!result.ok) {
       return { error: LOGIN_REFUSED_MESSAGE };
     }
 
     await createSession(result.user.id, result.user.roles);
 
-    // Le `next` n'est consommé QU'ICI, après authentification réussie : une
-    // redirection ouverte accessible sans compte serait un redirecteur offert
-    // à qui veut. `safeNextPath` refuse tout ce qui sort du site, et un refus
-    // ne fait pas échouer la connexion — elle a réussi.
-    //
-    // `redirect()` hors de tout try/catch : il fonctionne par throw, et une
-    // capture le transformerait en erreur serveur silencieuse (leçon Argo).
+    // `next` consommé APRÈS authentification seulement : sinon la page de
+    // connexion serait un redirecteur ouvert utilisable sans compte. Et
+    // `redirect()` hors de tout try/catch — il fonctionne par throw, une
+    // capture le transformerait en erreur serveur silencieuse.
     redirect(safeNextPath(next) ?? AFTER_LOGIN);
   });
