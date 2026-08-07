@@ -2,6 +2,8 @@ import AxeBuilder from "@axe-core/playwright";
 import { PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
 
+import { seConnecter } from "../support/connexion";
+
 /// Barrière pré-déploiement du jalon 0 — le scénario que nomme le critère de
 /// fin : un administrateur seedé se connecte et modifie un paramètre société.
 ///
@@ -41,34 +43,56 @@ function motDePasseAdmin(): string {
 /// (« (row.value ?? '') === entry.value »), aucune écriture n'a lieu et le test
 /// vérifierait la persistance de ce qui était déjà là.
 ///
+/// La valeur courante est passée en argument, et le tirage l'évite : les
+/// quatre derniers chiffres de l'horloge donnent une chance sur 10 000 de
+/// retomber dessus. Le formulaire répondrait alors « Aucune modification à
+/// enregistrer », la barrière rougirait, et aucun code ne serait en cause.
+/// Mesuré par l'agent testeur sur T-J0-09 ; en local `retries` vaut 0, donc le
+/// dé n'était relancé par personne.
+///
 /// Plage de fiction réservée par l'ARCEP, comme le seed : aucune donnée
 /// personnelle réelle, ni en base de test ni en base déployée.
-function numeroDeFiction(): string {
-  return `+3363998${String(Date.now()).slice(-4)}`;
+function numeroDeFiction(differentDe: string | null): string {
+  const numero = (n: number) =>
+    `+3363998${String(n % 10_000).padStart(4, "0")}`;
+  const base = Number(String(Date.now()).slice(-4));
+  const candidat = numero(base);
+  return candidat === differentDe ? numero(base + 1) : candidat;
 }
 
 test("l'administrateur seedé se connecte et modifie un paramètre société", async ({
   page,
 }) => {
   const db = new PrismaClient();
-  const valeurAttendue = numeroDeFiction();
 
   try {
-    await page.goto("/connexion");
-
     // Requêtes par label et par rôle, jamais par testid : la hiérarchie
     // d'ADR-014 §Stack, et ce sont les mêmes ancrages qu'un lecteur d'écran.
-    await page.getByLabel("Adresse email").fill(ADMIN_EMAIL);
-    await page.getByLabel("Mot de passe").fill(motDePasseAdmin());
-    await page.getByRole("button", { name: "Se connecter" }).click();
-
-    // `AFTER_LOGIN` de `src/lib/actions/auth/login.ts`. Atteindre cette URL
-    // prouve déjà trois choses : le hash bcrypt a été comparé, la session a
-    // été signée, et `requireAdmin()` a laissé passer.
-    await expect(page).toHaveURL(/\/admin\/parametres$/);
+    await seConnecter(page, ADMIN_EMAIL, motDePasseAdmin());
 
     const champ = page.getByLabel(LIBELLE);
     await expect(champ).toBeVisible();
+
+    // Lus AVANT la soumission : ce sont les deux oracles que l'assertion
+    // d'audit ne portait pas. `after` seul ne dit rien du `before` (le diff
+    // peut être faux sans que rien ne le montre) ni de l'acteur — or c'est
+    // précisément la colonne qui donne sa valeur au journal (Constitution
+    // §4.2 : « retracer les actions d'un compte »). Ajouté par l'agent
+    // testeur sur T-J0-09.
+    const valeurAvant = (
+      await db.appSetting.findUniqueOrThrow({
+        where: { key: CLE },
+        select: { value: true },
+      })
+    ).value;
+    const admin = await db.user.findUniqueOrThrow({
+      where: { email: ADMIN_EMAIL },
+      select: { id: true },
+    });
+
+    // Tirée APRÈS la lecture de `valeurAvant`, pour pouvoir l'éviter.
+    const valeurAttendue = numeroDeFiction(valeurAvant);
+
     await champ.fill(valeurAttendue);
 
     // Borne basse pour la recherche de la trace d'audit, prise AVANT la
@@ -115,7 +139,22 @@ test("l'administrateur seedé se connecte et modifie un paramètre société", a
       trace,
       "aucune entrée audit_logs écrite par cette exécution",
     ).not.toBeNull();
-    expect(trace?.details).toMatchObject({ after: valeurAttendue });
+    expect(trace?.details).toMatchObject({
+      before: valeurAvant,
+      after: valeurAttendue,
+    });
+    // L'acteur vient de `ctx.admin` du middleware `adminActionClient`, jamais
+    // de la charge utile. Sans cette assertion, une trace attribuée au mauvais
+    // compte — ou à un identifiant en dur — passait inaperçue.
+    expect(trace?.actorId).toBe(admin.id);
+
+    // `updated_by` porte la même exigence côté donnée : le formulaire dit qui
+    // a modifié la clé, et l'écran l'affiche.
+    const ligne = await db.appSetting.findUniqueOrThrow({
+      where: { key: CLE },
+      select: { updatedBy: true },
+    });
+    expect(ligne.updatedBy).toBe(admin.id);
   } finally {
     await db.$disconnect();
   }
@@ -128,9 +167,88 @@ test("la page de connexion ne présente aucune violation axe", async ({
 
   // RGAA niveau A sur toute l'application, AA sur le parcours de connexion
   // (PLAN S4 §2). La conformité se prouve par un test, elle ne se déclare pas.
+  //
+  // `wcag21a` / `wcag21aa` ajoutés par l'agent testeur (T-J0-09) : le RGAA 4.1
+  // transpose WCAG **2.1**, et les seuls tags `wcag2*` laissaient hors du
+  // champ les règles propres à la 2.1 — `autocomplete-valid` notamment, qui
+  // porte sur un formulaire d'identification. Zéro violation supplémentaire
+  // constatée à l'ajout : c'est un élargissement de couverture, pas un
+  // correctif.
   const resultats = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa"])
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
 
   expect(resultats.violations).toEqual([]);
+});
+
+/// Ajouté par l'agent testeur (T-J0-09). L'écran d'administration n'était
+/// audité qu'en jsdom (`settings-form.test.tsx` §« audit outillé »), où
+/// axe-core ne peut PAS évaluer les contrastes : sans moteur de rendu, la
+/// règle `color-contrast` sort en `incomplete` et ne compte pas comme
+/// violation. `toHaveNoViolations()` y passe donc sans avoir rien mesuré sur
+/// ce point. Le contraste ne se vérifie qu'au navigateur, et c'est ici.
+///
+/// C'est aussi le seul écran authentifié du jalon : sans login, aucun audit
+/// outillé ne l'atteint en conditions réelles.
+test("l'écran d'administration ne présente aucune violation axe", async ({
+  page,
+}) => {
+  await seConnecter(page, ADMIN_EMAIL, motDePasseAdmin());
+
+  const resultats = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+
+  expect(resultats.violations).toEqual([]);
+});
+
+/// Cas hostile absent du lot livré : la barrière ne vérifiait que le chemin
+/// nominal. Or `/admin/parametres` est un écran d'administration, et
+/// `src/proxy.ts` ne fait qu'un redirect **optimiste** sur présence du cookie
+/// — le rempart réel est `requireAdmin()` dans la page. Un test qui ne franchit
+/// jamais la porte sans clé ne prouve pas qu'elle est fermée.
+test("un visiteur non connecté n'atteint pas l'écran d'administration", async ({
+  page,
+}) => {
+  await page.goto("/admin/parametres");
+
+  // Redirection vers la connexion, en conservant la destination demandée.
+  await expect(page).toHaveURL(/\/connexion\?next=/);
+
+  // Et surtout : aucun champ de configuration rendu au passage. Une
+  // redirection qui laisse fuiter le formulaire aurait déjà tout donné.
+  await expect(page.getByLabel(LIBELLE)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Enregistrer" })).toHaveCount(
+    0,
+  );
+});
+
+/// Le cas qui compte vraiment pour une authentification écrite à la main.
+///
+/// `src/proxy.ts:17` ne teste que la PRÉSENCE du cookie — il ne lit ni la
+/// signature ni la base. Un cookie forgé le franchit donc intégralement, et
+/// seul `getCurrentUser()` (`src/lib/auth/dal.ts:24-53`) l'arrête. Le test
+/// précédent, lui, s'arrête au proxy et ne dit rien du rempart réel : c'est
+/// exactement la configuration de la CVE-2025-29927 que l'ADR-005 v2 dit
+/// vouloir ne jamais reproduire. Sans ce test, la propriété est écrite dans
+/// les commentaires et vérifiée nulle part.
+test("un cookie de session forgé franchit le proxy mais pas le DAL", async ({
+  page,
+  context,
+  baseURL,
+}) => {
+  await context.addCookies([
+    {
+      name: "hch_session",
+      // Ni un JWT valide, ni même un JWT : `jwtVerify` doit refuser, et le
+      // refus doit se traduire par une redirection, pas par une 500.
+      value: "pas.un.jeton",
+      url: baseURL ?? "http://localhost:3000",
+    },
+  ]);
+
+  await page.goto("/admin/parametres");
+
+  await expect(page).toHaveURL(/\/connexion/);
+  await expect(page.getByLabel(LIBELLE)).toHaveCount(0);
 });

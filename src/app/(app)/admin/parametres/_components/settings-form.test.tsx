@@ -279,9 +279,9 @@ describe("SettingsForm — accessibilité (contrôles manuels, jest-axe en T-J0-
     // sont bien dans le DOM avant toute soumission.
     //
     // Limite explicite de ce test : jsdom n'applique pas Tailwind, donc il ne
-    // dit rien de `empty:hidden`, qui pose `display:none` tant que la région
-    // est vide en conditions réelles. Ce point-là ne se vérifie qu'au
-    // navigateur.
+    // dit rien du rendu réel des deux régions. `empty:hidden`, que cette note
+    // visait à l'origine, a depuis été retiré de `settings-form.tsx` — c'est
+    // précisément lui qui rendait l'annonce peu fiable.
     render(<SettingsForm settings={SETTINGS} />);
 
     expect(screen.getByRole("alert")).toBeInTheDocument();
@@ -310,13 +310,12 @@ describe("SettingsForm — accessibilité (contrôles manuels, jest-axe en T-J0-
   });
 
   it("ne laisse jamais une soumission échouer en silence", async () => {
-    // ⚠️ CE TEST EST ROUGE — bug rapporté, pas corrigé ici.
-    //
-    // `SettingsForm` lit `result.data?.error` et `result.serverError`, jamais
-    // `result.validationErrors`. Quand Zod refuse la charge utile, l'action
-    // renvoie donc un résultat que le formulaire n'interprète pas : le bouton
-    // se réactive, aucune région ne bouge, et l'administrateur voit un clic
-    // sans effet.
+    // Ce test a été ROUGE : `SettingsForm` lisait `result.data?.error` et
+    // `result.serverError`, jamais `result.validationErrors`. Quand Zod
+    // refusait la charge utile, le bouton se réactivait, aucune région ne
+    // bougeait, et l'administrateur voyait un clic sans effet. Corrigé depuis
+    // (`settings-form.tsx` lit désormais les trois canaux) — le test est vert
+    // et garde le cas sous surveillance.
     //
     // Atteignable : `updateSettingsSchema` exige `settings.min(1)`, et la page
     // rend zéro champ si `app_settings` est vide (base fraîche non seedée,

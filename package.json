@@ -10,7 +10,7 @@
     "format": "prettier --write .",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test --project=barriere"
   },
   "dependencies": {
     "@prisma/client": "6.19.2",

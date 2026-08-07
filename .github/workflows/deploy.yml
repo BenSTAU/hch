@@ -144,14 +144,18 @@ jobs:
 
       - name: Barrière Playwright
         env:
-          HCH_E2E_BASE_URL: http://localhost:3000
+          HCH_E2E_BASE_URL: http://127.0.0.1:3000
           # Port publié par docker-compose.test.yml — l'application, elle,
           # joint la base par son nom de service sur le réseau du projet.
-          DATABASE_URL: postgresql://hch:hch@localhost:5435/hch
+          DATABASE_URL: postgresql://hch:hch@127.0.0.1:5435/hch
           # Les mêmes valeurs jetables que le compose : elles ne sont pas des
           # secrets, et le dépôt est public.
           SEED_ADMIN_PASSWORD: e2e-admin-password
         run: pnpm exec playwright test --project=barriere
+
+      - name: Logs des conteneurs
+        if: failure()
+        run: docker compose -f docker-compose.test.yml --profile e2e logs --no-color --tail=200
 
       - name: Rapport Playwright
         if: failure()
@@ -176,6 +180,7 @@ jobs:
       url: https://hch-staging.glanford.eu
     steps:
       - uses: appleboy/ssh-action@v1.2.0
+        id: deploy
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
@@ -275,14 +280,6 @@ jobs:
           HCH_SMOKE_MODE: write
         run: pnpm exec playwright test --project=smoke
 
-      - name: Rapport Playwright
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report-smoke-staging
-          path: playwright-report/
-          retention-days: 7
-
       # Le healthcheck peut passer et le smoke échouer : le conteneur répond
       # mais l'application ne fait pas ce qu'elle doit. On revient à l'image
       # précédente.
@@ -291,8 +288,16 @@ jobs:
       # appliquées avant le healthcheck. L'image précédente se retrouve donc
       # face à un schéma plus récent. C'est le point ouvert « rollback des
       # migrations », que ce rollback-ci ne referme pas.
-      - name: Rollback — le smoke a échoué
-        if: failure() && steps.smoke.outcome == 'failure'
+      # Toute défaillance POSTÉRIEURE à un déploiement réussi, et pas seulement
+      # un smoke rouge : `pnpm install` ou `playwright install` dépendent du
+      # réseau, et leur panne laissait la nouvelle image en service sans
+      # qu'elle ait jamais été fumée. Relevé par l'agent testeur (C9).
+      #
+      # `steps.deploy.outcome == 'success'` exclut le cas où le script SSH a
+      # déjà basculé lui-même sur l'échec du healthcheck — pas de double
+      # rollback.
+      - name: Rollback — échec après un déploiement réussi
+        if: failure() && steps.deploy.outcome == 'success'
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -323,6 +328,7 @@ jobs:
       url: https://hch.glanford.eu
     steps:
       - uses: appleboy/ssh-action@v1.2.0
+        id: deploy
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
@@ -397,16 +403,16 @@ jobs:
           HCH_SMOKE_MODE: read
         run: pnpm exec playwright test --project=smoke
 
-      - name: Rapport Playwright
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report-smoke-prod
-          path: playwright-report/
-          retention-days: 7
-
-      - name: Rollback — le smoke a échoué
-        if: failure() && steps.smoke.outcome == 'failure'
+      # Toute défaillance POSTÉRIEURE à un déploiement réussi, et pas seulement
+      # un smoke rouge : `pnpm install` ou `playwright install` dépendent du
+      # réseau, et leur panne laissait la nouvelle image en service sans
+      # qu'elle ait jamais été fumée. Relevé par l'agent testeur (C9).
+      #
+      # `steps.deploy.outcome == 'success'` exclut le cas où le script SSH a
+      # déjà basculé lui-même sur l'échec du healthcheck — pas de double
+      # rollback.
+      - name: Rollback — échec après un déploiement réussi
+        if: failure() && steps.deploy.outcome == 'success'
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VPS_HOST }}

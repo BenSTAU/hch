@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { seConnecter as seConnecterAdmin } from "../support/connexion";
+
 /// Smoke post-déploiement — tourne en STEP des jobs `deploy-staging` et
 /// `deploy-prod`, contre l'environnement réellement servi : nginx, TLS,
 /// `auth_basic` côté staging, vraie base, résolution du conteneur par le
@@ -50,16 +52,55 @@ function motDePasseAdmin(): string {
   return password;
 }
 
+/// La séquence vit dans `tests/support/connexion.ts`, partagée avec la
+/// barrière : c'est le même oracle des deux côtés, et le dupliquer le ferait
+/// diverger.
+///
+/// Elle passe par `/connexion` et jamais par `/`, qui est prérendue
+/// statiquement (`x-nextjs-cache: HIT`, `x-nextjs-prerender: 1`) : `/` répond
+/// 200 base éteinte et ne prouverait rien du déploiement.
 async function seConnecter(page: Page) {
-  // Jamais `/`, qui est prérendue statiquement (`x-nextjs-cache: HIT`,
-  // `x-nextjs-prerender: 1`) : elle répond 200 même base éteinte, et ne
-  // prouverait donc rien du déploiement.
-  await page.goto("/connexion");
-  await page.getByLabel("Adresse email").fill(ADMIN_EMAIL);
-  await page.getByLabel("Mot de passe").fill(motDePasseAdmin());
-  await page.getByRole("button", { name: "Se connecter" }).click();
-  await expect(page).toHaveURL(/\/admin\/parametres$/);
+  await seConnecterAdmin(page, ADMIN_EMAIL, motDePasseAdmin());
 }
+
+/// Empreinte des dates de dernière modification, telles que l'écran les rend
+/// (`<time datetime>` de `settings-form.tsx`). C'est la seule observation d'une
+/// écriture accessible en HTTP seul : les bases déployées ne sont joignables ni
+/// du runner ni d'internet.
+async function empreinteDesDates(page: Page): Promise<string[]> {
+  return page
+    .locator("time")
+    .evaluateAll((noeuds) =>
+      noeuds.map((n) => n.getAttribute("datetime") ?? ""),
+    );
+}
+
+/// Partagée entre le premier et le dernier test du fichier. `workers: 1` et
+/// `fullyParallel: false` (playwright.config.ts) garantissent l'ordre et le
+/// process unique ; le test final vérifie explicitement que l'empreinte a bien
+/// été prise, pour qu'un changement de configuration rende ce garde ROUGE au
+/// lieu de le rendre muet.
+let empreinteInitiale: string[] | null = null;
+
+/// Ajouté par l'agent testeur (T-J0-09). La lecture seule de production était
+/// garantie par la seule absence d'écriture dans les tests — une propriété
+/// négative, qu'aucune assertion ne tenait. Ces deux tests l'énoncent :
+/// après le passage complet du smoke, aucune ligne d'`app_settings` n'a bougé.
+///
+/// Limite assumée : ils ne couvrent qu'`app_settings`. Une écriture ailleurs
+/// (un `last_login_at` posé au login, par exemple) resterait invisible d'ici.
+test("lecture seule — empreinte des paramètres avant le smoke", async ({
+  page,
+}) => {
+  test.skip(
+    smokeMode() === "write",
+    "staging écrit — l'empreinte n'a pas de sens",
+  );
+
+  await seConnecter(page);
+  empreinteInitiale = await empreinteDesDates(page);
+  expect(empreinteInitiale.length).toBeGreaterThan(0);
+});
 
 test("l'administrateur seedé se connecte et lit un paramètre société", async ({
   page,
@@ -97,4 +138,23 @@ test("l'administrateur seedé modifie un paramètre société", async ({
 
   await page.reload();
   await expect(page.getByLabel(LIBELLE)).toHaveValue(valeurAttendue);
+});
+
+test("lecture seule — aucune date de modification n'a bougé", async ({
+  page,
+}) => {
+  test.skip(
+    smokeMode() === "write",
+    "staging écrit — l'empreinte n'a pas de sens",
+  );
+
+  // Si l'empreinte est absente, l'ordre d'exécution a changé et ce garde ne
+  // garde plus rien. On échoue plutôt que de passer au vert par vacuité.
+  expect(
+    empreinteInitiale,
+    "empreinte initiale non prise — l'ordre des tests du fichier a changé",
+  ).not.toBeNull();
+
+  await seConnecter(page);
+  expect(await empreinteDesDates(page)).toEqual(empreinteInitiale);
 });
