@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 vi.mock("@/lib/actions/auth/login", () => ({
-  login: vi.fn(),
+  loginFormAction: vi.fn(),
 }));
 
 const { ConnexionView } = await import("./connexion-view");
@@ -63,9 +63,9 @@ describe("ConnexionView — destination transmise", () => {
     // Ajouté en T-J0-05. Le `next` traverse trois couches — page, coquille,
     // formulaire — et un maillon muet ne se verrait qu'à l'exécution, sous la
     // forme d'un utilisateur ramené au mauvais endroit après connexion.
-    const { login } = await import("@/lib/actions/auth/login");
+    const { loginFormAction } = await import("@/lib/actions/auth/login");
     const userEvent = (await import("@testing-library/user-event")).default;
-    vi.mocked(login).mockResolvedValue(undefined as never);
+    vi.mocked(loginFormAction).mockResolvedValue({});
 
     render(<ConnexionView next="/admin/parametres?onglet=societe" />);
     const user = userEvent.setup();
@@ -77,8 +77,11 @@ describe("ConnexionView — destination transmise", () => {
     await user.type(screen.getByLabelText("Mot de passe"), "un-mot-de-passe");
     await user.click(screen.getByRole("button", { name: "Se connecter" }));
 
-    expect(vi.mocked(login)).toHaveBeenCalledWith(
-      expect.objectContaining({ next: "/admin/parametres?onglet=societe" }),
-    );
+    // `next` traverse désormais un champ caché du formulaire, seule voie qui
+    // survive à une soumission sans JavaScript. L'oracle porte donc sur le
+    // FormData reçu, pas sur un objet de props.
+    const { loginFormAction: recue } = await import("@/lib/actions/auth/login");
+    const formData = vi.mocked(recue).mock.calls[0]?.[1] as FormData;
+    expect(formData.get("next")).toBe("/admin/parametres?onglet=societe");
   });
 });
