@@ -37,9 +37,11 @@ jobs:
             exit 1
           fi
 
+      # Pas de `version:` ici : `packageManager: "pnpm@10.33.2"` du
+      # package.json (DoD T-J0-01) fait autorité, et l'action REFUSE de
+      # démarrer quand les deux sont présents. PLAN S3 §3 prescrivait
+      # `with: { version: 10 }` — défaut d'amont, révélé au run 31167218308.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
