@@ -41,6 +41,22 @@ COPY . .
 RUN pnpm prisma generate
 RUN pnpm build
 
+# Le seed est du TypeScript, exécuté en local par `tsx` via la clé
+# `migrations.seed` de prisma.config.ts. Rien de tout ça ne survit dans l'image :
+# ni tsx ni dotenv ne sont des dépendances de l'application, donc le File
+# Tracing de Next ne les embarque pas, et prisma.config.ts n'est pas copié au
+# runner (cf. plus bas). On transpile donc ici, en CommonJS.
+#
+# `--bundle` absorbe dotenv dans le fichier de sortie ; `--external` laisse
+# dehors les deux seuls paquets que la sortie standalone fournit déjà,
+# @prisma/client et bcrypt. Résultat : un fichier autonome que `node` exécute
+# depuis /app sans aucune installation supplémentaire. Le seed source n'est pas
+# modifié — il tourne à l'identique en local par `prisma db seed`.
+RUN pnpm exec esbuild prisma/seed.ts \
+      --bundle --platform=node --target=node24 --format=cjs \
+      --external:@prisma/client --external:bcrypt \
+      --outfile=prisma/seed.js
+
 # ─────────────────────────────────────────────────────────────────────────
 # Stage 3 — runner : image finale, utilisateur non-root, port 3000.
 # ─────────────────────────────────────────────────────────────────────────
@@ -65,7 +81,8 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # `prisma/` porte le schema et les migrations que lit `migrate deploy` au
-# déploiement. Pas de `COPY node_modules/.prisma` : ce chemin n'existe pas
+# déploiement, ainsi que le `seed.js` transpilé au stage builder. Pas de
+# `COPY node_modules/.prisma` : ce chemin n'existe pas
 # sous pnpm — le client est embarqué par le File Tracing de Next, qui le
 # trace seul depuis le retrait d'`outputFileTracingIncludes` (cf. next.config.ts).
 #

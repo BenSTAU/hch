@@ -1,0 +1,211 @@
+# Pipeline de déploiement HomeCycl'Home — T-J0-08.
+#
+# Quatre jobs enchaînés par `needs:`, sur un artefact UNIQUE : l'image est
+# construite une fois, taguée par le SHA du commit, et promue de staging vers
+# production sans reconstruction. Ce qui est validé en staging est littéralement
+# ce qui part en production (ADR-010, PLAN S3 §3).
+#
+# Actions pinnées aux versions de PLAN S3 §3.
+
+name: Deploy HCH
+
+on:
+  push:
+    branches: [main]
+
+# Un seul déploiement à la fois. `cancel-in-progress: false` et non `true` :
+# un run interrompu pendant `migrate deploy` laisse la base dans un état que
+# personne n'a décrit, et qu'aucun rollback d'image ne rattrape.
+concurrency:
+  group: hch-deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Les deux `.example` sont attendus au dépôt (T-J0-01, T-J0-02) : les
+      # exclure est précisément ce qui distingue un modèle d'un secret. Sans le
+      # `grep -v`, ce contrôle échouerait à chaque run — défaut de PLAN S3 §6
+      # relevé en T-J0-02, corrigé ici.
+      - name: Aucun fichier d'environnement versionné
+        run: |
+          if git ls-files | grep -E '(^|/)\.env(\.[^.]+)?$' | grep -v '\.example$'; then
+            echo "::error::Fichier d'environnement versionné — voir ci-dessus."
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # L'install ne génère pas le client : pnpm 10 n'exécute aucun script
+      # d'installation sans autorisation, et échoue en silence quand elle manque.
+      - run: pnpm exec prisma generate
+
+      - run: pnpm lint
+
+      # `pnpm typecheck` et non `tsc --noEmit` : le script préfixe `next typegen`,
+      # sans quoi tsc échoue sur les types de routes que Next génère dans
+      # `.next/types`, absents d'un arbre jamais buildé.
+      - run: pnpm typecheck
+
+      - run: pnpm test
+
+  build-push:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Deux tags pour deux usages : le SHA est ce que les deux déploiements
+      # référencent — c'est lui qui rend la promotion et le rollback possibles —
+      # et `latest` sert les démarrages manuels d'une pile.
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            benstau/hch:${{ github.sha }}
+            benstau/hch:latest
+          cache-from: type=registry,ref=benstau/hch:buildcache
+          cache-to: type=registry,ref=benstau/hch:buildcache,mode=max
+
+  deploy-staging:
+    needs: build-push
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://hch-staging.glanford.eu
+    steps:
+      - uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          # Le défaut de 10 min ne couvre pas confortablement le `pull` d'une
+          # image de ~900 Mo (mesurée en T-J0-03) suivi des migrations.
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+
+            STACK_DIR=/opt/hch-staging
+            CONTAINER=hch-app-staging
+
+            cd "$STACK_DIR"
+
+            # Le tag EN SERVICE, capturé avant qu'on touche à quoi que ce soit.
+            # C'est la seule cible de rollback valable : le compose résout
+            # `${IMAGE_TAG}`, il ne regarde jamais `latest`. Vide au tout premier
+            # déploiement — il n'y a alors rien vers quoi revenir.
+            PREVIOUS_TAG=$(docker inspect "$CONTAINER" --format='{{.Config.Image}}' 2>/dev/null || echo "")
+
+            export IMAGE_TAG=${{ github.sha }}
+
+            # `--env-file .env.prod` sur TOUTES les invocations : `env_file:`
+            # injecte dans le conteneur mais ne substitue pas les `${VAR}` du
+            # compose. Sans le drapeau, `container_name` vaut la chaîne vide et
+            # compose refuse le fichier.
+            docker compose --env-file .env.prod -f docker-compose.prod.yml pull hch-app
+
+            # Migrations puis seed dans le MÊME conteneur éphémère, dans cet
+            # ordre. Le seed est rejouable par upsert ; il échoue explicitement
+            # si SEED_ADMIN_PASSWORD manque, et `set -e` arrête alors le
+            # déploiement plutôt que de monter une pile sans administrateur.
+            # `-T` : pas de pseudo-TTY, la session SSH n'en fournit aucun.
+            docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm -T hch-app \
+              sh -c "prisma migrate deploy && node prisma/seed.js"
+
+            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d hch-app
+
+            # 30 essais × 2 s. `127.0.0.1` explicite et jamais `localhost` :
+            # sous Alpine celui-ci résout en IPv6 alors que Next écoute en IPv4,
+            # et le wget de BusyBox ne bascule pas.
+            for _ in $(seq 1 30); do
+              if docker exec "$CONTAINER" wget --quiet --tries=1 --spider \
+                 http://127.0.0.1:3000/api/health 2>/dev/null; then
+                echo "✓ healthcheck OK — $CONTAINER"
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "✗ healthcheck KO après 60 s — $CONTAINER"
+            if [ -n "$PREVIOUS_TAG" ]; then
+              echo "rollback vers $PREVIOUS_TAG"
+              export IMAGE_TAG="${PREVIOUS_TAG##*:}"
+              docker compose --env-file .env.prod -f docker-compose.prod.yml up -d hch-app
+            else
+              echo "aucun déploiement antérieur — rien vers quoi revenir"
+            fi
+            exit 1
+
+  # Corps strictement identique à deploy-staging : seules les deux variables de
+  # tête changent. Toute correction apportée à l'un doit l'être à l'autre —
+  # factoriser en action composite si le doublon devient gênant (PLAN S3 §3).
+  deploy-prod:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://hch.glanford.eu
+    steps:
+      - uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+
+            STACK_DIR=/opt/hch-prod
+            CONTAINER=hch-app-prod
+
+            cd "$STACK_DIR"
+
+            PREVIOUS_TAG=$(docker inspect "$CONTAINER" --format='{{.Config.Image}}' 2>/dev/null || echo "")
+
+            export IMAGE_TAG=${{ github.sha }}
+
+            docker compose --env-file .env.prod -f docker-compose.prod.yml pull hch-app
+
+            docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm -T hch-app \
+              sh -c "prisma migrate deploy && node prisma/seed.js"
+
+            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d hch-app
+
+            for _ in $(seq 1 30); do
+              if docker exec "$CONTAINER" wget --quiet --tries=1 --spider \
+                 http://127.0.0.1:3000/api/health 2>/dev/null; then
+                echo "✓ healthcheck OK — $CONTAINER"
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "✗ healthcheck KO après 60 s — $CONTAINER"
+            if [ -n "$PREVIOUS_TAG" ]; then
+              echo "rollback vers $PREVIOUS_TAG"
+              export IMAGE_TAG="${PREVIOUS_TAG##*:}"
+              docker compose --env-file .env.prod -f docker-compose.prod.yml up -d hch-app
+            else
+              echo "aucun déploiement antérieur — rien vers quoi revenir"
+            fi
+            exit 1
