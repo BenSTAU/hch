@@ -10,8 +10,11 @@
 // un nouveau champ société ne requiert pas de migration SQL »*. Un formulaire
 // à cinq champs codés en dur annulerait cette propriété.
 //
-// `jest-axe` arrive en T-J0-09 : les vérifications RGAA ci-dessous sont
-// manuelles et ne remplacent pas un audit outillé.
+// Les vérifications RGAA ci-dessous sont manuelles — elles décrivent ce que la
+// structure DOIT porter. `jest-axe`, posé en T-J0-09, les complète sans les
+// remplacer : un audit outillé attrape ce qu'on n'a pas pensé à écrire, pas ce
+// qu'on a décidé de rendre.
+import { axe } from "jest-axe";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -336,5 +339,16 @@ describe("SettingsForm — accessibilité (contrôles manuels, jest-axe en T-J0-
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent ?? "").not.toHaveLength(0),
     );
+  });
+});
+
+describe("SettingsForm — audit outillé", () => {
+  it("ne présente aucune violation axe", async () => {
+    const { container } = render(<SettingsForm settings={SETTINGS} />);
+
+    // RGAA niveau A sur toute l'application v1 (PLAN S4 §2). Le pendant E2E
+    // couvre `/connexion`, mise en AA par la même section — ici on tient la
+    // baseline sur l'écran d'administration.
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

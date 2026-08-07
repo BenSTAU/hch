@@ -1,9 +1,16 @@
-# Pipeline de déploiement HomeCycl'Home — T-J0-08.
+# Pipeline de déploiement HomeCycl'Home — T-J0-08, étendu par T-J0-09.
 #
-# Quatre jobs enchaînés par `needs:`, sur un artefact UNIQUE : l'image est
+# Cinq jobs enchaînés par `needs:`, sur un artefact UNIQUE : l'image est
 # construite une fois, taguée par le SHA du commit, et promue de staging vers
 # production sans reconstruction. Ce qui est validé en staging est littéralement
 # ce qui part en production (ADR-010, PLAN S3 §3).
+#
+#   test → build-push → e2e → deploy-staging → deploy-prod
+#
+# Les E2E se jouent à DEUX endroits, contre deux surfaces distinctes : le job
+# `e2e` est une barrière qui teste l'image en isolation, les steps `smoke` des
+# deux déploiements testent la chaîne réellement servie. Ce ne sont pas des
+# doublons (cadrage T-J0-09 du 2026-08-07, ADR-014 §Stack amendé).
 #
 # Actions pinnées aux versions de PLAN S3 §3.
 
@@ -76,21 +83,93 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Deux tags pour deux usages : le SHA est ce que les deux déploiements
-      # référencent — c'est lui qui rend la promotion et le rollback possibles —
-      # et `latest` sert les démarrages manuels d'une pile.
+      # Le SHA SEULEMENT. `latest` est poussé par le job `e2e`, après tests
+      # verts : depuis T-J0-09 il ne désigne plus « la dernière image
+      # construite » mais « la dernière image qui a passé les E2E ». Le
+      # taguer ici republierait une image potentiellement cassée, puisque la
+      # barrière a besoin qu'elle soit poussée pour la tester.
       - uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: |
-            benstau/hch:${{ github.sha }}
-            benstau/hch:latest
+          tags: benstau/hch:${{ github.sha }}
           cache-from: type=registry,ref=benstau/hch:buildcache
           cache-to: type=registry,ref=benstau/hch:buildcache,mode=max
 
-  deploy-staging:
+  # Barrière pré-déploiement : l'image face à une base jetable, sans nginx, sans
+  # VPS, sans réseau de production. Le smoke des deux jobs suivants couvre
+  # l'autre surface — la chaîne déployée. Deux surfaces, pas un doublon
+  # (cadrage T-J0-09 du 2026-08-07).
+  e2e:
     needs: build-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Le scénario lit `audit_logs` par Prisma — la seule des deux surfaces où
+      # c'est possible, les bases déployées n'étant joignables ni du runner ni
+      # d'internet (PLAN S3 §2).
+      - run: pnpm exec prisma generate
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Migrations et seed AVANT de lever l'application, et dans le même
+      # conteneur éphémère — exactement la séquence des deux déploiements.
+      # L'exercer ici, c'est la tester avant qu'elle ne touche un environnement.
+      - name: Migrations et seed sur la base jetable
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker compose -f docker-compose.test.yml --profile e2e run --rm -T hch-app-test \
+            sh -c "prisma migrate deploy && node prisma/seed.js"
+
+      - name: Lever l'image
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: docker compose -f docker-compose.test.yml --profile e2e up -d --wait
+
+      - run: pnpm exec playwright install --with-deps chromium
+
+      - name: Barrière Playwright
+        env:
+          HCH_E2E_BASE_URL: http://localhost:3000
+          # Port publié par docker-compose.test.yml — l'application, elle,
+          # joint la base par son nom de service sur le réseau du projet.
+          DATABASE_URL: postgresql://hch:hch@localhost:5435/hch
+          # Les mêmes valeurs jetables que le compose : elles ne sont pas des
+          # secrets, et le dépôt est public.
+          SEED_ADMIN_PASSWORD: e2e-admin-password
+        run: pnpm exec playwright test --project=barriere
+
+      - name: Rapport Playwright
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-barriere
+          path: playwright-report/
+          retention-days: 7
+
+      # Steps suivants ignorés si la barrière est rouge : c'est ce qui fait de
+      # `latest` un tag de promotion et non de construction.
+      - name: Promouvoir l'image en latest
+        run: |
+          docker tag benstau/hch:${{ github.sha }} benstau/hch:latest
+          docker push benstau/hch:latest
+
+  deploy-staging:
+    needs: e2e
     runs-on: ubuntu-latest
     environment:
       name: staging
@@ -117,6 +196,11 @@ jobs:
             # `${IMAGE_TAG}`, il ne regarde jamais `latest`. Vide au tout premier
             # déploiement — il n'y a alors rien vers quoi revenir.
             PREVIOUS_TAG=$(docker inspect "$CONTAINER" --format='{{.Config.Image}}' 2>/dev/null || echo "")
+            # Persisté sur la pile : le smoke tourne dans un AUTRE step, et
+            # une variable de shell ne traverse pas la frontière SSH. Après le
+            # `up -d`, `{{.Config.Image}}` retournerait le nouveau tag — cette
+            # valeur n'est plus recalculable une fois le déploiement fait.
+            printf '%s' "$PREVIOUS_TAG" > .previous-tag
 
             export IMAGE_TAG=${{ github.sha }}
 
@@ -158,6 +242,76 @@ jobs:
             fi
             exit 1
 
+      # Le smoke est un STEP, jamais un job : un job qui déclare
+      # `environment: staging` ou `production` redéclenche la porte, et le
+      # même run demanderait une seconde approbation.
+      #
+      # Outillage monté APRÈS le déploiement, à dessein : ~2 min d'install ne
+      # doivent pas retarder la mise en service.
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm exec playwright install --with-deps chromium
+
+      - name: Smoke staging
+        id: smoke
+        env:
+          HCH_E2E_BASE_URL: https://hch-staging.glanford.eu
+          # Staging est derrière `auth_basic`. Playwright passe les
+          # identifiants par `httpCredentials`, jamais dans l'URL.
+          HCH_E2E_BASIC_USER: ${{ secrets.STAGING_BASIC_AUTH_USER }}
+          HCH_E2E_BASIC_PASSWORD: ${{ secrets.STAGING_BASIC_AUTH_PASSWORD }}
+          # Le seed rafraîchit le hash à chaque déploiement : cette valeur doit
+          # être exactement celle du .env.prod de la pile.
+          SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          HCH_SMOKE_MODE: write
+        run: pnpm exec playwright test --project=smoke
+
+      - name: Rapport Playwright
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-smoke-staging
+          path: playwright-report/
+          retention-days: 7
+
+      # Le healthcheck peut passer et le smoke échouer : le conteneur répond
+      # mais l'application ne fait pas ce qu'elle doit. On revient à l'image
+      # précédente.
+      #
+      # ⚠️ Les MIGRATIONS, elles, ne sont pas défaites — elles ont été
+      # appliquées avant le healthcheck. L'image précédente se retrouve donc
+      # face à un schéma plus récent. C'est le point ouvert « rollback des
+      # migrations », que ce rollback-ci ne referme pas.
+      - name: Rollback — le smoke a échoué
+        if: failure() && steps.smoke.outcome == 'failure'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /opt/hch-staging
+
+            PREVIOUS_TAG=$(cat .previous-tag 2>/dev/null || echo "")
+            if [ -z "$PREVIOUS_TAG" ]; then
+              echo "aucun déploiement antérieur enregistré — rien vers quoi revenir"
+              exit 0
+            fi
+
+            export IMAGE_TAG="${PREVIOUS_TAG##*:}"
+            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d hch-app
+            echo "rollback effectué vers $PREVIOUS_TAG — migrations NON défaites"
+
   # Corps strictement identique à deploy-staging : seules les deux variables de
   # tête changent. Toute correction apportée à l'un doit l'être à l'autre —
   # factoriser en action composite si le doublon devient gênant (PLAN S3 §3).
@@ -183,6 +337,11 @@ jobs:
             cd "$STACK_DIR"
 
             PREVIOUS_TAG=$(docker inspect "$CONTAINER" --format='{{.Config.Image}}' 2>/dev/null || echo "")
+            # Persisté sur la pile : le smoke tourne dans un AUTRE step, et
+            # une variable de shell ne traverse pas la frontière SSH. Après le
+            # `up -d`, `{{.Config.Image}}` retournerait le nouveau tag — cette
+            # valeur n'est plus recalculable une fois le déploiement fait.
+            printf '%s' "$PREVIOUS_TAG" > .previous-tag
 
             export IMAGE_TAG=${{ github.sha }}
 
@@ -211,3 +370,58 @@ jobs:
               echo "aucun déploiement antérieur — rien vers quoi revenir"
             fi
             exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm exec playwright install --with-deps chromium
+
+      # LECTURE SEULE — `read` et non `write`. Décision du cadrage T-J0-09 :
+      # un test qui écrit en production à chaque déploiement laisse une donnée
+      # que rien ne nettoie (le seed établit sans rétablir), et une clé de
+      # sonde dédiée serait visible dans l'écran d'administration, dont le
+      # formulaire est générique. Pas d'`auth_basic` ici, la prod est publique.
+      - name: Smoke production
+        id: smoke
+        env:
+          HCH_E2E_BASE_URL: https://hch.glanford.eu
+          SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          HCH_SMOKE_MODE: read
+        run: pnpm exec playwright test --project=smoke
+
+      - name: Rapport Playwright
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-smoke-prod
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Rollback — le smoke a échoué
+        if: failure() && steps.smoke.outcome == 'failure'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /opt/hch-prod
+
+            PREVIOUS_TAG=$(cat .previous-tag 2>/dev/null || echo "")
+            if [ -z "$PREVIOUS_TAG" ]; then
+              echo "aucun déploiement antérieur enregistré — rien vers quoi revenir"
+              exit 0
+            fi
+
+            export IMAGE_TAG="${PREVIOUS_TAG##*:}"
+            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d hch-app
+            echo "rollback effectué vers $PREVIOUS_TAG — migrations NON défaites"
