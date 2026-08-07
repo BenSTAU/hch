@@ -708,12 +708,15 @@ serveur et jointe par un tunnel SSH. Les deux postes attaquent **la même base**
 ### Savoir où tu es
 
 ```bash
-docker compose version    # répond → PC maison · échoue → Shadow
+docker info               # répond → PC maison · échoue → Shadow
 ```
 
 - **MUST** — poser cette question **avant** de proposer la moindre commande
   `docker`. Une commande Docker sur Shadow ne produit pas une erreur parlante,
   elle produit une session perdue à diagnostiquer un faux problème.
+- **MUST NOT** — utiliser `docker compose version` comme test : il **répond sur
+  Shadow** (CLI v5.1.3 installée) alors que le daemon est absent. Faux positif
+  constaté le 2026-08-07. Seul `docker info` interroge le daemon.
 - **DEFAULT** — `T-J0-02` (Dockerfile) et `T-J0-09` (`docker-compose.test.yml`)
   se traitent **au PC maison**, ce sont les deux seules tâches du jalon 0 qui
   exigent réellement Docker en local. Le piège `bcrypt` natif sur Alpine ne se
