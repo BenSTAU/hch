@@ -17,3 +17,9 @@ onlyBuiltDependencies:
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
+  # msw ne pose au postinstall que `mockServiceWorker.js` dans `public/`, pour
+  # son mode NAVIGATEUR. HCH ne l'utilise que côté Node, dans Vitest — les E2E
+  # Playwright tapent des URL réelles et n'ont rien à intercepter (T-J0-09).
+  # Déclaré ici plutôt que laissé en warning : un script ignoré doit l'être
+  # sciemment, sinon on ne distingue plus l'inoffensif du cassant.
+  - msw

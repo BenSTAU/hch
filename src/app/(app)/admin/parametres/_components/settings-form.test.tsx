@@ -10,8 +10,11 @@
 // un nouveau champ société ne requiert pas de migration SQL »*. Un formulaire
 // à cinq champs codés en dur annulerait cette propriété.
 //
-// `jest-axe` arrive en T-J0-09 : les vérifications RGAA ci-dessous sont
-// manuelles et ne remplacent pas un audit outillé.
+// Les vérifications RGAA ci-dessous sont manuelles — elles décrivent ce que la
+// structure DOIT porter. `jest-axe`, posé en T-J0-09, les complète sans les
+// remplacer : un audit outillé attrape ce qu'on n'a pas pensé à écrire, pas ce
+// qu'on a décidé de rendre.
+import { axe } from "jest-axe";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -276,9 +279,9 @@ describe("SettingsForm — accessibilité (contrôles manuels, jest-axe en T-J0-
     // sont bien dans le DOM avant toute soumission.
     //
     // Limite explicite de ce test : jsdom n'applique pas Tailwind, donc il ne
-    // dit rien de `empty:hidden`, qui pose `display:none` tant que la région
-    // est vide en conditions réelles. Ce point-là ne se vérifie qu'au
-    // navigateur.
+    // dit rien du rendu réel des deux régions. `empty:hidden`, que cette note
+    // visait à l'origine, a depuis été retiré de `settings-form.tsx` — c'est
+    // précisément lui qui rendait l'annonce peu fiable.
     render(<SettingsForm settings={SETTINGS} />);
 
     expect(screen.getByRole("alert")).toBeInTheDocument();
@@ -307,13 +310,12 @@ describe("SettingsForm — accessibilité (contrôles manuels, jest-axe en T-J0-
   });
 
   it("ne laisse jamais une soumission échouer en silence", async () => {
-    // ⚠️ CE TEST EST ROUGE — bug rapporté, pas corrigé ici.
-    //
-    // `SettingsForm` lit `result.data?.error` et `result.serverError`, jamais
-    // `result.validationErrors`. Quand Zod refuse la charge utile, l'action
-    // renvoie donc un résultat que le formulaire n'interprète pas : le bouton
-    // se réactive, aucune région ne bouge, et l'administrateur voit un clic
-    // sans effet.
+    // Ce test a été ROUGE : `SettingsForm` lisait `result.data?.error` et
+    // `result.serverError`, jamais `result.validationErrors`. Quand Zod
+    // refusait la charge utile, le bouton se réactivait, aucune région ne
+    // bougeait, et l'administrateur voyait un clic sans effet. Corrigé depuis
+    // (`settings-form.tsx` lit désormais les trois canaux) — le test est vert
+    // et garde le cas sous surveillance.
     //
     // Atteignable : `updateSettingsSchema` exige `settings.min(1)`, et la page
     // rend zéro champ si `app_settings` est vide (base fraîche non seedée,
@@ -336,5 +338,16 @@ describe("SettingsForm — accessibilité (contrôles manuels, jest-axe en T-J0-
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent ?? "").not.toHaveLength(0),
     );
+  });
+});
+
+describe("SettingsForm — audit outillé", () => {
+  it("ne présente aucune violation axe", async () => {
+    const { container } = render(<SettingsForm settings={SETTINGS} />);
+
+    // RGAA niveau A sur toute l'application v1 (PLAN S4 §2). Le pendant E2E
+    // couvre `/connexion`, mise en AA par la même section — ici on tient la
+    // baseline sur l'écran d'administration.
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

@@ -45,3 +45,52 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Barrière pré-déploiement (T-J0-09) — l'IMAGE de production, celle que
+  # `build-push` vient de construire, face à la base jetable ci-dessus.
+  #
+  # Sous profil : `docker compose -f docker-compose.test.yml up -d` ne monte
+  # que Postgres, comme avant. Il faut `--profile e2e` pour lever l'application.
+  # Les tests d'intégration lourds n'en ont pas besoin, seuls les E2E si.
+  #
+  # C'est ICI que se joue l'amendement ADR-014 du 2026-08-07 : Playwright tape
+  # l'artefact réellement déployé — node:24-alpine, sortie standalone, USER
+  # nextjs — et non un `next start` de runner, qui serait un troisième artefact
+  # ni testé ailleurs ni déployé nulle part.
+  hch-app-test:
+    profiles: [e2e]
+    image: benstau/hch:${IMAGE_TAG:-latest}
+    container_name: hch-app-test
+    depends_on:
+      hch-postgres-test:
+        condition: service_healthy
+    # L'application joint la base par le nom de service sur le réseau du
+    # projet compose, jamais par le port publié : celui-ci n'existe que pour
+    # les outils de l'hôte (Playwright, psql).
+    environment:
+      DATABASE_URL: postgresql://hch:hch@hch-postgres-test:5432/hch
+      # Valeurs en clair, au même titre que les identifiants Postgres
+      # ci-dessus : base éphémère, liée à la loopback, détruite à chaque run.
+      # Un secret de test qui ressemble à un secret de production est une
+      # invitation à copier l'un dans l'autre.
+      SESSION_SECRET: e2e-session-secret-jetable-32-octets-au-moins
+      SEED_ADMIN_PASSWORD: e2e-admin-password
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      # 127.0.0.1 explicite, jamais `localhost` : sous Alpine celui-ci résout
+      # en IPv6 alors que Next écoute en IPv4, et le wget de BusyBox ne
+      # bascule pas. Même piège qu'en production (PLAN S3 §2).
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1:3000/api/health",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
