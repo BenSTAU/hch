@@ -44,6 +44,10 @@ yarn-error.log*
 # retirée à son arrêt. Si elle traîne après un plantage, la supprimer.
 .claude/.testeur-actif
 
+# seed transpilé par esbuild — artefact de build, produit au stage builder du
+# Dockerfile et jamais commité. Le TypeScript reste la source.
+/prisma/seed.js
+
 # vercel
 .vercel
 

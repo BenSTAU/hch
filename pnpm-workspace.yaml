@@ -1,10 +1,13 @@
 # pnpm 10 n'exécute aucun script d'installation sans autorisation explicite.
-# Trois paquets en ont réellement besoin, et les trois échouent en silence sans
-# cette liste — `pnpm approve-builds` est interactif, donc inutilisable en CI.
+# Quatre paquets en ont réellement besoin, et les quatre échouent en silence
+# sans cette liste — `pnpm approve-builds` est interactif, donc inutilisable
+# en CI.
 #   @prisma/client · génère le client au postinstall
 #   prisma         · télécharge les engines du CLI (cf. Dockerfile, stage runner)
 #   bcrypt         · module natif, binaire prébuilt ou compilation node-gyp
-#   esbuild        · binaire de tsx, qui exécute prisma/seed.ts
+#   esbuild        · binaire posé au postinstall. Moteur de tsx, qui exécute
+#                    prisma/seed.ts en local, ET transpileur du même seed au
+#                    stage builder du Dockerfile (T-J0-08)
 onlyBuiltDependencies:
   - "@prisma/client"
   - prisma
