@@ -5,16 +5,20 @@
 // connexion au niveau **AA**, quand tout le reste de la v1 est au niveau A,
 // au motif que c'est le point d'entrée absolu de l'application.
 //
-// `jest-axe` n'est pas installé (il arrive en T-J0-09 avec `@axe-core/playwright`)
-// et je ne peux pas l'ajouter : les tests ci-dessous vérifient donc à la main
-// ce qu'un audit outillé vérifierait. Ils ne le remplacent pas.
+// Les tests ci-dessous vérifient à la main ce qu'un audit outillé vérifie.
+// `jest-axe` est posé depuis T-J0-09 et couvre cet écran en E2E, au navigateur
+// — le seul endroit où les contrastes se mesurent vraiment.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const login = vi.fn();
+// C'est `loginFormAction` que le formulaire référence depuis T-J0-04 fix :
+// `useActionState` l'appelle avec `(prevState, formData)`, et c'est cette
+// signature qui rend la soumission fonctionnelle avant hydratation.
+const loginFormAction = vi.fn();
 vi.mock("@/lib/actions/auth/login", () => ({
-  login: (input: unknown) => login(input),
+  loginFormAction: (prevState: unknown, formData: FormData) =>
+    loginFormAction(prevState, formData),
 }));
 
 const { LoginForm } = await import("./login-form");
@@ -103,7 +107,7 @@ describe("LoginForm — refus", () => {
     // WCAG 4.1.3 (AA) « Status Messages ». `role="alert"` porte un
     // `aria-live="assertive"` implicite : le lecteur d'écran annonce le
     // message sans que l'utilisateur ait à aller le chercher.
-    login.mockResolvedValue({ data: { error: LOGIN_REFUSED_MESSAGE } });
+    loginFormAction.mockResolvedValue({ error: LOGIN_REFUSED_MESSAGE });
     render(<LoginForm />);
     const user = userEvent.setup();
 
@@ -118,7 +122,7 @@ describe("LoginForm — refus", () => {
 
   it("ramène le focus sur le premier champ après un refus", async () => {
     // WCAG 3.3.3 (AA), exigé nommément par US-COMPTE-CONNECTER.
-    login.mockResolvedValue({ data: { error: LOGIN_REFUSED_MESSAGE } });
+    loginFormAction.mockResolvedValue({ error: LOGIN_REFUSED_MESSAGE });
     render(<LoginForm />);
     const user = userEvent.setup();
 
@@ -136,7 +140,7 @@ describe("LoginForm — refus", () => {
     const messages: string[] = [];
 
     for (const _cause of ["email inconnu", "mot de passe faux", "désactivé"]) {
-      login.mockResolvedValue({ data: { error: LOGIN_REFUSED_MESSAGE } });
+      loginFormAction.mockResolvedValue({ error: LOGIN_REFUSED_MESSAGE });
       const view = render(<LoginForm />);
       const user = userEvent.setup();
 
@@ -155,8 +159,8 @@ describe("LoginForm — refus", () => {
     // `handleServerError` remplace déjà le détail côté serveur
     // (src/lib/safe-action.ts:13-16). Ce test vérifie que le formulaire
     // affiche ce qu'on lui donne sans rien reconstituer.
-    login.mockResolvedValue({
-      serverError: "Une erreur est survenue. Réessayez dans un instant.",
+    loginFormAction.mockResolvedValue({
+      error: "Une erreur est survenue. Réessayez dans un instant.",
     });
     render(<LoginForm />);
     const user = userEvent.setup();
@@ -178,7 +182,7 @@ describe("LoginForm — refus", () => {
     // doit pouvoir corriger seulement l'email. On vérifie en revanche que la
     // valeur n'est pas recopiée ailleurs (attribut `value` sérialisé, message
     // d'erreur, champ caché).
-    login.mockResolvedValue({ data: { error: LOGIN_REFUSED_MESSAGE } });
+    loginFormAction.mockResolvedValue({ error: LOGIN_REFUSED_MESSAGE });
     const { container } = render(<LoginForm />);
     const user = userEvent.setup();
 
@@ -194,12 +198,10 @@ describe("LoginForm — refus", () => {
 describe("LoginForm — soumission", () => {
   it("se soumet à la touche Entrée, sans passer par la souris", async () => {
     // WCAG 2.1.1 (A) : tout ce qui se fait à la souris doit se faire au
-    // clavier. Le formulaire ne pose pas `action={login}` mais un
-    // `onSubmit` + `preventDefault`
-    // (src/app/(auth)/connexion/_components/login-form.tsx:32-39) : c'est
-    // l'événement `submit` natif qui doit rester le déclencheur, sinon la
-    // touche Entrée cesse de fonctionner sans que rien ne le signale.
-    login.mockResolvedValue({ data: { error: LOGIN_REFUSED_MESSAGE } });
+    // clavier. Le formulaire pose `action={formAction}` : c'est l'événement
+    // `submit` natif qui reste le déclencheur, et la touche Entrée doit
+    // continuer de le produire.
+    loginFormAction.mockResolvedValue({ error: LOGIN_REFUSED_MESSAGE });
     render(<LoginForm />);
     const user = userEvent.setup();
 
@@ -212,21 +214,36 @@ describe("LoginForm — soumission", () => {
       "un-mot-de-passe{Enter}",
     );
 
-    await waitFor(() => expect(login).toHaveBeenCalledOnce());
+    await waitFor(() => expect(loginFormAction).toHaveBeenCalledOnce());
   });
 
   it("transmet les identifiants saisis à la Server Action", async () => {
-    login.mockResolvedValue({ data: { error: LOGIN_REFUSED_MESSAGE } });
+    loginFormAction.mockResolvedValue({ error: LOGIN_REFUSED_MESSAGE });
     render(<LoginForm />);
     const user = userEvent.setup();
 
     await submit(user);
 
-    await waitFor(() =>
-      expect(login).toHaveBeenCalledWith({
-        email: "admin@homecyclhome.fr",
-        password: "un-mot-de-passe",
-      }),
-    );
+    // Un `FormData` et non un objet : c'est ce que `useActionState` passe, et
+    // c'est ce qui permet au navigateur de soumettre sans JavaScript.
+    await waitFor(() => expect(loginFormAction).toHaveBeenCalledOnce());
+    const formData = loginFormAction.mock.calls[0]?.[1] as FormData;
+    expect(formData).toBeInstanceOf(FormData);
+    expect(formData.get("email")).toBe("admin@homecyclhome.fr");
+    expect(formData.get("password")).toBe("un-mot-de-passe");
+  });
+
+  it("porte `next` dans un champ caché, pas dans une prop", async () => {
+    // Une prop de composant ne traverse pas une soumission native : sans ce
+    // champ, la destination serait perdue dès que React n'a pas hydraté.
+    loginFormAction.mockResolvedValue({ error: LOGIN_REFUSED_MESSAGE });
+    render(<LoginForm next="/admin/parametres" />);
+    const user = userEvent.setup();
+
+    await submit(user);
+
+    await waitFor(() => expect(loginFormAction).toHaveBeenCalledOnce());
+    const formData = loginFormAction.mock.calls[0]?.[1] as FormData;
+    expect(formData.get("next")).toBe("/admin/parametres");
   });
 });

@@ -252,3 +252,32 @@ test("un cookie de session forgé franchit le proxy mais pas le DAL", async ({
   await expect(page).toHaveURL(/\/connexion/);
   await expect(page.getByLabel(LIBELLE)).toHaveCount(0);
 });
+
+/// Non-régression du correctif T-J0-04 fix — le cœur du sujet.
+///
+/// Avec `javaScriptEnabled: false`, aucun code React ne tourne : c'est
+/// exactement la fenêtre qui existait avant hydratation. Le formulaire doit
+/// tout de même se soumettre, en POST vers la Server Action, et aboutir.
+///
+/// Ce test rougirait si `<form action={…}>` redevenait un `onSubmit` : sans
+/// JavaScript la soumission repartirait en GET, l'URL porterait
+/// `?email=…&password=…` et la redirection n'aurait pas lieu.
+test.describe("sans JavaScript", () => {
+  test.use({ javaScriptEnabled: false });
+
+  test("la connexion fonctionne et ne met rien en query string", async ({
+    page,
+  }) => {
+    await page.goto("/connexion");
+    await page.getByLabel("Adresse email").fill(ADMIN_EMAIL);
+    await page.getByLabel("Mot de passe").fill(motDePasseAdmin());
+    await page.getByRole("button", { name: "Se connecter" }).click();
+
+    await expect(page).toHaveURL(/\/admin\/parametres$/);
+
+    // L'assertion qui nomme le défaut : aucune valeur saisie ne doit se
+    // retrouver dans l'URL, à aucun moment du parcours.
+    expect(page.url()).not.toContain("password");
+    expect(page.url()).not.toContain("email");
+  });
+});
