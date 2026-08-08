@@ -1,0 +1,371 @@
+// @vitest-environment node
+//
+// Helpers métier de l'inscription et de l'activation. CLAUDE.md §Server Actions
+// impose de les séparer de la Server Action : aucun `revalidatePath`, aucun
+// `redirect`, aucun contexte Next — donc testables ici, en isolation.
+//
+// Ce qu'ils portent et qui ne peut pas vivre ailleurs : les trois écritures qui
+// doivent être atomiques. Un `users` créé sans son `auth_providers` est un
+// compte sans mot de passe ; un jeton consommé sans `is_active` passé à `true`
+// est un compte définitivement inactivable, puisque l'anti-rejeu a déjà mordu.
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const userFindUnique = vi.fn();
+const userCreate = vi.fn();
+const userUpdate = vi.fn();
+const authProviderCreate = vi.fn();
+const tokenCreate = vi.fn();
+const tokenDeleteMany = vi.fn();
+const tokenFindUnique = vi.fn();
+const tokenUpdate = vi.fn();
+
+const tx = {
+  user: { create: userCreate, update: userUpdate },
+  authProvider: { create: authProviderCreate },
+  verificationToken: {
+    create: tokenCreate,
+    deleteMany: tokenDeleteMany,
+    update: tokenUpdate,
+  },
+};
+
+vi.mock("@/lib/db/client", () => ({
+  db: {
+    user: { findUnique: userFindUnique },
+    verificationToken: { findUnique: tokenFindUnique },
+    $transaction: (callback: (client: typeof tx) => unknown) => callback(tx),
+  },
+}));
+
+const {
+  EMAIL_VERIFICATION_PURPOSE,
+  activateAccountWithToken,
+  createLocalAccount,
+  findAccountForSignup,
+  findEmailVerificationToken,
+  replacePendingEmailVerificationToken,
+} = await import("./auth");
+
+const MAINTENANT = new Date("2026-08-08T12:00:00.000Z");
+const EXPIRE_LE = new Date("2026-08-09T12:00:00.000Z");
+
+const NOUVEAU = {
+  email: "camille@example.test",
+  firstname: "Camille",
+  lastname: "Durand",
+  passwordHash: "$2b$10$hashbcryptfictif",
+  tokenHash: "a".repeat(64),
+  expiresAt: EXPIRE_LE,
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  userFindUnique.mockResolvedValue(null);
+  tokenFindUnique.mockResolvedValue(null);
+  userCreate.mockResolvedValue({ id: "user-1" });
+  tokenDeleteMany.mockResolvedValue({ count: 0 });
+});
+
+describe("EMAIL_VERIFICATION_PURPOSE", () => {
+  it("vaut la valeur que le CHECK SQL accepte", () => {
+    // Le dictionnaire §verification_tokens fixe l'énumération à
+    // `email_verification | password_reset`, tenue par un CHECK posé en
+    // migration 001. Une faute de frappe ici ne se verrait qu'à l'insertion.
+    expect(EMAIL_VERIFICATION_PURPOSE).toBe("email_verification");
+  });
+});
+
+describe("findAccountForSignup", () => {
+  it("renvoie null quand l'email est libre", async () => {
+    expect(await findAccountForSignup("libre@example.test")).toBeNull();
+  });
+
+  it("ne filtre PAS les comptes pseudonymisés", async () => {
+    // `deletedAt` n'est pas un filtre ici, à la différence de
+    // `findUserForLogin`. L'index unique sur `users.email` ne connaît pas cette
+    // nuance : masquer une ligne existante ferait échouer l'insertion sur une
+    // contrainte, donc en 500, au lieu du message générique attendu.
+    await findAccountForSignup("camille@example.test");
+
+    const [args] = userFindUnique.mock.calls[0] as [{ where: object }];
+    expect(args.where).toEqual({ email: "camille@example.test" });
+  });
+
+  it("dit si le compte a déjà consommé un jeton d'activation", async () => {
+    // C'est le discriminant du renvoi. `is_active` ne peut pas le porter : le
+    // dictionnaire a consolidé `is_activated` DANS `is_active` en v2
+    // (mcd-dictionnaire.md:89 et :484), si bien qu'un compte désactivé par un
+    // administrateur et un compte jamais activé sont le même état. Un renvoi
+    // qui se fierait à `is_active` réactiverait un compte que l'admin a fermé.
+    userFindUnique.mockResolvedValue({
+      id: "user-1",
+      firstname: "Camille",
+      isActive: false,
+      verificationTokens: [{ usedAt: MAINTENANT }],
+    });
+
+    const compte = await findAccountForSignup("camille@example.test");
+
+    expect(compte).toEqual({
+      id: "user-1",
+      firstname: "Camille",
+      isActive: false,
+      hasCompletedEmailVerification: true,
+    });
+  });
+
+  it("remonte le prénom ENREGISTRÉ, pas celui du formulaire", async () => {
+    // Le renvoi d'activation part vers un compte qui existe déjà. Personnaliser
+    // l'email avec le prénom soumis laisserait un tiers choisir le texte d'un
+    // message envoyé au titulaire de l'adresse.
+    userFindUnique.mockResolvedValue({
+      id: "user-1",
+      firstname: "Camille",
+      isActive: false,
+      verificationTokens: [],
+    });
+
+    const compte = await findAccountForSignup("camille@example.test");
+
+    expect(compte?.firstname).toBe("Camille");
+  });
+
+  it("dit qu'aucun jeton n'a été consommé quand la liste est vide", async () => {
+    userFindUnique.mockResolvedValue({
+      id: "user-1",
+      firstname: "Camille",
+      isActive: false,
+      verificationTokens: [],
+    });
+
+    const compte = await findAccountForSignup("camille@example.test");
+
+    expect(compte?.hasCompletedEmailVerification).toBe(false);
+  });
+
+  it("ne considère que les jetons d'activation consommés", async () => {
+    // Un jeton `password_reset` consommé ne prouve rien sur l'activation, et un
+    // jeton d'activation non consommé encore moins.
+    await findAccountForSignup("camille@example.test");
+
+    const [args] = userFindUnique.mock.calls[0] as [
+      { select: { verificationTokens: { where: object } } },
+    ];
+    expect(args.select.verificationTokens.where).toEqual({
+      purpose: "email_verification",
+      usedAt: { not: null },
+    });
+  });
+});
+
+describe("createLocalAccount", () => {
+  it("crée le compte inactif, avec le rôle client", async () => {
+    // US-COMPTE-CREER §Cas nominal : `roles = ['ROLE_CLIENT']`,
+    // `is_active = false`. La colonne a `DEFAULT true` (prisma/schema.prisma:68)
+    // — l'oublier créerait un compte utilisable sans jamais vérifier l'email.
+    await createLocalAccount(NOUVEAU);
+
+    expect(userCreate).toHaveBeenCalledWith({
+      data: {
+        email: "camille@example.test",
+        firstname: "Camille",
+        lastname: "Durand",
+        roles: ["ROLE_CLIENT"],
+        isActive: false,
+      },
+      select: { id: true },
+    });
+  });
+
+  it("attache le provider local porteur du hash", async () => {
+    await createLocalAccount(NOUVEAU);
+
+    expect(authProviderCreate).toHaveBeenCalledWith({
+      data: {
+        userId: "user-1",
+        provider: "local",
+        passwordHash: "$2b$10$hashbcryptfictif",
+      },
+    });
+  });
+
+  it("émet le jeton d'activation non consommé", async () => {
+    await createLocalAccount(NOUVEAU);
+
+    expect(tokenCreate).toHaveBeenCalledWith({
+      data: {
+        userId: "user-1",
+        tokenHash: "a".repeat(64),
+        purpose: "email_verification",
+        expiresAt: EXPIRE_LE,
+      },
+    });
+  });
+
+  it("renvoie l'identifiant créé", async () => {
+    expect(await createLocalAccount(NOUVEAU)).toEqual({ userId: "user-1" });
+  });
+
+  it("écrit les trois lignes dans la MÊME transaction", async () => {
+    // Sans atomicité, un échec après `users` laisse un compte sans mot de passe
+    // et sans jeton : l'email est pris, l'inscription échoue à jamais pour cette
+    // personne, et le message générique lui dira que tout va bien.
+    await createLocalAccount(NOUVEAU);
+
+    expect(userCreate.mock.calls).toHaveLength(1);
+    expect(authProviderCreate.mock.calls).toHaveLength(1);
+    expect(tokenCreate.mock.calls).toHaveLength(1);
+  });
+
+  it("n'écrit aucun mot de passe en clair", async () => {
+    await createLocalAccount(NOUVEAU);
+
+    const ecrit = JSON.stringify([
+      userCreate.mock.calls,
+      authProviderCreate.mock.calls,
+      tokenCreate.mock.calls,
+    ]);
+    expect(ecrit).not.toContain("un-mot-de-passe");
+  });
+});
+
+describe("replacePendingEmailVerificationToken", () => {
+  it("supprime les jetons d'activation en attente avant d'en émettre un", async () => {
+    // US-COMPTE-ACTIVER §Renvoi : « un nouveau token est généré (précédent
+    // invalidé) ». Laisser vivre l'ancien donnerait deux liens valides pour un
+    // compte, donc deux fenêtres d'attaque au lieu d'une.
+    await replacePendingEmailVerificationToken({
+      userId: "user-1",
+      tokenHash: "b".repeat(64),
+      expiresAt: EXPIRE_LE,
+    });
+
+    expect(tokenDeleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: "user-1",
+        purpose: "email_verification",
+        usedAt: null,
+      },
+    });
+    expect(tokenCreate).toHaveBeenCalledWith({
+      data: {
+        userId: "user-1",
+        tokenHash: "b".repeat(64),
+        purpose: "email_verification",
+        expiresAt: EXPIRE_LE,
+      },
+    });
+  });
+
+  it("ne touche pas aux jetons DÉJÀ consommés", async () => {
+    // Ils sont la trace de l'activation, et le discriminant du renvoi. Les
+    // effacer rendrait un compte activé indéfiniment éligible au renvoi.
+    await replacePendingEmailVerificationToken({
+      userId: "user-1",
+      tokenHash: "b".repeat(64),
+      expiresAt: EXPIRE_LE,
+    });
+
+    const [args] = tokenDeleteMany.mock.calls[0] as [
+      { where: { usedAt: null } },
+    ];
+    expect(args.where.usedAt).toBeNull();
+  });
+});
+
+describe("findEmailVerificationToken", () => {
+  it("cherche par hash, jamais par jeton clair", async () => {
+    // Le clair ne vit que dans l'URL de l'email (dictionnaire
+    // §verification_tokens). Le stocker ou l'interroger tel quel ferait d'une
+    // fuite de base une fuite de comptes activables.
+    await findEmailVerificationToken("c".repeat(64));
+
+    expect(tokenFindUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tokenHash: "c".repeat(64) } }),
+    );
+  });
+
+  it("renvoie null pour un hash inconnu", async () => {
+    expect(await findEmailVerificationToken("d".repeat(64))).toBeNull();
+  });
+
+  it("remonte la date d'expiration et la consommation", async () => {
+    tokenFindUnique.mockResolvedValue({
+      id: "token-1",
+      userId: "user-1",
+      purpose: "email_verification",
+      expiresAt: EXPIRE_LE,
+      usedAt: null,
+    });
+
+    expect(await findEmailVerificationToken("c".repeat(64))).toEqual({
+      id: "token-1",
+      userId: "user-1",
+      expiresAt: EXPIRE_LE,
+      usedAt: null,
+    });
+  });
+
+  it("ignore un jeton d'un autre usage", async () => {
+    // Un jeton `password_reset` ne doit pas activer un compte : les deux TTL
+    // diffèrent (1 h contre 24 h) et les deux parcours n'ont pas le même
+    // niveau de preuve.
+    tokenFindUnique.mockResolvedValue({
+      id: "token-1",
+      userId: "user-1",
+      purpose: "password_reset",
+      expiresAt: EXPIRE_LE,
+      usedAt: null,
+    });
+
+    expect(await findEmailVerificationToken("c".repeat(64))).toBeNull();
+  });
+});
+
+describe("activateAccountWithToken", () => {
+  it("marque le jeton consommé et active le compte", async () => {
+    await activateAccountWithToken({
+      tokenId: "token-1",
+      userId: "user-1",
+      now: MAINTENANT,
+    });
+
+    expect(tokenUpdate).toHaveBeenCalledWith({
+      where: { id: "token-1", usedAt: null },
+      data: { usedAt: MAINTENANT },
+    });
+    expect(userUpdate).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { isActive: true },
+    });
+  });
+
+  it("conditionne l'écriture à `usedAt: null`", async () => {
+    // Anti-rejeu au niveau de la BASE, et pas seulement du contrôle applicatif
+    // qui précède. Deux clics simultanés sur le même lien passent tous les deux
+    // la lecture ; c'est cette clause qui fait perdre le second.
+    await activateAccountWithToken({
+      tokenId: "token-1",
+      userId: "user-1",
+      now: MAINTENANT,
+    });
+
+    const [args] = tokenUpdate.mock.calls[0] as [
+      { where: { usedAt: null } },
+    ];
+    expect(args.where.usedAt).toBeNull();
+  });
+
+  it("fait les deux écritures dans la même transaction", async () => {
+    // Un jeton consommé sans activation laisse un compte inactivable : le lien
+    // ne marche plus, et le renvoi non plus puisqu'un jeton consommé existe.
+    await activateAccountWithToken({
+      tokenId: "token-1",
+      userId: "user-1",
+      now: MAINTENANT,
+    });
+
+    expect(tokenUpdate).toHaveBeenCalledOnce();
+    expect(userUpdate).toHaveBeenCalledOnce();
+  });
+});
