@@ -91,17 +91,25 @@ describe("findAccountForSignup", () => {
     expect(args.where).toEqual({ email: "camille@example.test" });
   });
 
-  it("dit si le compte a déjà consommé un jeton d'activation", async () => {
-    // C'est le discriminant du renvoi. `is_active` ne peut pas le porter : le
-    // dictionnaire a consolidé `is_activated` DANS `is_active` en v2
-    // (mcd-dictionnaire.md:89 et :484), si bien qu'un compte désactivé par un
-    // administrateur et un compte jamais activé sont le même état. Un renvoi
-    // qui se fierait à `is_active` réactiverait un compte que l'admin a fermé.
+  // ── Discriminant CHANGÉ le 2026-08-08, arbitrage B1 ─────────────────────────
+  //
+  // Ces tests lisaient le discriminant dans l'historique de `verification_tokens`.
+  // L'agent testeur a montré que cette table ne peut pas le porter : le
+  // dictionnaire écrit qu'elle « ne s'applique pas aux comptes 100% OAuth Google »
+  // (mcd-dictionnaire.md:182), et les trois comptes du seed n'ont aucun jeton —
+  // donc un technicien désactivé par un administrateur pouvait se réactiver depuis
+  // le formulaire public.
+  //
+  // Benjamin a arbitré pour une colonne dédiée, `users.email_verified_at`
+  // (migration `add_users_email_verified_at`). Les oracles suivent la donnée : ce
+  // n'est pas un affaiblissement, c'est le même invariant sur une source fiable.
+
+  it("dit si l'email a déjà été vérifié", async () => {
     userFindUnique.mockResolvedValue({
       id: "user-1",
       firstname: "Camille",
       isActive: false,
-      verificationTokens: [{ usedAt: MAINTENANT }],
+      emailVerifiedAt: MAINTENANT,
     });
 
     const compte = await findAccountForSignup("camille@example.test");
@@ -122,7 +130,7 @@ describe("findAccountForSignup", () => {
       id: "user-1",
       firstname: "Camille",
       isActive: false,
-      verificationTokens: [],
+      emailVerifiedAt: null,
     });
 
     const compte = await findAccountForSignup("camille@example.test");
@@ -130,12 +138,12 @@ describe("findAccountForSignup", () => {
     expect(compte?.firstname).toBe("Camille");
   });
 
-  it("dit qu'aucun jeton n'a été consommé quand la liste est vide", async () => {
+  it("dit « jamais vérifié » quand la colonne est NULL", async () => {
     userFindUnique.mockResolvedValue({
       id: "user-1",
       firstname: "Camille",
       isActive: false,
-      verificationTokens: [],
+      emailVerifiedAt: null,
     });
 
     const compte = await findAccountForSignup("camille@example.test");
@@ -143,18 +151,40 @@ describe("findAccountForSignup", () => {
     expect(compte?.hasCompletedEmailVerification).toBe(false);
   });
 
-  it("ne considère que les jetons d'activation consommés", async () => {
-    // Un jeton `password_reset` consommé ne prouve rien sur l'activation, et un
-    // jeton d'activation non consommé encore moins.
+  it("distingue un compte fermé par un admin d'un compte jamais activé", async () => {
+    // Le cœur de B1, en une assertion : les deux ont `isActive: false`, et seule
+    // la date les sépare. C'est ce test qui interdit de revenir à un discriminant
+    // porté par `is_active` ou par les jetons.
+    userFindUnique.mockResolvedValue({
+      id: "user-1",
+      firstname: "Camille",
+      isActive: false,
+      emailVerifiedAt: MAINTENANT,
+    });
+    const ferme = await findAccountForSignup("camille@example.test");
+
+    userFindUnique.mockResolvedValue({
+      id: "user-2",
+      firstname: "Alix",
+      isActive: false,
+      emailVerifiedAt: null,
+    });
+    const jamaisActive = await findAccountForSignup("alix@example.test");
+
+    expect(ferme?.isActive).toBe(jamaisActive?.isActive);
+    expect(ferme?.hasCompletedEmailVerification).toBe(true);
+    expect(jamaisActive?.hasCompletedEmailVerification).toBe(false);
+  });
+
+  it("n'interroge plus l'historique des jetons", async () => {
+    // Filet contre une régression vers l'ancien discriminant.
     await findAccountForSignup("camille@example.test");
 
     const [args] = userFindUnique.mock.calls[0] as [
-      { select: { verificationTokens: { where: object } } },
+      { select: Record<string, unknown> },
     ];
-    expect(args.select.verificationTokens.where).toEqual({
-      purpose: "email_verification",
-      usedAt: { not: null },
-    });
+    expect(args.select).not.toHaveProperty("verificationTokens");
+    expect(args.select.emailVerifiedAt).toBe(true);
   });
 });
 
@@ -323,7 +353,7 @@ describe("findEmailVerificationToken", () => {
 });
 
 describe("activateAccountWithToken", () => {
-  it("marque le jeton consommé et active le compte", async () => {
+  it("marque le jeton consommé, active le compte et horodate la vérification", async () => {
     await activateAccountWithToken({
       tokenId: "token-1",
       userId: "user-1",
@@ -335,9 +365,27 @@ describe("activateAccountWithToken", () => {
       data: { usedAt: MAINTENANT },
     });
     expect(userUpdate).toHaveBeenCalledWith({
-      where: { id: "user-1" },
-      data: { isActive: true },
+      where: { id: "user-1", emailVerifiedAt: null, deletedAt: null },
+      data: { isActive: true, emailVerifiedAt: MAINTENANT },
     });
+  });
+
+  it("refuse d'activer un compte déjà vérifié ou pseudonymisé", async () => {
+    // `emailVerifiedAt: null` interdit à un jeton émis AVANT une désactivation
+    // administrative de rouvrir le compte ; `deletedAt: null` à un lien de
+    // ressusciter une identité pseudonymisée. Sans ces deux clauses, l'update
+    // passerait sur n'importe quel état — c'est le second versant de B1.
+    await activateAccountWithToken({
+      tokenId: "token-1",
+      userId: "user-1",
+      now: MAINTENANT,
+    });
+
+    const [args] = userUpdate.mock.calls[0] as [
+      { where: { emailVerifiedAt: null; deletedAt: null } },
+    ];
+    expect(args.where.emailVerifiedAt).toBeNull();
+    expect(args.where.deletedAt).toBeNull();
   });
 
   it("conditionne l'écriture à `usedAt: null`", async () => {

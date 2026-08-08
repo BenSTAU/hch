@@ -40,12 +40,13 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export const SIGNUP_ACKNOWLEDGED_MESSAGE =
   "Si un compte existe pour cet email, un email d'activation vient d'être envoyé";
 
-/// Seul message qui ne dépend PAS de l'existence du compte : il dépend du
-/// transport. C'est le versant visible de l'échec bruyant d'ADR-017 — et il est
-/// identique sur le chemin de création et sur celui du renvoi, sans quoi il
-/// dirait si l'email était libre.
-export const EMAIL_DELIVERY_FAILED_MESSAGE =
-  "L'email d'activation n'a pas pu être envoyé. Réessayez dans un instant.";
+// Il n'existe **aucun** message d'échec d'envoi côté utilisateur, et c'est une
+// décision : l'arbitrage du 2026-08-08 (constat B2 de l'agent testeur T-V3-02)
+// donne la Constitution §4.2 gagnante contre l'échec bruyant côté utilisateur
+// d'ADR-017. Un tel message ne pourrait naître que sur un chemin ayant TENTÉ un
+// envoi, donc jamais sur « compte déjà activé » — il classerait les adresses.
+// Le bruit d'ADR-017 vit désormais dans les logs (`src/lib/email/dispatch.ts`),
+// et le recours côté client est le renvoi d'activation.
 
 /// 12 caractères — `US-COMPTE-CREER` §Contexte, aligné sur ADR-005 v2.
 const PASSWORD_MIN_LENGTH = 12;

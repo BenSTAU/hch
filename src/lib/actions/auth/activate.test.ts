@@ -32,6 +32,16 @@ vi.mock("@/lib/email/activation", () => ({
   sendActivationEmail: (input: unknown) => sendActivationEmail(input),
 }));
 
+// `dispatchEmail` confie l'envoi à `after()` de Next, hors du chemin de réponse
+// (`src/lib/email/dispatch.ts`). Le mock l'appelle IMMÉDIATEMENT et ne l'attend
+// pas : les assertions sur `sendActivationEmail` restent valides, et l'échec du
+// transport ne peut par construction pas atteindre la réponse.
+vi.mock("@/lib/email/dispatch", () => ({
+  dispatchEmail: (_libelle: string, envoyer: () => Promise<void>) => {
+    void envoyer().catch(() => undefined);
+  },
+}));
+
 const consumeRateLimit = vi.fn();
 vi.mock("@/lib/rate-limit", () => ({
   consumeRateLimit: (key: string, limit: number, windowMs: number) =>
@@ -200,6 +210,42 @@ describe("activateAccount — refus", () => {
   });
 });
 
+describe("activateAccount — rejeu concurrent", () => {
+  // ── Ajouté par l'agent testeur (T-V3-02). ROUGE ATTENDU ────────────────────
+  //
+  // L'anti-rejeu au niveau de la BASE fonctionne : `activateAccountWithToken`
+  // conditionne l'update à `usedAt: null` (db/queries/auth.ts:214), donc le
+  // second de deux clics simultanés lève P2025 et sa transaction est annulée.
+  // Aucune double activation — cette moitié tient.
+  //
+  // Ce qui ne tient pas, c'est ce que le perdant VOIT. P2025 remonte non
+  // capturée jusqu'à `handleServerError` (safe-action.ts:12) et devient « Une
+  // erreur est survenue. Réessayez dans un instant. » Or la SPEC nomme ce cas :
+  // « Given un token déjà consommé (`used_at` non NULL) → message “Compte déjà
+  // activé, connectez-vous” » (module-1-utilisateurs.md:222-224). Elle ne
+  // distingue pas le jeton consommé il y a une heure de celui consommé il y a
+  // 40 ms — c'est le même état, et le message doit être le même.
+  //
+  // Conséquence concrète : « Réessayez dans un instant » invite à recliquer un
+  // lien qui ne remarchera jamais, au lieu d'envoyer vers la connexion.
+  it("annonce « déjà consommé » au perdant de la course, pas une erreur serveur", async () => {
+    findEmailVerificationToken.mockResolvedValue(jetonEnBase());
+    activateAccountWithToken.mockRejectedValue(
+      Object.assign(
+        new Error(
+          "An operation failed because it depends on one or more records that were required but not found.",
+        ),
+        { code: "P2025" },
+      ),
+    );
+
+    const result = await activer({ token: JETON });
+
+    expect(result?.serverError).toBeUndefined();
+    expect(result?.data).toEqual({ outcome: "already_used" });
+  });
+});
+
 describe("resendActivation — anti-abus", () => {
   it("décompte le quota AVANT toute lecture de compte", async () => {
     // PLAN S4 §11.2 : « le compteur doit exister pour toute chaîne tentée ».
@@ -314,9 +360,18 @@ describe("resendActivation — réponse indiscernable", () => {
     expect(epuise?.data).toEqual(normal?.data);
   });
 
-  it("signale un échec d'envoi", async () => {
-    // ADR-017 : bruyant ici aussi. C'est le seul cas où la réponse diffère, et
-    // il ne dépend pas de l'existence du compte — il dépend du transport.
+  it("ne signale PAS un échec d'envoi", async () => {
+    // ── Oracle RETOURNÉ le 2026-08-08, arbitrage B2 ──────────────────────────
+    //
+    // Ce test exigeait l'inverse — « ADR-017 : bruyant ici aussi. C'est le seul
+    // cas où la réponse diffère, et il ne dépend pas de l'existence du compte ».
+    // La seconde moitié de cette phrase était fausse, et l'agent testeur l'a
+    // montré : le canal d'erreur était gardé derrière `eligible`, donc
+    // atteignable seulement pour une adresse ayant un compte en attente. Il
+    // classait les adresses au lieu de décrire le transport.
+    //
+    // Benjamin a tranché pour la Constitution §4.2. L'échec vit dans les logs
+    // (`src/lib/email/dispatch.ts`), la réponse reste uniforme.
     findAccountForSignup.mockResolvedValue({
       id: "user-1",
       firstname: "Camille",
@@ -327,6 +382,42 @@ describe("resendActivation — réponse indiscernable", () => {
 
     const result = await resendActivation({ email: "camille@example.test" });
 
-    expect(result?.data?.error).toBeTruthy();
+    expect(result?.data).toEqual({ sent: true });
+  });
+
+  // ── Ajouté par l'agent testeur (T-V3-02). ROUGE ATTENDU ────────────────────
+  //
+  // Le test ci-dessus lit l'échec d'envoi comme indépendant du compte. Il ne
+  // l'est pas : `activate.ts:98` garde l'envoi derrière `eligible`, donc le
+  // `{ error }` de la ligne 114 n'est ATTEIGNABLE que pour une adresse qui a un
+  // compte en attente d'activation. Adresse inconnue, compte activé, quota
+  // épuisé : tous répondent `{ sent: true }`, transport en panne ou non.
+  //
+  // C'est exactement l'oracle que le commentaire de `activate.ts:118-122`
+  // affirme fermer — « réponse identique dans tous les autres cas » — et que la
+  // table `rate_limits` sans FK (rate-limit.ts:10-16) a été conçue pour éviter.
+  // Il ne s'ouvre qu'en transport dégradé, ce qu'ADR-017 §Conséquences décrit
+  // comme un état attendu et non exceptionnel.
+  //
+  // Même arbitrage qu'à l'inscription, et l'agent testeur ne le tranche pas :
+  // ADR-017 veut du bruit, la Constitution §4.2 veut du silence uniforme. La
+  // sortie possible, ici, coûte moins qu'à l'inscription — personne n'attend de
+  // retour synchrone d'un renvoi, un `{ sent: true }` uniforme plus une trace
+  // dans les logs du conteneur satisferaient les deux.
+  it("ne fait pas de l'échec d'envoi un révélateur de compte en attente", async () => {
+    sendActivationEmail.mockRejectedValue(new Error("EAUTH"));
+
+    findAccountForSignup.mockResolvedValue(null);
+    const inconnu = await resendActivation({ email: "inconnu@example.test" });
+
+    findAccountForSignup.mockResolvedValue({
+      id: "user-1",
+      firstname: "Camille",
+      isActive: false,
+      hasCompletedEmailVerification: false,
+    });
+    const enAttente = await resendActivation({ email: "camille@example.test" });
+
+    expect(enAttente?.data).toEqual(inconnu?.data);
   });
 });

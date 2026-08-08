@@ -36,6 +36,15 @@ vi.mock("@/lib/email/activation", () => ({
   sendActivationEmail: (input: unknown) => sendActivationEmail(input),
 }));
 
+// Reproduit la propriété de `src/lib/email/dispatch.ts` qui compte ici : l'envoi
+// est lancé mais **pas attendu**, donc son coût ne s'ajoute pas à la durée de
+// réponse. C'est ce qui ferme le canal temporel plutôt qu'un leurre.
+vi.mock("@/lib/email/dispatch", () => ({
+  dispatchEmail: (_libelle: string, envoyer: () => Promise<void>) => {
+    void envoyer().catch(() => undefined);
+  },
+}));
+
 vi.mock("@/lib/rate-limit", () => ({
   consumeRateLimit: async () => ({ allowed: true }),
   activationRateLimitKey: (email: string) => `activation:${email}`,

@@ -7,6 +7,7 @@ import {
   hashVerificationToken,
   verificationTokenExpiry,
 } from "@/lib/auth/verification-token";
+import { isPrismaError, PRISMA_RECORD_NOT_FOUND } from "@/lib/db/prisma-error";
 import {
   activateAccountWithToken,
   findAccountForSignup,
@@ -14,6 +15,7 @@ import {
   replacePendingEmailVerificationToken,
 } from "@/lib/db/queries/auth";
 import { sendActivationEmail } from "@/lib/email/activation";
+import { dispatchEmail } from "@/lib/email/dispatch";
 import {
   ACTIVATION_RESEND_LIMIT,
   ACTIVATION_RESEND_WINDOW_MS,
@@ -22,7 +24,6 @@ import {
 } from "@/lib/rate-limit";
 import { actionClient } from "@/lib/safe-action";
 import {
-  EMAIL_DELIVERY_FAILED_MESSAGE,
   activationSchema,
   resendActivationSchema,
 } from "@/lib/validations/auth";
@@ -63,12 +64,28 @@ export const activateAccount = actionClient
       return { outcome: "expired" as const };
     }
 
-    await activateAccountWithToken({
-      tokenId: stored.id,
-      userId: stored.userId,
-      now,
-    });
+    try {
+      await activateAccountWithToken({
+        tokenId: stored.id,
+        userId: stored.userId,
+        now,
+      });
+    } catch (error) {
+      // P2025 : la course a été perdue — deux clics simultanés, le second arrive
+      // après que le premier a marqué `used_at` — ou le compte n'est plus
+      // éligible (déjà vérifié, pseudonymisé). Dans les deux cas la SPEC prévoit
+      // le même message que pour un jeton consommé : « Compte déjà activé,
+      // connectez-vous » (module-1-utilisateurs.md:222-224). Elle ne distingue
+      // pas un jeton consommé il y a une heure de celui consommé il y a 40 ms.
+      //
+      // Sans cette branche, P2025 remontait en « une erreur est survenue » et
+      // invitait à recliquer un lien mort — constat B4 de l'agent testeur.
+      if (!isPrismaError(error, PRISMA_RECORD_NOT_FOUND)) throw error;
+      return { outcome: "already_used" as const };
+    }
 
+    // Hors du try : `redirect()` fonctionne par throw, une capture le
+    // transformerait en erreur serveur silencieuse.
     redirect(AFTER_ACTIVATION);
   });
 
@@ -103,22 +120,23 @@ export const resendActivation = actionClient
         expiresAt: verificationTokenExpiry(),
       });
 
-      try {
-        await sendActivationEmail({
+      // Hors du chemin de réponse : l'aller-retour SMTP ne doit pas se lire au
+      // chronomètre, et depuis l'arbitrage B2 son sort ne change plus la
+      // réponse. Cf. `src/lib/email/dispatch.ts`.
+      dispatchEmail(`renvoi activation ${email}`, () =>
+        sendActivationEmail({
           to: email,
           firstname: compte.firstname,
           token,
-        });
-      } catch (error) {
-        console.error("[resend] email d'activation non envoyé :", error);
-        return { error: EMAIL_DELIVERY_FAILED_MESSAGE };
-      }
+        }),
+      );
     }
 
-    // Réponse identique dans tous les autres cas — adresse inconnue, compte déjà
-    // activé, quota épuisé. Un « trop de tentatives » distinct ne s'afficherait
-    // que pour les adresses ayant un compte en attente, et redeviendrait
-    // l'oracle que la table `rate_limits` existe précisément pour éviter.
+    // Réponse identique dans TOUS les cas — adresse inconnue, compte déjà activé,
+    // compte fermé par un administrateur, quota épuisé, envoi en échec. Un « trop
+    // de tentatives » distinct ne s'afficherait que pour les adresses ayant un
+    // compte en attente, et redeviendrait l'oracle que la table `rate_limits`
+    // existe précisément pour éviter (PLAN S4 §11.2).
     return { sent: true as const };
   });
 
@@ -162,16 +180,16 @@ export async function resendActivationFormAction(
     email: String(formData.get("email") ?? ""),
   });
 
-  if (result?.data && "error" in result.data && result.data.error) {
-    return { error: result.data.error };
+  // L'action n'a plus de canal d'échec d'envoi depuis l'arbitrage B2 : elle
+  // répond `{ sent: true }` quoi qu'il advienne du transport. Ne restent que deux
+  // motifs de retour distinct, et aucun ne dépend de l'existence du compte —
+  // une adresse mal formée, et une panne serveur.
+  if (result?.validationErrors) {
+    return { error: "Renseignez une adresse email valide." };
   }
 
   if (result?.serverError) {
     return { error: result.serverError };
-  }
-
-  if (result?.validationErrors) {
-    return { error: "Renseignez une adresse email valide." };
   }
 
   return { sent: true };

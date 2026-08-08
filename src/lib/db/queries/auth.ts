@@ -34,7 +34,7 @@ export type SignupAccountState = {
   id: string;
   firstname: string;
   isActive: boolean;
-  /// A déjà consommé un jeton d'activation, donc a été activé au moins une fois.
+  /// L'email a déjà été vérifié — `users.email_verified_at` non NULL.
   ///
   /// C'est le discriminant du renvoi, et `isActive` ne peut pas le porter : le
   /// dictionnaire a consolidé `is_activated` DANS `is_active` en v2
@@ -42,6 +42,11 @@ export type SignupAccountState = {
   /// administrateur et un compte jamais activé sont le même état sur cette
   /// colonne. Un renvoi qui s'y fierait réactiverait un compte que l'admin a
   /// fermé.
+  ///
+  /// L'historique de `verification_tokens` ne peut pas non plus servir : le
+  /// dictionnaire écrit que la table « ne s'applique pas aux comptes 100% OAuth
+  /// Google » (:182), et les trois comptes du seed n'ont aucun jeton. D'où la
+  /// colonne dédiée, arbitrée le 2026-08-08 (agent testeur T-V3-02, B1).
   hasCompletedEmailVerification: boolean;
 };
 
@@ -62,11 +67,7 @@ export async function findAccountForSignup(
       // adresse dont l'auteur de la soumission n'est pas forcément le titulaire.
       firstname: true,
       isActive: true,
-      verificationTokens: {
-        where: { purpose: EMAIL_VERIFICATION_PURPOSE, usedAt: { not: null } },
-        select: { usedAt: true },
-        take: 1,
-      },
+      emailVerifiedAt: true,
     },
   });
 
@@ -76,7 +77,7 @@ export async function findAccountForSignup(
     id: user.id,
     firstname: user.firstname,
     isActive: user.isActive,
-    hasCompletedEmailVerification: user.verificationTokens.length > 0,
+    hasCompletedEmailVerification: user.emailVerifiedAt !== null,
   };
 }
 
@@ -86,6 +87,16 @@ export async function findAccountForSignup(
 /// Sans atomicité, un échec après `users` laisse un compte sans mot de passe et
 /// sans jeton : l'email est pris, l'inscription échoue à jamais pour cette
 /// personne, et le message générique lui dira que tout va bien.
+///
+/// **Lève P2002** quand l'email a été pris entre la lecture et l'insertion. La
+/// lecture qui précède l'appel n'est PAS dans cette transaction, et ne peut pas
+/// l'être sans sérialiser toutes les inscriptions : deux soumissions concurrentes
+/// du même email libre passent donc toutes les deux le contrôle, et la seconde
+/// heurte l'index unique. C'est l'index qui arbitre.
+///
+/// Ce module laisse remonter, et n'en décide rien : quelle réponse produire pour
+/// le perdant est une décision de parcours, pas de persistance. Elle vit dans
+/// `src/lib/actions/auth/signup.ts` (agent testeur T-V3-02, B5).
 export async function createLocalAccount(input: {
   email: string;
   firstname: string;
@@ -204,6 +215,16 @@ export async function findEmailVerificationToken(tokenHash: string): Promise<{
 /// simultanés sur le même lien passent tous les deux la lecture ; c'est cette
 /// clause qui fait perdre le second, en levant P2025 et en annulant la
 /// transaction.
+///
+/// Le second `where` porte la même logique côté compte : `emailVerifiedAt: null`
+/// interdit à un jeton émis AVANT une désactivation administrative de rouvrir le
+/// compte, et `deletedAt: null` à un lien de ressusciter une identité
+/// pseudonymisée. Sans eux, l'update passerait sur n'importe quel état.
+///
+/// **Lève P2025** quand rien n'a matché — course perdue, ou compte devenu
+/// inéligible. Comme pour `createLocalAccount`, ce module ne décide pas du
+/// message : c'est `src/lib/actions/auth/activate.ts` qui en fait « compte déjà
+/// activé », le libellé que la SPEC prévoit pour un jeton consommé.
 export async function activateAccountWithToken(input: {
   tokenId: string;
   userId: string;
@@ -216,8 +237,8 @@ export async function activateAccountWithToken(input: {
     });
 
     await tx.user.update({
-      where: { id: input.userId },
-      data: { isActive: true },
+      where: { id: input.userId, emailVerifiedAt: null, deletedAt: null },
+      data: { isActive: true, emailVerifiedAt: input.now },
     });
   });
 }

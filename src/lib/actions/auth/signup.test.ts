@@ -32,6 +32,16 @@ vi.mock("@/lib/email/activation", () => ({
   sendActivationEmail: (input: unknown) => sendActivationEmail(input),
 }));
 
+// `dispatchEmail` confie l'envoi à `after()` de Next, hors du chemin de réponse
+// (`src/lib/email/dispatch.ts`). Le mock l'appelle IMMÉDIATEMENT et ne l'attend
+// pas : les assertions sur `sendActivationEmail` restent valides, et l'échec du
+// transport ne peut par construction pas atteindre la réponse.
+vi.mock("@/lib/email/dispatch", () => ({
+  dispatchEmail: (_libelle: string, envoyer: () => Promise<void>) => {
+    void envoyer().catch(() => undefined);
+  },
+}));
+
 const consumeRateLimit = vi.fn();
 vi.mock("@/lib/rate-limit", () => ({
   consumeRateLimit: (key: string, limit: number, windowMs: number) =>
@@ -272,40 +282,154 @@ describe("signup — compte désactivé par un administrateur", () => {
 });
 
 describe("signup — échec d'envoi", () => {
-  it("le signale au lieu de rediriger", async () => {
-    // ADR-017 §Contraintes : « échec d'envoi bruyant, jamais silencieux ». Un
-    // envoi raté suivi d'une redirection vers « vérifiez votre email » envoie la
-    // personne attendre un message qui n'arrivera jamais.
+  // ── Oracles RETOURNÉS le 2026-08-08, arbitrage B2 ───────────────────────────
+  //
+  // Ces trois tests exigeaient l'inverse : que l'échec d'envoi soit signalé à
+  // l'écran et suspende la redirection (ADR-017 §Contraintes, « échec bruyant »).
+  // L'agent testeur a montré que ce message est un ORACLE : il ne peut naître que
+  // sur un chemin ayant TENTÉ un envoi, donc jamais sur « compte déjà activé ».
+  // Benjamin a tranché pour la Constitution §4.2 — réponse uniforme, bruit dans
+  // les logs. Ce que voulait ADR-017 reste tenu autrement : la trace côté
+  // exploitant (`src/lib/email/dispatch.ts`) et le renvoi d'activation côté
+  // client, livré par cette même tâche.
+  //
+  // Les oracles ci-dessous sont donc l'inverse des précédents, à dessein.
+
+  it("redirige quand même, transport en panne ou non", async () => {
     sendActivationEmail.mockRejectedValue(new Error("EAUTH"));
 
     const result = await soumettre(FORMULAIRE);
 
-    expect(redirect).not.toHaveBeenCalled();
-    expect(result?.data?.error).toBeTruthy();
+    expect(redirect).toHaveBeenCalledWith(CONFIRMATION);
+    expect(result).toBeUndefined();
   });
 
-  it("emploie le même message quel que soit le chemin d'envoi", async () => {
-    // Un message qui dirait « votre compte a été créé » sur un chemin et autre
-    // chose sur l'autre révélerait si l'email était libre.
-    sendActivationEmail.mockRejectedValue(new Error("EAUTH"));
-
-    const surCreation = await soumettre(FORMULAIRE);
-
-    findAccountForSignup.mockResolvedValue(compte());
-    const surRenvoi = await soumettre(FORMULAIRE);
-
-    expect(surCreation?.data?.error).toBe(surRenvoi?.data?.error);
-  });
-
-  it("ne fait pas fuiter le détail SMTP vers le navigateur", async () => {
+  it("n'ouvre aucun canal de réponse que l'envoi puisse teinter", async () => {
+    // La propriété directe : le sort du transport ne doit apparaître NULLE PART
+    // dans ce que voit l'appelant.
     sendActivationEmail.mockRejectedValue(
       new Error("EAUTH 535 seizecaracteres refusé par smtp.gmail.com"),
     );
 
+    const enPanne = await soumettre(FORMULAIRE);
+
+    vi.clearAllMocks();
+    findAccountForSignup.mockResolvedValue(null);
+    createLocalAccount.mockResolvedValue({ userId: "user-1" });
+    sendActivationEmail.mockResolvedValue(undefined);
+    const nominal = await soumettre(FORMULAIRE);
+
+    // `undefined` des deux côtés : la redirection a levé, donc l'appelant ne
+    // reçoit RIEN — et deux « rien » sont indiscernables par construction.
+    // `?? {}` parce que `JSON.stringify(undefined)` ne renvoie pas une chaîne.
+    expect(enPanne).toEqual(nominal);
+    expect(JSON.stringify(enPanne ?? {})).not.toContain("seizecaracteres");
+    expect(JSON.stringify(enPanne ?? {})).not.toContain("smtp.gmail.com");
+  });
+
+  it("tente quand même l'envoi — ce n'est pas un renoncement", async () => {
+    // Le corollaire à ne pas perdre : l'envoi uniforme ne veut pas dire pas
+    // d'envoi. Le compte est créé ET le lien part ; seul son sort est muet.
+    sendActivationEmail.mockRejectedValue(new Error("EAUTH"));
+
+    await soumettre(FORMULAIRE);
+
+    expect(createLocalAccount).toHaveBeenCalledOnce();
+    expect(sendActivationEmail).toHaveBeenCalledOnce();
+  });
+});
+
+describe("signup — le canal d'échec d'envoi face à l'anti-énumération", () => {
+  // ── Ajouté par l'agent testeur (T-V3-02). ROUGE ATTENDU ────────────────────
+  //
+  // `src/lib/validations/auth.ts:44-46` affirme d'EMAIL_DELIVERY_FAILED_MESSAGE
+  // qu'il est le « seul message qui ne dépend PAS de l'existence du compte : il
+  // dépend du transport ». Le flot de `signup.ts` dit autre chose : le message
+  // naît de `envoye === false`, et `envoye` ne peut valoir `false` que sur un
+  // chemin qui a TENTÉ un envoi. Le chemin « déjà activé » n'en tente aucun
+  // (signup.ts:66-95 ne s'exécute pas), donc il redirige toujours.
+  //
+  // Avec un transport en panne — scénario qu'ADR-017 §Conséquences nomme
+  // explicitement, « révocation silencieuse possible » de Google —, le
+  // formulaire devient l'oracle exact que la Constitution §4.2 interdit :
+  //   · réponse en erreur   ⇒ l'email était libre, ou en attente d'activation
+  //   · redirection normale ⇒ l'email a un compte activé
+  //
+  // ⚠️ Ce test met en évidence un ARBITRAGE, pas une bourde : fermer le canal
+  // demande soit de taire l'échec (contre ADR-017), soit de le rendre visible
+  // sur les trois chemins (message affiché sans qu'aucun envoi n'ait été
+  // tenté). L'agent testeur ne tranche pas ce dilemme — il le rend rouge pour
+  // qu'il soit tranché. Si Benjamin arbitre pour « bruyant d'abord », ce
+  // `describe` est à supprimer avec une note, pas à rendre vert en douce.
+  it("reste indiscernable quand le transport est en panne", async () => {
+    sendActivationEmail.mockRejectedValue(new Error("EAUTH"));
+
+    findAccountForSignup.mockResolvedValue(null);
+    const emailLibre = await soumettre(FORMULAIRE);
+
+    findAccountForSignup.mockResolvedValue(
+      compte({ isActive: true, hasCompletedEmailVerification: true }),
+    );
+    const dejaActive = await soumettre(FORMULAIRE);
+
+    expect(dejaActive?.data).toEqual(emailLibre?.data);
+  });
+
+  it("ne distingue pas non plus le quota épuisé d'un compte activé", async () => {
+    // Second visage du même canal, et il mord SANS transport en panne : quota
+    // épuisé ⇒ `envoye` reste à `true` (signup.ts:53 puis 80) ⇒ redirection.
+    // Donc « compte en attente au quota épuisé » et « compte déjà activé »
+    // répondent pareil, tandis que « compte en attente au quota disponible »
+    // répond en erreur dès que le transport tombe. Trois classes observables
+    // là où la SPEC en veut une.
+    sendActivationEmail.mockRejectedValue(new Error("EAUTH"));
+
+    findAccountForSignup.mockResolvedValue(compte());
+    consumeRateLimit.mockResolvedValue({ allowed: true });
+    const quotaDisponible = await soumettre(FORMULAIRE);
+
+    consumeRateLimit.mockResolvedValue({
+      allowed: false,
+      retryAfterMs: 3_600_000,
+    });
+    const quotaEpuise = await soumettre(FORMULAIRE);
+
+    expect(quotaEpuise?.data).toEqual(quotaDisponible?.data);
+  });
+});
+
+describe("signup — course sur l'index unique de `users.email`", () => {
+  // ── Ajouté par l'agent testeur (T-V3-02). ROUGE ATTENDU ────────────────────
+  //
+  // `findAccountForSignup` puis `createLocalAccount` ne sont pas atomiques
+  // entre eux : la transaction de `createLocalAccount` couvre ses trois
+  // écritures (db/queries/auth.ts:97), pas la lecture qui l'a précédée. Deux
+  // soumissions concurrentes du même email libre passent donc toutes deux le
+  // `if (!compte)` de signup.ts:55, et la seconde heurte
+  // `users_email_key` (P2002).
+  //
+  // Le bouton désactivé pendant la soumission (signup-form.tsx:216) couvre le
+  // double-clic, pas ce cas : une Server Action exportée est un endpoint POST
+  // public, et rien n'oblige l'appelant à passer par le formulaire.
+  //
+  // Attendu : la même issue que les autres chemins — l'email est pris, donc la
+  // redirection de confirmation. Constaté : `handleServerError` produit « Une
+  // erreur est survenue », un quatrième comportement observable.
+  it("ne répond pas par une erreur serveur quand l'insertion perd la course", async () => {
+    createLocalAccount.mockRejectedValue(
+      Object.assign(
+        new Error("Unique constraint failed on the fields: (`email`)"),
+        {
+          code: "P2002",
+          meta: { target: ["email"] },
+        },
+      ),
+    );
+
     const result = await soumettre(FORMULAIRE);
 
-    expect(JSON.stringify(result)).not.toContain("seizecaracteres");
-    expect(JSON.stringify(result)).not.toContain("smtp.gmail.com");
+    expect(result?.serverError).toBeUndefined();
+    expect(redirect).toHaveBeenCalledWith(CONFIRMATION);
   });
 });
 

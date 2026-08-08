@@ -7,12 +7,14 @@ import {
   generateVerificationToken,
   verificationTokenExpiry,
 } from "@/lib/auth/verification-token";
+import { isPrismaError, PRISMA_UNIQUE_VIOLATION } from "@/lib/db/prisma-error";
 import {
   createLocalAccount,
   findAccountForSignup,
   replacePendingEmailVerificationToken,
 } from "@/lib/db/queries/auth";
 import { sendActivationEmail } from "@/lib/email/activation";
+import { dispatchEmail } from "@/lib/email/dispatch";
 import {
   ACTIVATION_RESEND_LIMIT,
   ACTIVATION_RESEND_WINDOW_MS,
@@ -20,10 +22,7 @@ import {
   consumeRateLimit,
 } from "@/lib/rate-limit";
 import { actionClient } from "@/lib/safe-action";
-import {
-  EMAIL_DELIVERY_FAILED_MESSAGE,
-  signupSchema,
-} from "@/lib/validations/auth";
+import { signupSchema } from "@/lib/validations/auth";
 
 /// Écran unique de sortie, pour les trois issues.
 ///
@@ -50,19 +49,34 @@ export const signup = actionClient
 
     const compte = await findAccountForSignup(email);
 
-    let envoye = true;
-
     if (!compte) {
       const { token, tokenHash } = generateVerificationToken();
-      await createLocalAccount({
-        email,
-        firstname,
-        lastname,
-        passwordHash,
-        tokenHash,
-        expiresAt: verificationTokenExpiry(),
-      });
-      envoye = await envoyer({ to: email, firstname, token });
+
+      // La lecture ci-dessus et cette insertion ne sont pas atomiques entre
+      // elles, et ne peuvent pas l'être sans sérialiser toutes les inscriptions.
+      // Deux soumissions concurrentes du même email libre passent donc toutes
+      // les deux le contrôle : c'est l'index unique qui arbitre, en P2002. Le
+      // perdant emprunte la même sortie que tous les autres — la requête
+      // gagnante a déjà envoyé son lien, en renvoyer un second l'invaliderait
+      // chez son destinataire (agent testeur T-V3-02, B5).
+      try {
+        await createLocalAccount({
+          email,
+          firstname,
+          lastname,
+          passwordHash,
+          tokenHash,
+          expiresAt: verificationTokenExpiry(),
+        });
+
+        dispatchEmail(`activation ${email}`, () =>
+          sendActivationEmail({ to: email, firstname, token }),
+        );
+      } catch (error) {
+        // Toute autre erreur remonte : une panne de base ne doit pas se déguiser
+        // en inscription réussie.
+        if (!isPrismaError(error, PRISMA_UNIQUE_VIOLATION)) throw error;
+      }
     } else if (!compte.hasCompletedEmailVerification) {
       // Compte en attente d'activation : la soumission vaut demande de renvoi,
       // donc elle passe par le quota (module-1-utilisateurs.md:233).
@@ -86,41 +100,27 @@ export const signup = actionClient
         });
         // Le prénom ENREGISTRÉ : l'email part à l'adresse d'un tiers, et son
         // contenu ne doit pas être choisi par qui soumet le formulaire.
-        envoye = await envoyer({
-          to: email,
-          firstname: compte.firstname,
-          token,
-        });
+        dispatchEmail(`activation ${email}`, () =>
+          sendActivationEmail({
+            to: email,
+            firstname: compte.firstname,
+            token,
+          }),
+        );
       }
     }
 
-    // ADR-017 : échec d'envoi bruyant. Rediriger vers « vérifiez votre email »
-    // après un envoi raté enverrait la personne attendre un message qui
-    // n'arrivera jamais.
-    if (!envoye) {
-      return { error: EMAIL_DELIVERY_FAILED_MESSAGE };
-    }
-
+    // **Une seule sortie, pour les trois issues.** Rien de ce qui précède ne peut
+    // changer la réponse : ni l'existence du compte, ni le quota, ni le sort de
+    // l'envoi. C'est l'arbitrage du 2026-08-08 sur le constat B2 de l'agent
+    // testeur — la Constitution §4.2 l'emporte sur l'échec bruyant côté
+    // utilisateur d'ADR-017, dont la substance est préservée autrement : le log
+    // côté exploitant, et le renvoi d'activation côté client.
+    //
     // `redirect()` hors de tout try/catch — il fonctionne par throw, une capture
     // le transformerait en erreur serveur silencieuse.
     redirect(AFTER_SIGNUP);
   });
-
-/// Isole le `try` du `redirect`, et ramène l'échec à un booléen : le détail SMTP
-/// reste dans les logs du conteneur, jamais dans la réponse.
-async function envoyer(params: {
-  to: string;
-  firstname: string;
-  token: string;
-}): Promise<boolean> {
-  try {
-    await sendActivationEmail(params);
-    return true;
-  } catch (error) {
-    console.error("[signup] email d'activation non envoyé :", error);
-    return false;
-  }
-}
 
 type ChampInscription =
   "firstname" | "lastname" | "email" | "password" | "passwordConfirmation";
@@ -176,8 +176,10 @@ export async function signupFormAction(
     if (message !== undefined) fieldErrors[nom] = message;
   }
 
+  // Plus de canal `data.error` : depuis l'arbitrage B2, l'action n'a qu'une
+  // sortie et elle redirige. Ne restent que la panne serveur et la validation —
+  // aucune des deux ne dépend de l'existence du compte.
   const erreurGlobale =
-    result?.data?.error ??
     result?.serverError ??
     (Object.keys(fieldErrors).length > 0
       ? "Vérifiez les champs du formulaire."
