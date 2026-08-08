@@ -308,6 +308,19 @@ dans les 12 pages d'axe de [[conventions-react-next]].
   pour `prisma generate` aussi (le stage builder du Dockerfile n'a pas de
   `DATABASE_URL`) — utiliser `process.env[…] ?? ""` ; et le bloc `datasource`
   est **obligatoire** sous `engine: "classic"`.
+- **MUST** `src/lib/env.ts` — schéma Zod des variables d'environnement
+  attendues, **validé au runtime serveur**, jamais à l'import évalué au build.
+  Une variable manquante empêche le conteneur de servir : healthcheck rouge,
+  rollback inline vers l'image précédente, job rouge. Sans cette garde, l'absence
+  d'une clé applicative ne se voit qu'à l'usage — la clé de géocodage au tunnel
+  de réservation, le mot de passe d'application email à l'inscription.
+- **MUST NOT** évaluer ce schéma au chargement d'un module importé par le build.
+  C'est exactement le piège payé sur `prisma.config.ts` ci-dessus : le stage
+  builder du Dockerfile n'a **aucune** de ces variables.
+- **MUST** toute variable nouvelle est posée dans le `.env.prod` des **deux**
+  piles, dans `.env.prod.example`, et dans l'Environment GitHub si le pipeline la
+  consomme — plus son entrée dans `src/lib/env.ts`. La consigne seule ne suffit
+  pas, la garde seule non plus.
 - **MUST** déclarer dans `onlyBuiltDependencies` (`pnpm-workspace.yaml`) tout
   paquet qui a besoin d'un script d'installation. pnpm 10 n'en exécute aucun
   sans autorisation, et **échoue en silence** : `bcrypt` se retrouve sans
@@ -756,7 +769,7 @@ DATABASE_URL="postgresql://hch:<mot-de-passe>@localhost:5433/hch?connection_limi
 - **MUST NOT** — ne jamais contourner l'absence de Docker en installant
   PostgreSQL nativement sur Shadow. Deux installations = deux versions de
   PostGIS susceptibles de diverger, sur un projet dont le cœur métier est
-  `ST_Contains` et un index `EXCLUDE USING gist`. Le pire scénario n'est pas que
+  `ST_Covers` et un index `EXCLUDE USING gist`. Le pire scénario n'est pas que
   ça casse, c'est que ça marche sur un poste et pas sur l'autre.
 - **MUST NOT** — ne jamais publier un port Docker sans le préfixer
   `127.0.0.1:`. Docker contourne UFW : les ports publiés sont DNAT'és dans
