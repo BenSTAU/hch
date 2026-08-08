@@ -1,12 +1,18 @@
 // Schéma Prisma HomeCycl'Home.
 //
-// Source de vérité du modèle : le dictionnaire de données v2.2 du vault
-// (18 tables), et PLAN S2 pour l'ordre des migrations et les contraintes.
+// Source de vérité du modèle : le dictionnaire de données v2.3 du vault
+// (19 tables), et PLAN S2 pour l'ordre des migrations et les contraintes.
 // Toute divergence entre ce fichier et le dictionnaire se remonte avant
 // d'écrire la migration — elle ne s'absorbe pas ici.
 //
-// Périmètre actuel : migrations 001, 002 et 003 de PLAN S2 §6. Les 10 autres
-// arrivent avec leurs tâches (géo, catalogue, interventions…).
+// Périmètre actuel : migrations 001 à 006 et 014 de PLAN S2 §6. Les rangs 007
+// à 013 arrivent avec leurs tâches (cycles, interventions, paiements).
+//
+// ⚠️ Le rang 014 (`init_rate_limits`) est appliqué AVANT les rangs 007 à 013,
+// qui n'existent pas encore. Sans conséquence : la table n'a aucune clé
+// étrangère, c'est même le motif pour lequel le cadrage amont V3 lui a donné
+// un rang détaché plutôt que de l'insérer dans la chaîne. L'ordre physique des
+// dossiers divergera donc de l'ordre logique du vault — acté, pas à corriger.
 //
 // ⚠️ Le rang 003 revient à `audit_logs`, que PLAN S2 §6 plaçait en 009.
 // Avancé en T-J0-05 : PLAN S2 §7 fait passer l'historique d'`app_settings`
@@ -47,7 +53,14 @@ model User {
   firstname String    @db.VarChar(100)
   lastname  String    @db.VarChar(100)
   /// Format E.164 strict, imposé par un CHECK SQL posé en migration 001.
-  phone     String    @db.VarChar(20)
+  ///
+  /// NULLable depuis la migration 004, et c'est une dette de la 001 : le
+  /// dictionnaire portait `NN` en colonne Attributs et « NULL sur droit à
+  /// l'oubli » dans sa propre Description, sur la même ligne. PLAN S2 §T6 en
+  /// fait une décision — `phone=NULL` à la pseudonymisation. Un NOT NULL rend
+  /// T-V3-12 inapplicable. Le CHECK E.164 n'est pas concerné : il passe sur
+  /// NULL.
+  phone     String?   @db.VarChar(20)
   /// Tableau Postgres natif : ROLE_CLIENT | ROLE_TECH | ROLE_ADMIN.
   roles     String[]  @db.VarChar(20)
   /// Soft-delete administrateur, réversible. À ne pas confondre avec
@@ -61,6 +74,9 @@ model User {
   verificationTokens VerificationToken[]
   appSettingsUpdated AppSetting[]
   auditLogs          AuditLog[]
+  addresses          Address[]
+  technicianZones    TechnicianZone[]
+  servicePriceEdits  ServicePriceHistory[]
 
   @@map("users")
 }
@@ -68,10 +84,10 @@ model User {
 /// Dissocie l'identité du mécanisme d'authentification : un même compte
 /// porte un provider local et un provider Google sans duplication.
 model AuthProvider {
-  id     Int    @id @default(autoincrement())
-  userId String @map("user_id") @db.Uuid
+  id           Int       @id @default(autoincrement())
+  userId       String    @map("user_id") @db.Uuid
   /// local | google | apple — CHECK SQL posé en migration 001.
-  provider String @db.VarChar(30)
+  provider     String    @db.VarChar(30)
   /// Identifiant côté fournisseur (`sub` Google). NULL pour `local`, qui
   /// n'en a pas — cf. note de divergence dans le body de PR.
   providerUid  String?   @map("provider_uid") @db.VarChar(255)
@@ -91,10 +107,10 @@ model AuthProvider {
 /// Jetons à usage unique : vérification d'email à l'inscription locale et
 /// réinitialisation de mot de passe. Jamais stockés en clair.
 model VerificationToken {
-  id     String @id @default(uuid(4)) @db.Uuid
-  userId String @map("user_id") @db.Uuid
+  id        String    @id @default(uuid(4)) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
   /// SHA-256 du jeton envoyé par email — le clair ne vit que dans l'URL.
-  tokenHash String @unique @map("token_hash") @db.VarChar(255)
+  tokenHash String    @unique @map("token_hash") @db.VarChar(255)
   /// email_verification | password_reset — CHECK SQL posé en migration 001.
   purpose   String    @db.VarChar(30)
   expiresAt DateTime  @map("expires_at") @db.Timestamp(6)
@@ -116,8 +132,8 @@ model VerificationToken {
 /// le jalon 0 — la plus petite du modèle, et la seule sans dépendance
 /// sortante obligatoire.
 model AppSetting {
-  key   String  @id @db.VarChar(100)
-  value String?
+  key         String   @id @db.VarChar(100)
+  value       String?
   /// string | number | boolean | json | url — CHECK SQL posé en migration 002.
   valueType   String   @default("string") @map("value_type") @db.VarChar(20)
   /// Libellé humain affiché dans le formulaire d'administration.
@@ -125,7 +141,7 @@ model AppSetting {
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
   /// NULL au seed initial : la clé existe avant qu'un administrateur ne la
   /// touche. C'est cette nullabilité qui rend l'entité autoportante.
-  updatedBy String? @map("updated_by") @db.Uuid
+  updatedBy   String?  @map("updated_by") @db.Uuid
 
   updatedByUser User? @relation(fields: [updatedBy], references: [id])
 
@@ -142,24 +158,221 @@ model AppSetting {
 /// polymorphisme, et il est acceptable ici : un journal décrit ce qui s'est
 /// passé, pas ce qui existe encore.
 model AuditLog {
-  id String @id @default(uuid(4)) @db.Uuid
+  id         String   @id @default(uuid(4)) @db.Uuid
   /// Nom de la TABLE cible, pas du modèle Prisma — `app_settings`, `users`.
-  entityType String @map("entity_type") @db.VarChar(50)
+  entityType String   @map("entity_type") @db.VarChar(50)
   /// VARCHAR et non UUID : les cibles ont des identifiants hétérogènes.
   /// `app_settings` est même clé-valeur, son identifiant est sa clé.
-  entityId String @map("entity_id") @db.VarChar(255)
+  entityId   String   @map("entity_id") @db.VarChar(255)
   /// CREATE | UPDATE | DELETE | ANONYMIZE — CHECK SQL posé en migration 003.
-  action String @db.VarChar(50)
+  action     String   @db.VarChar(50)
   /// L'acteur, lui, est une vraie FK : il existe forcément, et c'est la
   /// colonne par laquelle on retrace les actions d'un compte.
-  actorId String @map("actor_id") @db.Uuid
+  actorId    String   @map("actor_id") @db.Uuid
   /// Diff avant/après pour UPDATE, charge supprimée pour DELETE.
-  details   Json?    @db.JsonB
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  details    Json?    @db.JsonB
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
   actor User @relation(fields: [actorId], references: [id])
 
   @@index([entityType, entityId])
   @@index([actorId])
   @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Domaine B — Géographie & Normalisation (migration 004)
+//
+// Les deux colonnes géographiques sont en `geography` et non `geometry`, et
+// la sectorisation s'écrit `ST_Covers` et non `ST_Contains` — tranché le
+// 2026-08-08 (cadrage amont V3). Trois motifs : `ST_Contains` n'a aucune
+// signature `geography` (doc PostGIS §13.4) ; `ST_Covers` inclut la frontière,
+// ce qu'exige une zone de service dessinée le long d'une rue ; et la seule
+// opération métrique de la v1 (superficie en km²) sort en m² sous `geography`,
+// contre des degrés carrés sous `geometry(4326)`.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Normalisation code postal / commune. Évite de répéter le couple dans
+/// chaque adresse, et porte l'autocomplétion à la saisie.
+model City {
+  id         Int     @id @default(autoincrement())
+  /// VARCHAR et non INTEGER : les codes DOM-TOM et Monaco ne sont pas des
+  /// nombres, et un zéro de tête ne survit pas à un entier.
+  zipCode    String  @map("zip_code") @db.VarChar(10)
+  city       String  @db.VarChar(100)
+  /// Confort de filtrage côté administration, jamais requis à la saisie.
+  department String? @db.VarChar(100)
+  region     String? @db.VarChar(100)
+
+  addresses Address[]
+
+  @@unique([zipCode, city])
+  @@map("cities")
+}
+
+/// Secteur géographique de l'entreprise. Dessiné à la main par
+/// l'administrateur sur une carte (US-ZONE-AJOUTER, vague V1) — jamais déduit
+/// d'un code postal ni d'un nom de commune (Constitution §2.2).
+model Zone {
+  id    Int                                     @id @default(autoincrement())
+  name  String                                  @unique @db.VarChar(100)
+  /// Couleur d'affichage sur la carte d'administration.
+  color String?                                 @db.VarChar(7)
+  /// Prisma ne sait ni lire ni écrire cette colonne : toute opération passe
+  /// par `$queryRaw` / `$executeRaw` (ADR-008). Le client la masque même en
+  /// lecture, et `create` devient indisponible sur ce modèle.
+  area  Unsupported("geography(Polygon, 4326)")
+
+  technicianZones TechnicianZone[]
+
+  /// Sans index GiST, `ST_Covers` balaie la table. Une seule zone existe
+  /// aujourd'hui, mais le tunnel de réservation (T-V3-08) sera écrit et mesuré
+  /// contre cet index — le poser après fausserait la mesure.
+  @@index([area], type: Gist)
+  @@map("zones")
+}
+
+/// Lieu d'intervention. Séparé de `users` parce qu'un client en a plusieurs,
+/// et rattachable à personne : `userId` NULL est l'adresse d'un visiteur qui
+/// réserve sans compte (Constitution §3.2).
+model Address {
+  id       Int                                   @id @default(autoincrement())
+  street   String                                @db.VarChar(255)
+  cityId   Int                                   @map("city_id")
+  /// Point GPS WGS84 obtenu par géocodage tiers — jamais une saisie libre non
+  /// contrôlée (Constitution §2.2). Colonne `Unsupported`, cf. Zone.area.
+  location Unsupported("geography(Point, 4326)")
+  userId   String?                               @map("user_id") @db.Uuid
+  /// Libellé mémo choisi par le client — « Domicile », « Bureau ».
+  label    String?                               @db.VarChar(100)
+  /// Soft-delete : une adresse retirée du sélecteur reste référencée par les
+  /// interventions passées. Pas de `deletedAt` ici, aucune temporalité RGPD
+  /// n'y est attachée (PLAN S2 §4).
+  isActive Boolean                               @default(true) @map("is_active")
+
+  city City  @relation(fields: [cityId], references: [id])
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([location], type: Gist)
+  @@map("addresses")
+}
+
+/// Affectation d'un technicien à une zone (migration 005). Association pure,
+/// sans attribut. Le porteur DOIT avoir ROLE_TECH : garde applicatif dans la
+/// Server Action d'affectation, et trigger `check_technician_role()` en base —
+/// double filet de PLAN S2 §5.3.
+model TechnicianZone {
+  userId String @map("user_id") @db.Uuid
+  zoneId Int    @map("zone_id")
+
+  user User @relation(fields: [userId], references: [id])
+  zone Zone @relation(fields: [zoneId], references: [id])
+
+  @@id([userId, zoneId])
+  @@map("technician_zones")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Domaine D — Catalogue & Offres (migration 006)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Catégorisation des produits additionnels. Aucune US de la vague V3 ne la
+/// consomme : la table existe parce que `products.category_id` la référence,
+/// et elle se peuple en V1 admin.
+model ProductCategory {
+  id    Int     @id @default(autoincrement())
+  label String  @unique @db.VarChar(100)
+  icon  String? @db.VarChar(50)
+
+  products Product[]
+
+  @@map("product_categories")
+}
+
+/// Forfait d'entretien. `duration` est la clé du moteur de créneaux : le
+/// forfait dimensionne le créneau, aucun créneau ne lui préexiste
+/// (Constitution §2.1). D'où l'absence de table `availabilities`.
+model Service {
+  id          Int     @id @default(autoincrement())
+  label       String  @db.VarChar(150)
+  description String?
+  /// En MINUTES. Le catalogue supporte des forfaits hétérogènes, de 20 min à
+  /// plusieurs heures, sans faire exploser le planning.
+  duration    Int
+  /// Prix catalogue courant. Figé dans `interventions.price_snapshot` à la
+  /// réservation : le modifier ici n'altère aucune facture passée
+  /// (Constitution §4.1).
+  price       Decimal @db.Decimal(10, 2)
+  isActive    Boolean @default(true) @map("is_active")
+
+  priceHistory ServicePriceHistory[]
+
+  @@map("services")
+}
+
+/// Historique des changements tarifaires des forfaits — audit comptable, et
+/// reconstitution d'une facture passée.
+model ServicePriceHistory {
+  id        Int      @id @default(autoincrement())
+  serviceId Int      @map("service_id")
+  oldPrice  Decimal  @map("old_price") @db.Decimal(10, 2)
+  newPrice  Decimal  @map("new_price") @db.Decimal(10, 2)
+  changedAt DateTime @default(now()) @map("changed_at") @db.Timestamp(6)
+  /// NULLable, comme `app_settings.updated_by` : un changement de prix peut
+  /// venir d'un seed ou d'une migration, qui n'ont pas d'auteur. Le
+  /// dictionnaire ne porte aucun marqueur NN sur cette colonne ni sur
+  /// `service_id` — divergence signalée, tranchée ici NULL / NOT NULL.
+  changedBy String?  @map("changed_by") @db.Uuid
+
+  service       Service @relation(fields: [serviceId], references: [id])
+  changedByUser User?   @relation(fields: [changedBy], references: [id])
+
+  @@index([serviceId])
+  @@map("service_price_history")
+}
+
+/// Produit additionnel vendu pendant l'intervention. Même panier, même
+/// paiement, même facture que le forfait — service et vente forment un acte
+/// commercial unique (Constitution §2.6), il n'y a pas de boutique séparée.
+model Product {
+  id          Int     @id @default(autoincrement())
+  /// NULL = non catégorisé. Le catalogue démarre plat, la catégorisation
+  /// arrive avec l'interface d'administration.
+  categoryId  Int?    @map("category_id")
+  label       String  @db.VarChar(150)
+  description String?
+  price       Decimal @db.Decimal(10, 2)
+  /// Décrémenté à la vente sous verrou pessimiste (PLAN S2 §5.4), restitué au
+  /// retrait. Le garde anti-négatif vit dans la Server Action de T-V3-09.
+  stock       Int     @default(0)
+
+  category ProductCategory? @relation(fields: [categoryId], references: [id])
+
+  @@map("products")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Domaine F — Anti-abus (migration 014)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Compteur anti-abus à fenêtre glissante, trois usages : échecs de connexion
+/// (5 / 15 min), demande de réinitialisation (3 / 24 h), renvoi d'activation
+/// (3 / 24 h). Consommé par T-V3-02, T-V3-03 et T-V3-05.
+///
+/// AUCUNE clé étrangère, et c'est le cœur de la décision (PLAN S4 §11.2). Un
+/// compteur porté par `users` n'aurait pas de ligne pour un email inconnu :
+/// « trop de tentatives » ne s'afficherait que pour les comptes existants, ce
+/// qui en fait un oracle d'énumération — la fuite exacte que le durcissement à
+/// temps constant de T-J0-04 a fermée, rouverte par une autre porte.
+model RateLimit {
+  id          Int      @id @default(autoincrement())
+  /// Chaîne libre : `login:<email>`, `reset:<email>`, `activation:<email>`.
+  key         String   @db.VarChar(255)
+  attemptedAt DateTime @default(now()) @map("attempted_at") @db.Timestamp(6)
+
+  /// L'index porte les deux colonnes parce que toute lecture est un comptage
+  /// sur une clé DANS une fenêtre. Purge opportuniste à la lecture, au-delà de
+  /// 24 h — la plus large des trois fenêtres. Pas de tâche planifiée.
+  @@index([key, attemptedAt])
+  @@map("rate_limits")
 }

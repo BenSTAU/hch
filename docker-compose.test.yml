@@ -11,7 +11,7 @@
 # la base de dev.
 #
 # Même tag que dev, staging et production : une seule version de PostGIS sur
-# toute la chaîne, pour un cœur métier bâti sur ST_Contains et un index
+# toute la chaîne, pour un cœur métier bâti sur ST_Covers et un index
 # EXCLUDE USING gist. Une montée de version est une décision de PLAN,
 # appliquée aux quatre environnements à la fois.
 
