@@ -1,6 +1,8 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import Link from "next/link";
+import { Eye, EyeOff } from "lucide-react";
+import { useActionState, useEffect, useRef, useState } from "react";
 
 import {
   signupFormAction,
@@ -24,8 +26,9 @@ type Champ = (typeof CHAMPS)[number];
 
 /// Règles annoncées AVANT la soumission et associées au champ — WCAG 3.3.2 (AA),
 /// exigé mot pour mot par `US-COMPTE-CREER` §Accessibilité. Un message qui
-/// n'apparaît qu'après l'échec fait deviner la règle.
-const AIDE_MOT_DE_PASSE = "12 caractères minimum.";
+/// n'apparaît qu'après l'échec fait deviner la règle. Libellé repris de la
+/// maquette **C6**.
+const AIDE_MOT_DE_PASSE = "12 caractères minimum requis.";
 
 function idErreur(champ: Champ): string {
   return `${champ}-error`;
@@ -40,11 +43,26 @@ function decritPar(
   return retenus.length > 0 ? retenus.join(" ") : undefined;
 }
 
+/// L'astérisque vit HORS du `<label>`, et il est `aria-hidden`.
+///
+/// Deux raisons. L'obligation est déjà portée par l'attribut `required`, que les
+/// technologies d'assistance annoncent — la répéter en texte la dirait deux fois.
+/// Et un astérisque à l'intérieur du label entrerait dans le nom accessible du
+/// champ, qui deviendrait « Adresse email * ».
+function Obligatoire() {
+  return (
+    <span aria-hidden="true" className="text-destructive">
+      *
+    </span>
+  );
+}
+
 export function SignupForm() {
   const [state, formAction, isPending] = useActionState(
     signupFormAction,
     ETAT_INITIAL,
   );
+  const [motDePasseVisible, setMotDePasseVisible] = useState(false);
 
   // Cinq refs distinctes et non un dictionnaire de refs : lire `refs[champ]`
   // pendant le rendu déclenche `react-hooks/refs`, et la règle a raison sur le
@@ -91,58 +109,74 @@ export function SignupForm() {
     // `action` se soumet NATIVEMENT en GET pendant cette fenêtre — tous les
     // champs en query string, mots de passe compris, donc dans l'historique, les
     // journaux nginx et le `Referer`. Leçon T-J0-04.
-    <form action={formAction} className="flex flex-col gap-4">
+    <form action={formAction} className="flex flex-col gap-5">
       {/* `role="alert"` : annoncé dès son apparition, sans que l'utilisateur ait
           à le chercher. Un seul de ces repères sur l'écran — les messages par
           champ sont liés par `aria-describedby`, pas dupliqués en alertes. */}
-      <p role="alert" className="text-sm text-destructive empty:hidden">
+      <p
+        role="alert"
+        className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive empty:hidden"
+      >
         {resume}
       </p>
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="firstname">Prénom</Label>
-        <Input
-          ref={firstnameRef}
-          id="firstname"
-          name="firstname"
-          autoComplete="given-name"
-          defaultValue={state.values?.firstname ?? ""}
-          aria-invalid={erreurs.firstname ? true : undefined}
-          aria-describedby={decritPar(
-            erreurs.firstname && idErreur("firstname"),
-          )}
-          required
-        />
-        <p
-          id={idErreur("firstname")}
-          className="text-sm text-destructive empty:hidden"
-        >
-          {erreurs.firstname ?? ""}
-        </p>
+      <div className="grid gap-5 sm:grid-cols-2">
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-1">
+            <Label htmlFor="firstname">Prénom</Label>
+            <Obligatoire />
+          </div>
+          <Input
+            ref={firstnameRef}
+            id="firstname"
+            name="firstname"
+            autoComplete="given-name"
+            defaultValue={state.values?.firstname ?? ""}
+            aria-invalid={erreurs.firstname ? true : undefined}
+            aria-describedby={decritPar(
+              erreurs.firstname && idErreur("firstname"),
+            )}
+            required
+          />
+          <p
+            id={idErreur("firstname")}
+            className="text-sm text-destructive empty:hidden"
+          >
+            {erreurs.firstname ?? ""}
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-1">
+            <Label htmlFor="lastname">Nom</Label>
+            <Obligatoire />
+          </div>
+          <Input
+            ref={lastnameRef}
+            id="lastname"
+            name="lastname"
+            autoComplete="family-name"
+            defaultValue={state.values?.lastname ?? ""}
+            aria-invalid={erreurs.lastname ? true : undefined}
+            aria-describedby={decritPar(
+              erreurs.lastname && idErreur("lastname"),
+            )}
+            required
+          />
+          <p
+            id={idErreur("lastname")}
+            className="text-sm text-destructive empty:hidden"
+          >
+            {erreurs.lastname ?? ""}
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="lastname">Nom</Label>
-        <Input
-          ref={lastnameRef}
-          id="lastname"
-          name="lastname"
-          autoComplete="family-name"
-          defaultValue={state.values?.lastname ?? ""}
-          aria-invalid={erreurs.lastname ? true : undefined}
-          aria-describedby={decritPar(erreurs.lastname && idErreur("lastname"))}
-          required
-        />
-        <p
-          id={idErreur("lastname")}
-          className="text-sm text-destructive empty:hidden"
-        >
-          {erreurs.lastname ?? ""}
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="email">Adresse email</Label>
+        <div className="flex items-center gap-1">
+          <Label htmlFor="email">Adresse email</Label>
+          <Obligatoire />
+        </div>
         <Input
           ref={emailRef}
           id="email"
@@ -151,9 +185,15 @@ export function SignupForm() {
           autoComplete="email"
           defaultValue={state.values?.email ?? ""}
           aria-invalid={erreurs.email ? true : undefined}
-          aria-describedby={decritPar(erreurs.email && idErreur("email"))}
+          aria-describedby={decritPar(
+            "email-hint",
+            erreurs.email && idErreur("email"),
+          )}
           required
         />
+        <p id="email-hint" className="text-sm text-muted-foreground">
+          Un lien d&apos;activation vous sera envoyé.
+        </p>
         <p
           id={idErreur("email")}
           className="text-sm text-destructive empty:hidden"
@@ -163,23 +203,50 @@ export function SignupForm() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="password">Mot de passe</Label>
-        <Input
-          ref={passwordRef}
-          id="password"
-          name="password"
-          type="password"
-          // `new-password` et non `current-password` : c'est ce qui fait proposer
-          // un mot de passe fort au gestionnaire, au lieu de remplir celui d'un
-          // autre compte.
-          autoComplete="new-password"
-          aria-invalid={erreurs.password ? true : undefined}
-          aria-describedby={decritPar(
-            "password-hint",
-            erreurs.password && idErreur("password"),
-          )}
-          required
-        />
+        <div className="flex items-center gap-1">
+          <Label htmlFor="password">Mot de passe</Label>
+          <Obligatoire />
+        </div>
+        <div className="relative">
+          <Input
+            ref={passwordRef}
+            id="password"
+            name="password"
+            type={motDePasseVisible ? "text" : "password"}
+            // `new-password` et non `current-password` : c'est ce qui fait
+            // proposer un mot de passe fort au gestionnaire, au lieu de remplir
+            // celui d'un autre compte.
+            autoComplete="new-password"
+            className="pr-10"
+            aria-invalid={erreurs.password ? true : undefined}
+            aria-describedby={decritPar(
+              "password-hint",
+              erreurs.password && idErreur("password"),
+            )}
+            required
+          />
+          {/* `type="button"` : sans lui, le bouton hérite du `submit` par défaut
+              et révéler son mot de passe soumettrait le formulaire.
+              `aria-pressed` porte l'état, ce qu'une simple icône ne fait pas. */}
+          <button
+            type="button"
+            onClick={() => setMotDePasseVisible((visible) => !visible)}
+            aria-pressed={motDePasseVisible}
+            aria-controls="password"
+            className="absolute inset-y-0 right-0 flex items-center rounded-none px-3 text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+          >
+            {motDePasseVisible ? (
+              <EyeOff aria-hidden="true" className="size-4" />
+            ) : (
+              <Eye aria-hidden="true" className="size-4" />
+            )}
+            <span className="sr-only">
+              {motDePasseVisible
+                ? "Masquer le mot de passe"
+                : "Afficher le mot de passe"}
+            </span>
+          </button>
+        </div>
         <p id="password-hint" className="text-sm text-muted-foreground">
           {AIDE_MOT_DE_PASSE}
         </p>
@@ -192,7 +259,12 @@ export function SignupForm() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="passwordConfirmation">Confirmer le mot de passe</Label>
+        <div className="flex items-center gap-1">
+          <Label htmlFor="passwordConfirmation">
+            Confirmer le mot de passe
+          </Label>
+          <Obligatoire />
+        </div>
         <Input
           ref={passwordConfirmationRef}
           id="passwordConfirmation"
@@ -213,9 +285,30 @@ export function SignupForm() {
         </p>
       </div>
 
-      <Button type="submit" disabled={isPending}>
+      <Button type="submit" disabled={isPending} className="h-11 w-full">
         {isPending ? "Création…" : "Créer mon compte"}
       </Button>
+
+      {/* Mention RGPD au point de collecte — article 13, prescrite mot pour mot
+          par PLAN S4 §4.3.
+
+          Elle REMPLACE la case « J'accepte les CGV » de la maquette C6, qui
+          n'apparaît dans aucun critère d'acceptation de `US-COMPTE-CREER` : une
+          case de consentement obligatoire est une exigence fonctionnelle, et
+          elle ne s'invente pas au portage. Divergence déclarée dans le body de
+          PR. */}
+      <p className="text-xs text-muted-foreground">
+        Vos données personnelles sont collectées pour créer et gérer votre
+        compte HomeCycl&apos;Home. Vous disposez de droits d&apos;accès, de
+        rectification et d&apos;effacement — voir la{" "}
+        <Link
+          href="/politique-confidentialite"
+          className="underline underline-offset-4"
+        >
+          politique de confidentialité
+        </Link>
+        .
+      </p>
     </form>
   );
 }

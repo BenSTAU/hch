@@ -20,11 +20,17 @@ describe("InscriptionView — repères et titres", () => {
 
   it("porte un H1 unique et nommé", () => {
     // WCAG 1.3.1 (A), RGAA 9.1.
+    //
+    // Le libellé attendu était « Créer un compte » avant le portage : c'était un
+    // oracle inventé, la SPEC ne fixe pas ce titre. La maquette **C6** écrit
+    // « Créer votre compte » — et c'est elle la référence visuelle
+    // ([[adr-012-maquettage-stitch-shadcn|ADR-012]] §D6). Le bouton, lui, reste
+    // « Créer mon compte », comme sur la maquette.
     render(<InscriptionView />);
 
     const titres = screen.getAllByRole("heading", { level: 1 });
     expect(titres).toHaveLength(1);
-    expect(titres[0]).toHaveTextContent("Créer un compte");
+    expect(titres[0]).toHaveTextContent("Créer votre compte");
   });
 
   it("ne saute aucun niveau de titre", () => {
