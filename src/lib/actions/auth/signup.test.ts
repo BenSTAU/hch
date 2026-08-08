@@ -50,7 +50,9 @@ const redirect = vi.fn((url: string) => {
     digest: `NEXT_REDIRECT;push;${url};307;`,
   });
 });
-vi.mock("next/navigation", () => ({ redirect: (url: string) => redirect(url) }));
+vi.mock("next/navigation", () => ({
+  redirect: (url: string) => redirect(url),
+}));
 
 const { signup, signupFormAction } = await import("./signup");
 
@@ -63,6 +65,14 @@ const FORMULAIRE = {
 };
 
 const CONFIRMATION = "/inscription/confirmation";
+
+/// `redirect()` lève, et next-safe-action **relance** l'interruption dès qu'elle
+/// porte un digest `NEXT_REDIRECT` : une action qui redirige REJETTE. Même
+/// précaution qu'à la connexion (`login.test.ts:95`). Sur les chemins qui ne
+/// redirigent pas, le `.catch` est transparent et le résultat passe.
+function soumettre(input: Parameters<typeof signup>[0]) {
+  return signup(input).catch(() => undefined);
+}
 
 function compte(overrides: Record<string, unknown> = {}) {
   return {
@@ -85,7 +95,7 @@ beforeEach(() => {
 
 describe("signup — email libre", () => {
   it("crée le compte avec le hash bcrypt du mot de passe soumis", async () => {
-    await signup(FORMULAIRE);
+    await soumettre(FORMULAIRE);
 
     expect(hashPassword).toHaveBeenCalledWith("un-mot-de-passe-long");
     expect(createLocalAccount).toHaveBeenCalledWith(
@@ -99,7 +109,7 @@ describe("signup — email libre", () => {
   });
 
   it("émet un jeton hashé et une échéance à 24 h", async () => {
-    await signup(FORMULAIRE);
+    await soumettre(FORMULAIRE);
 
     const [input] = createLocalAccount.mock.calls[0] as [
       { tokenHash: string; expiresAt: Date },
@@ -114,7 +124,7 @@ describe("signup — email libre", () => {
     // Le clair ne vit que dans l'URL (dictionnaire §verification_tokens).
     // Envoyer le hash produirait un lien qui ne peut par construction
     // correspondre à aucune ligne.
-    await signup(FORMULAIRE);
+    await soumettre(FORMULAIRE);
 
     const [input] = createLocalAccount.mock.calls[0] as [{ tokenHash: string }];
     const [message] = sendActivationEmail.mock.calls[0] as [
@@ -127,7 +137,7 @@ describe("signup — email libre", () => {
   });
 
   it("redirige vers l'écran de confirmation", async () => {
-    await signup(FORMULAIRE);
+    await soumettre(FORMULAIRE);
 
     expect(redirect).toHaveBeenCalledWith(CONFIRMATION);
   });
@@ -136,7 +146,7 @@ describe("signup — email libre", () => {
     // Le rate-limit couvre les RENVOIS (module-1-utilisateurs.md:233). Le
     // décompter à la première inscription retirerait un jeton à la personne qui
     // en aura besoin ensuite.
-    await signup(FORMULAIRE);
+    await soumettre(FORMULAIRE);
 
     expect(consumeRateLimit).not.toHaveBeenCalled();
   });
@@ -150,13 +160,13 @@ describe("signup — compte existant jamais activé", () => {
   it("ne crée pas un second compte", async () => {
     // US-COMPTE-CREER §Cas d'erreur : « aucune ligne `users` supplémentaire
     // n'est créée ».
-    await signup(FORMULAIRE);
+    await soumettre(FORMULAIRE);
 
     expect(createLocalAccount).not.toHaveBeenCalled();
   });
 
   it("remplace le jeton en attente et renvoie l'email", async () => {
-    await signup(FORMULAIRE);
+    await soumettre(FORMULAIRE);
 
     expect(replacePendingEmailVerificationToken).toHaveBeenCalledWith(
       expect.objectContaining({ userId: "user-1" }),
@@ -169,7 +179,7 @@ describe("signup — compte existant jamais activé", () => {
     // contenu ne doit pas être choisi par qui soumet.
     findAccountForSignup.mockResolvedValue(compte({ firstname: "Alix" }));
 
-    await signup({ ...FORMULAIRE, firstname: "Camille" });
+    await soumettre({ ...FORMULAIRE, firstname: "Camille" });
 
     expect(sendActivationEmail).toHaveBeenCalledWith(
       expect.objectContaining({ firstname: "Alix" }),
@@ -177,7 +187,7 @@ describe("signup — compte existant jamais activé", () => {
   });
 
   it("décompte le renvoi sur la clé de l'email", async () => {
-    await signup(FORMULAIRE);
+    await soumettre(FORMULAIRE);
 
     expect(consumeRateLimit).toHaveBeenCalledWith(
       "activation:camille@example.test",
@@ -192,7 +202,7 @@ describe("signup — compte existant jamais activé", () => {
       retryAfterMs: 3_600_000,
     });
 
-    await signup(FORMULAIRE);
+    await soumettre(FORMULAIRE);
 
     expect(sendActivationEmail).not.toHaveBeenCalled();
     expect(replacePendingEmailVerificationToken).not.toHaveBeenCalled();
@@ -206,7 +216,7 @@ describe("signup — compte existant jamais activé", () => {
       retryAfterMs: 3_600_000,
     });
 
-    await signup(FORMULAIRE);
+    await soumettre(FORMULAIRE);
 
     expect(redirect).toHaveBeenCalledWith(CONFIRMATION);
   });
@@ -220,7 +230,7 @@ describe("signup — compte existant déjà activé", () => {
   });
 
   it("n'envoie aucun email et ne touche à rien", async () => {
-    await signup(FORMULAIRE);
+    await soumettre(FORMULAIRE);
 
     expect(createLocalAccount).not.toHaveBeenCalled();
     expect(replacePendingEmailVerificationToken).not.toHaveBeenCalled();
@@ -228,7 +238,7 @@ describe("signup — compte existant déjà activé", () => {
   });
 
   it("redirige vers le MÊME écran de confirmation", async () => {
-    await signup(FORMULAIRE);
+    await soumettre(FORMULAIRE);
 
     expect(redirect).toHaveBeenCalledWith(CONFIRMATION);
   });
@@ -236,7 +246,7 @@ describe("signup — compte existant déjà activé", () => {
   it("ne consomme pas le quota de renvoi d'un compte déjà activé", async () => {
     // Sinon un tiers épuiserait le quota du titulaire en soumettant trois fois
     // son adresse, et lui bloquerait le renvoi dont il pourrait avoir besoin.
-    await signup(FORMULAIRE);
+    await soumettre(FORMULAIRE);
 
     expect(consumeRateLimit).not.toHaveBeenCalled();
   });
@@ -253,7 +263,7 @@ describe("signup — compte désactivé par un administrateur", () => {
       compte({ isActive: false, hasCompletedEmailVerification: true }),
     );
 
-    await signup(FORMULAIRE);
+    await soumettre(FORMULAIRE);
 
     expect(sendActivationEmail).not.toHaveBeenCalled();
     expect(replacePendingEmailVerificationToken).not.toHaveBeenCalled();
@@ -268,7 +278,7 @@ describe("signup — échec d'envoi", () => {
     // personne attendre un message qui n'arrivera jamais.
     sendActivationEmail.mockRejectedValue(new Error("EAUTH"));
 
-    const result = await signup(FORMULAIRE);
+    const result = await soumettre(FORMULAIRE);
 
     expect(redirect).not.toHaveBeenCalled();
     expect(result?.data?.error).toBeTruthy();
@@ -279,10 +289,10 @@ describe("signup — échec d'envoi", () => {
     // chose sur l'autre révélerait si l'email était libre.
     sendActivationEmail.mockRejectedValue(new Error("EAUTH"));
 
-    const surCreation = await signup(FORMULAIRE);
+    const surCreation = await soumettre(FORMULAIRE);
 
     findAccountForSignup.mockResolvedValue(compte());
-    const surRenvoi = await signup(FORMULAIRE);
+    const surRenvoi = await soumettre(FORMULAIRE);
 
     expect(surCreation?.data?.error).toBe(surRenvoi?.data?.error);
   });
@@ -292,7 +302,7 @@ describe("signup — échec d'envoi", () => {
       new Error("EAUTH 535 seizecaracteres refusé par smtp.gmail.com"),
     );
 
-    const result = await signup(FORMULAIRE);
+    const result = await soumettre(FORMULAIRE);
 
     expect(JSON.stringify(result)).not.toContain("seizecaracteres");
     expect(JSON.stringify(result)).not.toContain("smtp.gmail.com");
@@ -301,7 +311,7 @@ describe("signup — échec d'envoi", () => {
 
 describe("signup — validation", () => {
   it("refuse deux mots de passe différents sans toucher à la base", async () => {
-    const result = await signup({
+    const result = await soumettre({
       ...FORMULAIRE,
       passwordConfirmation: "autre-chose",
     });
@@ -314,7 +324,7 @@ describe("signup — validation", () => {
   it("ignore un rôle injecté dans la charge utile", async () => {
     // L'action est un endpoint public : la charge n'a aucune raison de
     // ressembler à ce que le formulaire envoie.
-    await signup({ ...FORMULAIRE, roles: ["ROLE_ADMIN"] } as never);
+    await soumettre({ ...FORMULAIRE, roles: ["ROLE_ADMIN"] } as never);
 
     expect(createLocalAccount).toHaveBeenCalledWith(
       expect.not.objectContaining({ roles: expect.anything() }),
@@ -322,7 +332,7 @@ describe("signup — validation", () => {
   });
 
   it("ne réfléchit jamais le mot de passe soumis dans sa réponse", async () => {
-    const result = await signup({
+    const result = await soumettre({
       ...FORMULAIRE,
       password: "court",
       passwordConfirmation: "court",

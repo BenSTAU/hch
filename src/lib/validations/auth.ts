@@ -29,3 +29,92 @@ export const loginSchema = z.object({
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Inscription et activation — `US-COMPTE-CREER`, `US-COMPTE-ACTIVER`
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Message **volontairement unique** pour les trois issues de l'inscription —
+/// email libre, compte existant non activé, compte existant déjà activé
+/// (US-COMPTE-CREER §Cas d'erreur, Constitution §4.2).
+export const SIGNUP_ACKNOWLEDGED_MESSAGE =
+  "Si un compte existe pour cet email, un email d'activation vient d'être envoyé";
+
+/// Seul message qui ne dépend PAS de l'existence du compte : il dépend du
+/// transport. C'est le versant visible de l'échec bruyant d'ADR-017 — et il est
+/// identique sur le chemin de création et sur celui du renvoi, sans quoi il
+/// dirait si l'email était libre.
+export const EMAIL_DELIVERY_FAILED_MESSAGE =
+  "L'email d'activation n'a pas pu être envoyé. Réessayez dans un instant.";
+
+/// 12 caractères — `US-COMPTE-CREER` §Contexte, aligné sur ADR-005 v2.
+const PASSWORD_MIN_LENGTH = 12;
+
+/// bcrypt tronque **silencieusement** au-delà de 72 octets. Sans cette borne,
+/// deux mots de passe distincts de 80 caractères ouvriraient le même compte, et
+/// l'utilisateur croirait avoir choisi le second. Dette relevée par l'agent
+/// testeur en T-J0-04 et explicitement reportée « au schéma d'inscription »
+/// (src/lib/validations/auth.test.ts, « n'impose aucune longueur maximale »).
+const PASSWORD_MAX_BYTES = 72;
+
+const REQUIS = "Ce champ est requis";
+
+/// En **octets** et non en caractères : 24 emoji de 4 octets font 96 octets pour
+/// 24 caractères perçus, et une borne sur `.length` laisserait passer la
+/// troncature.
+function tientDansBcrypt(valeur: string): boolean {
+  return new TextEncoder().encode(valeur).length <= PASSWORD_MAX_BYTES;
+}
+
+/// Largeurs alignées sur les colonnes (`prisma/schema.prisma:52-54`). Sans
+/// bornes ici, le refus viendrait de Postgres — donc après le hachage bcrypt et
+/// pendant l'insertion, en 500 au lieu d'un message de formulaire.
+export const signupSchema = z
+  .object({
+    firstname: z.string().trim().min(1, REQUIS).max(100, REQUIS),
+    lastname: z.string().trim().min(1, REQUIS).max(100, REQUIS),
+    email: z
+      .string()
+      .min(1, REQUIS)
+      .email("Email invalide")
+      .max(180, "Email invalide")
+      .toLowerCase(),
+    password: z
+      .string()
+      .min(
+        PASSWORD_MIN_LENGTH,
+        `Mot de passe : ${PASSWORD_MIN_LENGTH} caractères minimum`,
+      )
+      .refine(
+        tientDansBcrypt,
+        `Mot de passe : ${PASSWORD_MAX_BYTES} octets maximum`,
+      ),
+    passwordConfirmation: z.string().min(1, REQUIS),
+  })
+  // `path` explicite : sans lui l'erreur flotte au niveau du formulaire, et
+  // aucun champ ne peut la porter par `aria-describedby` (WCAG 3.3.1 AA).
+  .refine((data) => data.password === data.passwordConfirmation, {
+    message: "Les mots de passe ne correspondent pas",
+    path: ["passwordConfirmation"],
+  });
+
+export type SignupInput = z.infer<typeof signupSchema>;
+
+/// Le jeton est du `base64url` de 32 octets, soit 43 caractères. Le borner ici
+/// évite une requête en base par lien malformé, et coupe court à une charge de
+/// plusieurs mégaoctets dans la query string.
+export const activationSchema = z.object({
+  token: z
+    .string()
+    .min(1, "Lien invalide")
+    .max(64, "Lien invalide")
+    .regex(/^[A-Za-z0-9_-]+$/, "Lien invalide"),
+});
+
+export const resendActivationSchema = z.object({
+  email: z
+    .string()
+    .min(1, "Renseignez votre adresse email")
+    .email("Email invalide")
+    .toLowerCase(),
+});

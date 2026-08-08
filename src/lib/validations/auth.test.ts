@@ -342,7 +342,12 @@ describe("SIGNUP_ACKNOWLEDGED_MESSAGE", () => {
   });
 
   it("ne dit pas si le compte existait déjà", () => {
-    for (const indice of ["déjà utilisé", "déjà pris", "existe déjà", "connu"]) {
+    for (const indice of [
+      "déjà utilisé",
+      "déjà pris",
+      "existe déjà",
+      "connu",
+    ]) {
       expect(SIGNUP_ACKNOWLEDGED_MESSAGE.toLowerCase()).not.toContain(indice);
     }
   });
@@ -350,7 +355,9 @@ describe("SIGNUP_ACKNOWLEDGED_MESSAGE", () => {
 
 describe("resendActivationSchema", () => {
   it("n'exige que l'email, et le normalise", () => {
-    const parsed = resendActivationSchema.parse({ email: "Camille@Example.fr" });
+    const parsed = resendActivationSchema.parse({
+      email: "Camille@Example.fr",
+    });
 
     expect(parsed).toEqual({ email: "camille@example.fr" });
   });
@@ -362,9 +369,9 @@ describe("resendActivationSchema", () => {
 
 describe("activationSchema", () => {
   it("accepte un jeton de 43 caractères URL-safe", () => {
-    expect(
-      activationSchema.safeParse({ token: "a".repeat(43) }).success,
-    ).toBe(true);
+    expect(activationSchema.safeParse({ token: "a".repeat(43) }).success).toBe(
+      true,
+    );
   });
 
   it("refuse un jeton vide", () => {
@@ -376,9 +383,9 @@ describe("activationSchema", () => {
     // refus arriverait de toute façon. Le borner ici évite une requête en base
     // par lien malformé, et coupe court à une charge de 10 Mo dans la query
     // string.
-    expect(
-      activationSchema.safeParse({ token: "pas/un+jeton=" }).success,
-    ).toBe(false);
+    expect(activationSchema.safeParse({ token: "pas/un+jeton=" }).success).toBe(
+      false,
+    );
     expect(
       activationSchema.safeParse({ token: "a".repeat(5000) }).success,
     ).toBe(false);

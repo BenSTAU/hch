@@ -83,9 +83,14 @@ describe("consumeRateLimit — sous le seuil", () => {
   it("autorise la tentative qui atteint tout juste le seuil", async () => {
     findMany.mockResolvedValue([ilYA(10), ilYA(5)]);
 
-    const verdict = await consumeRateLimit("activation:a@b.test", 3, 60 * 60_000, {
-      now: MAINTENANT,
-    });
+    const verdict = await consumeRateLimit(
+      "activation:a@b.test",
+      3,
+      60 * 60_000,
+      {
+        now: MAINTENANT,
+      },
+    );
 
     expect(verdict).toEqual({ allowed: true });
     expect(create).toHaveBeenCalledOnce();
@@ -96,9 +101,14 @@ describe("consumeRateLimit — au seuil", () => {
   it("refuse quand la fenêtre est pleine", async () => {
     findMany.mockResolvedValue([ilYA(30), ilYA(20), ilYA(10)]);
 
-    const verdict = await consumeRateLimit("activation:a@b.test", 3, 60 * 60_000, {
-      now: MAINTENANT,
-    });
+    const verdict = await consumeRateLimit(
+      "activation:a@b.test",
+      3,
+      60 * 60_000,
+      {
+        now: MAINTENANT,
+      },
+    );
 
     expect(verdict).toEqual({ allowed: false, retryAfterMs: 30 * 60_000 });
   });

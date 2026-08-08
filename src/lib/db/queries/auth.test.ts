@@ -350,9 +350,7 @@ describe("activateAccountWithToken", () => {
       now: MAINTENANT,
     });
 
-    const [args] = tokenUpdate.mock.calls[0] as [
-      { where: { usedAt: null } },
-    ];
+    const [args] = tokenUpdate.mock.calls[0] as [{ where: { usedAt: null } }];
     expect(args.where.usedAt).toBeNull();
   });
 

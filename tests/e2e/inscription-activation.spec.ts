@@ -65,9 +65,7 @@ test.describe("inscription", () => {
 
     // L'écran de confirmation est le SEUL retour visible, et il est le même
     // quelle que soit l'issue (anti-énumération, Constitution §4.2).
-    await expect(
-      page.getByText(/Vérifiez votre email/i).first(),
-    ).toBeVisible();
+    await expect(page.getByText(/Vérifiez votre email/i).first()).toBeVisible();
 
     const compte = await db.user.findUnique({
       where: { email },
@@ -92,7 +90,9 @@ test.describe("inscription", () => {
     expect(compte?.authProviders).toHaveLength(1);
     expect(compte?.authProviders[0]?.provider).toBe("local");
     // Le hash bcrypt, et rien qui ressemble au mot de passe soumis.
-    expect(compte?.authProviders[0]?.passwordHash).toMatch(/^\$2[aby]\$1[0-9]\$/);
+    expect(compte?.authProviders[0]?.passwordHash).toMatch(
+      /^\$2[aby]\$1[0-9]\$/,
+    );
     expect(compte?.authProviders[0]?.passwordHash).not.toContain(MOT_DE_PASSE);
 
     expect(compte?.verificationTokens).toHaveLength(1);
@@ -220,9 +220,7 @@ test.describe("activation", () => {
     // client — un ROLE_CLIENT y arrive donc sur un 403. Report nommé vers
     // T-V3-03, qui porte le parcours de connexion.
     await expect(page).not.toHaveURL(/\/connexion/);
-    await expect(
-      page.getByText(/Identifiants invalides/i),
-    ).toHaveCount(0);
+    await expect(page.getByText(/Identifiants invalides/i)).toHaveCount(0);
   });
 
   test("un jeton déjà consommé refuse le rejeu", async ({ page }) => {
@@ -253,12 +251,16 @@ test.describe("activation", () => {
   });
 
   test("un jeton inconnu reste générique", async ({ page }) => {
-    await page.goto(`/activation?token=${randomBytes(32).toString("base64url")}`);
+    await page.goto(
+      `/activation?token=${randomBytes(32).toString("base64url")}`,
+    );
     await page.getByRole("button", { name: "Activer mon compte" }).click();
 
     await expect(page.getByRole("alert")).toContainText(/invalide/i);
     // Pas de formulaire de renvoi ici : il inviterait à essayer des adresses.
-    await expect(page.getByRole("button", { name: /Renvoyer/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Renvoyer/i })).toHaveCount(
+      0,
+    );
   });
 
   test("le renvoi émet un nouveau jeton et invalide le précédent", async ({
@@ -278,7 +280,9 @@ test.describe("activation", () => {
     await page.getByLabel("Adresse email").fill(email);
     await page.getByRole("button", { name: /Renvoyer/i }).click();
 
-    await expect(page.getByRole("status")).toContainText(/Si un compte existe/i);
+    await expect(page.getByRole("status")).toContainText(
+      /Si un compte existe/i,
+    );
 
     const jetons = await db.verificationToken.findMany({ where: { userId } });
     expect(jetons).toHaveLength(1);

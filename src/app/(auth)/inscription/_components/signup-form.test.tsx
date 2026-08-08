@@ -111,7 +111,8 @@ describe("SignupForm — structure accessible", () => {
     // `Referer`.
     render(<SignupForm />);
 
-    const form = screen.getByRole("button", { name: "Créer mon compte" })
+    const form = screen
+      .getByRole("button", { name: "Créer mon compte" })
       .closest("form");
     expect(form).toHaveAttribute("action");
   });
@@ -179,7 +180,8 @@ describe("SignupForm — restitution des erreurs", () => {
 
     await waitFor(() => {
       const champ = screen.getByLabelText(CHAMPS.email);
-      const decrits = champ.getAttribute("aria-describedby")?.split(/\s+/) ?? [];
+      const decrits =
+        champ.getAttribute("aria-describedby")?.split(/\s+/) ?? [];
       const textes = decrits
         .map((id) => document.getElementById(id)?.textContent ?? "")
         .join(" ");

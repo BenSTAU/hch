@@ -46,13 +46,22 @@ const redirect = vi.fn((url: string) => {
     digest: `NEXT_REDIRECT;push;${url};307;`,
   });
 });
-vi.mock("next/navigation", () => ({ redirect: (url: string) => redirect(url) }));
+vi.mock("next/navigation", () => ({
+  redirect: (url: string) => redirect(url),
+}));
 
 const { activateAccount, resendActivation } = await import("./activate");
 const { hashVerificationToken } = await import("@/lib/auth/verification-token");
 
 const JETON = "a".repeat(43);
 const APRES_ACTIVATION = "/connexion?compte=active";
+
+/// `redirect()` lève, et next-safe-action relance l'interruption : l'activation
+/// réussie REJETTE. Même précaution qu'à la connexion (`login.test.ts:95`). Sur
+/// les trois refus, le `.catch` est transparent et le résultat passe.
+function activer(input: Parameters<typeof activateAccount>[0]) {
+  return activateAccount(input).catch(() => undefined);
+}
 
 function jetonEnBase(overrides: Record<string, unknown> = {}) {
   return {
@@ -76,7 +85,7 @@ describe("activateAccount — cas nominal", () => {
   it("cherche le jeton par son HASH", async () => {
     findEmailVerificationToken.mockResolvedValue(jetonEnBase());
 
-    await activateAccount({ token: JETON });
+    await activer({ token: JETON });
 
     expect(findEmailVerificationToken).toHaveBeenCalledWith(
       hashVerificationToken(JETON),
@@ -86,7 +95,7 @@ describe("activateAccount — cas nominal", () => {
   it("consomme le jeton et active le compte", async () => {
     findEmailVerificationToken.mockResolvedValue(jetonEnBase());
 
-    await activateAccount({ token: JETON });
+    await activer({ token: JETON });
 
     expect(activateAccountWithToken).toHaveBeenCalledWith(
       expect.objectContaining({ tokenId: "token-1", userId: "user-1" }),
@@ -98,7 +107,7 @@ describe("activateAccount — cas nominal", () => {
     // connexion avec message “Compte activé, vous pouvez vous connecter” ».
     findEmailVerificationToken.mockResolvedValue(jetonEnBase());
 
-    await activateAccount({ token: JETON });
+    await activer({ token: JETON });
 
     expect(redirect).toHaveBeenCalledWith(APRES_ACTIVATION);
   });
@@ -109,7 +118,7 @@ describe("activateAccount — cas nominal", () => {
     // ferait du contenu d'une boîte email un identifiant suffisant.
     findEmailVerificationToken.mockResolvedValue(jetonEnBase());
 
-    await activateAccount({ token: JETON });
+    await activer({ token: JETON });
 
     expect(redirect).toHaveBeenCalledWith(APRES_ACTIVATION);
     expect(JSON.stringify(activateAccountWithToken.mock.calls)).not.toContain(
@@ -120,7 +129,7 @@ describe("activateAccount — cas nominal", () => {
 
 describe("activateAccount — refus", () => {
   it("dit « invalide » pour un jeton inconnu", async () => {
-    const result = await activateAccount({ token: JETON });
+    const result = await activer({ token: JETON });
 
     expect(result?.data).toEqual({ outcome: "invalid" });
     expect(activateAccountWithToken).not.toHaveBeenCalled();
@@ -131,7 +140,7 @@ describe("activateAccount — refus", () => {
       jetonEnBase({ usedAt: new Date() }),
     );
 
-    const result = await activateAccount({ token: JETON });
+    const result = await activer({ token: JETON });
 
     expect(result?.data).toEqual({ outcome: "already_used" });
     expect(activateAccountWithToken).not.toHaveBeenCalled();
@@ -142,7 +151,7 @@ describe("activateAccount — refus", () => {
       jetonEnBase({ expiresAt: new Date(Date.now() - 1_000) }),
     );
 
-    const result = await activateAccount({ token: JETON });
+    const result = await activer({ token: JETON });
 
     expect(result?.data).toEqual({ outcome: "expired" });
     expect(activateAccountWithToken).not.toHaveBeenCalled();
@@ -158,7 +167,7 @@ describe("activateAccount — refus", () => {
       }),
     );
 
-    const result = await activateAccount({ token: JETON });
+    const result = await activer({ token: JETON });
 
     expect(result?.data).toEqual({ outcome: "already_used" });
   });
@@ -171,21 +180,21 @@ describe("activateAccount — refus", () => {
       jetonEnBase({ expiresAt: maintenant }),
     );
 
-    const result = await activateAccount({ token: JETON });
+    const result = await activer({ token: JETON });
 
     expect(result?.data).toEqual({ outcome: "expired" });
     vi.useRealTimers();
   });
 
   it("refuse un jeton mal formé sans interroger la base", async () => {
-    const result = await activateAccount({ token: "pas/un+jeton=" });
+    const result = await activer({ token: "pas/un+jeton=" });
 
     expect(result?.validationErrors).toBeDefined();
     expect(findEmailVerificationToken).not.toHaveBeenCalled();
   });
 
   it("ne réfléchit jamais le jeton soumis dans sa réponse", async () => {
-    const result = await activateAccount({ token: JETON });
+    const result = await activer({ token: JETON });
 
     expect(JSON.stringify(result)).not.toContain(JETON);
   });
@@ -275,7 +284,9 @@ describe("resendActivation — anti-abus", () => {
 
 describe("resendActivation — réponse indiscernable", () => {
   it("répond la même chose sur un email inconnu et sur un renvoi réel", async () => {
-    const surInconnu = await resendActivation({ email: "inconnu@example.test" });
+    const surInconnu = await resendActivation({
+      email: "inconnu@example.test",
+    });
 
     findAccountForSignup.mockResolvedValue({
       id: "user-1",

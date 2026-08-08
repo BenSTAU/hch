@@ -19,13 +19,21 @@ export const metadata: Metadata = {
 export default async function ConnexionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string | string[] }>;
+  searchParams: Promise<{
+    next?: string | string[];
+    compte?: string | string[];
+  }>;
 }) {
-  const { next } = await searchParams;
+  const { next, compte } = await searchParams;
 
   // Un paramètre répété (`?next=a&next=b`) arrive en tableau. On ne devine pas
   // lequel comptait : aucun des deux.
   const destination = typeof next === "string" ? safeNextPath(next) : null;
 
-  return <ConnexionView next={destination ?? undefined} />;
+  return (
+    <ConnexionView
+      next={destination ?? undefined}
+      activated={compte === "active"}
+    />
+  );
 }

@@ -72,6 +72,13 @@ function compte(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/// `redirect()` lève et next-safe-action relance l'interruption : les trois
+/// issues rejettent toutes. On mesure le temps passé, pas le résultat — mais une
+/// promesse rejetée non capturée ferait échouer la mesure au lieu de la produire.
+function soumettre() {
+  return signup(FORMULAIRE).catch(() => undefined);
+}
+
 /// Médiane plutôt que moyenne : un seul hoquet du ramasse-miettes emporte une
 /// moyenne, pas une médiane. Même helper que `authenticate.timing.test.ts`.
 async function medianDuration(run: () => Promise<unknown>, samples = 5) {
@@ -94,7 +101,7 @@ beforeEach(() => {
 describe("signup — indiscernabilité au chronomètre", () => {
   it("paie bcrypt même quand l'email est déjà pris", async () => {
     findAccountForSignup.mockResolvedValue(null);
-    const emailLibre = await medianDuration(() => signup(FORMULAIRE));
+    const emailLibre = await medianDuration(() => soumettre());
 
     // Garde-fou : sans bcrypt réellement exécuté, la comparaison ne veut rien
     // dire et l'échec du test ne serait pas interprétable.
@@ -103,7 +110,7 @@ describe("signup — indiscernabilité au chronomètre", () => {
     findAccountForSignup.mockResolvedValue(
       compte({ isActive: true, hasCompletedEmailVerification: true }),
     );
-    const emailPris = await medianDuration(() => signup(FORMULAIRE));
+    const emailPris = await medianDuration(() => soumettre());
 
     // Seuil large, comme sur `authenticate` : on ne cherche pas l'égalité au
     // nanoseconde, on cherche l'absence de décrochage. Une sortie anticipée
@@ -126,7 +133,7 @@ describe("signup — indiscernabilité au chronomètre", () => {
     const mesures: number[] = [];
     for (const [, valeur] of issues) {
       findAccountForSignup.mockResolvedValue(valeur);
-      mesures.push(await medianDuration(() => signup(FORMULAIRE)));
+      mesures.push(await medianDuration(() => soumettre()));
     }
 
     const min = Math.min(...mesures);
@@ -141,10 +148,10 @@ describe("signup — indiscernabilité au chronomètre", () => {
     // que le premier test ferme, avec un facteur 2 au lieu de 1 000 — moins
     // visible, tout aussi exploitable sur un grand nombre de mesures.
     findAccountForSignup.mockResolvedValue(null);
-    const unSeulHachage = await medianDuration(() => signup(FORMULAIRE), 3);
+    const unSeulHachage = await medianDuration(() => soumettre(), 3);
 
     findAccountForSignup.mockResolvedValue(compte());
-    const surRenvoi = await medianDuration(() => signup(FORMULAIRE), 3);
+    const surRenvoi = await medianDuration(() => soumettre(), 3);
 
     expect(surRenvoi / unSeulHachage).toBeLessThan(1.8);
   });

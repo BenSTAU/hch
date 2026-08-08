@@ -71,10 +71,15 @@ describe("ActivationView — le lien ne consomme pas le jeton", () => {
     const user = userEvent.setup();
     render(<ActivationView token={JETON} />);
 
-    await user.click(screen.getByRole("button", { name: "Activer mon compte" }));
+    await user.click(
+      screen.getByRole("button", { name: "Activer mon compte" }),
+    );
 
     await waitFor(() => expect(activateFormAction).toHaveBeenCalledOnce());
-    const [, formData] = activateFormAction.mock.calls[0] as [unknown, FormData];
+    const [, formData] = activateFormAction.mock.calls[0] as [
+      unknown,
+      FormData,
+    ];
     expect(formData.get("token")).toBe(JETON);
   });
 });
@@ -97,7 +102,9 @@ describe("ActivationView — issues", () => {
   async function activer(): Promise<void> {
     const user = userEvent.setup();
     render(<ActivationView token={JETON} />);
-    await user.click(screen.getByRole("button", { name: "Activer mon compte" }));
+    await user.click(
+      screen.getByRole("button", { name: "Activer mon compte" }),
+    );
   }
 
   it("annonce « lien expiré » et propose un renvoi", async () => {
@@ -146,13 +153,13 @@ describe("ActivationView — issues", () => {
 });
 
 describe("ActivationView — renvoi", () => {
-  async function jusquAuRenvoi(): Promise<
-    ReturnType<typeof userEvent.setup>
-  > {
+  async function jusquAuRenvoi(): Promise<ReturnType<typeof userEvent.setup>> {
     activateFormAction.mockResolvedValue({ outcome: "expired" });
     const user = userEvent.setup();
     render(<ActivationView token={JETON} />);
-    await user.click(screen.getByRole("button", { name: "Activer mon compte" }));
+    await user.click(
+      screen.getByRole("button", { name: "Activer mon compte" }),
+    );
     await waitFor(() =>
       expect(screen.getByLabelText("Adresse email")).toBeInTheDocument(),
     );
