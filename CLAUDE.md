@@ -721,12 +721,21 @@ serveur et jointe par un tunnel SSH. Les deux postes attaquent **la même base**
 ### Savoir où tu es
 
 ```bash
-docker info               # répond → PC maison · échoue → Shadow
+docker info                                    # répond → daemon actif
+test -d "/c/Program Files/Docker"              # existe → Docker installé
 ```
 
 - **MUST** — poser cette question **avant** de proposer la moindre commande
   `docker`. Une commande Docker sur Shadow ne produit pas une erreur parlante,
   elle produit une session perdue à diagnostiquer un faux problème.
+- **MUST** — **les deux commandes, dans cet ordre**, et les lire ensemble :
+  `docker info` répond → **PC maison, daemon actif** · il échoue mais le
+  répertoire existe → **PC maison, Docker Desktop simplement arrêté**, le
+  démarrer · il échoue et le répertoire est absent → **Shadow**.
+- **MUST NOT** — conclure « Shadow » sur le seul échec de `docker info`. Faux
+  positif constaté le 2026-08-08 ([PR #15](https://github.com/BenSTAU/hch/pull/15)) :
+  la commande ne distingue pas *daemon arrêté* de *poste sans daemon*, et
+  appliquée à la lettre elle fait renoncer à Docker sur la machine qui l'a.
 - **MUST NOT** — utiliser `docker compose version` comme test : il **répond sur
   Shadow** (CLI v5.1.3 installée) alors que le daemon est absent. Faux positif
   constaté le 2026-08-07. Seul `docker info` interroge le daemon.
