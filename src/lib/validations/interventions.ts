@@ -30,25 +30,14 @@ export const listerCreneauxSchema = z.object({
 /// re-géocode son libellé et recalcule la zone. Un `addressId` reçu du client
 /// désignerait l'adresse d'un autre, et un `zoneId` reçu du client
 /// contournerait la sectorisation (Constitution §2.2).
-export const reserverSchema = z
-  .object({
-    serviceId: z.number().int().positive(),
-    adresse: adresseSelectionneeSchema,
-    debut: instantSchema,
-    /// Renseigné en visiteur, ignoré si une session existe — c'est la session
-    /// qui fait foi quand il y en a une.
-    guestEmail: z
-      .email("Renseignez une adresse email valide.")
-      .max(180)
-      .optional(),
-  })
-  .transform((valeur) => ({
-    ...valeur,
-    // Normalisation identique à celle de `users.email`, que le CHECK
-    // `users_email_normalized` impose en base : sans elle, le rattachement
-    // post-inscription comparerait « Camille@… » à « camille@… » et ne
-    // trouverait rien.
-    guestEmail: valeur.guestEmail?.trim().toLowerCase(),
-  }));
+///
+/// Aucun champ d'identité : le client vient de la SESSION. La validation exige
+/// un compte créé, activé et connecté (Constitution §3.2, alignée le
+/// 2026-08-09) — il n'y a plus d'email de visiteur à transporter.
+export const reserverSchema = z.object({
+  serviceId: z.number().int().positive(),
+  adresse: adresseSelectionneeSchema,
+  debut: instantSchema,
+});
 
 export type ReserverInput = z.infer<typeof reserverSchema>;

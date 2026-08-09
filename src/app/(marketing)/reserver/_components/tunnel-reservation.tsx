@@ -6,8 +6,6 @@ import { useState, useTransition } from "react";
 import { AddressAutocomplete } from "@/components/features/adresses/address-autocomplete";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { verifierAdresse } from "@/lib/actions/adresses/verifier-adresse";
 import { reserver } from "@/lib/actions/interventions/reserver";
 import type { ForfaitPublic } from "@/lib/db/queries/forfaits";
@@ -42,8 +40,11 @@ type Confirmation = {
   interventionId: number;
   debut: string;
   prix: string;
-  invitationCompte: boolean;
 };
+
+/// Destination de retour après création ou connexion de compte. Le
+/// récapitulatif est restauré depuis l'état conservé côté navigateur.
+const RETOUR_TUNNEL = "/reserver?etape=recapitulatif";
 
 const dateComplete = new Intl.DateTimeFormat("fr-FR", {
   dateStyle: "full",
@@ -66,7 +67,6 @@ export function TunnelReservation({
   const [adresse, setAdresse] = useState<SuggestionAdresse | null>(null);
   const [zoneId, setZoneId] = useState<number | null>(null);
   const [creneau, setCreneau] = useState<string | null>(null);
-  const [email, setEmail] = useState("");
 
   const [erreur, setErreur] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
@@ -114,7 +114,6 @@ export function TunnelReservation({
         serviceId: forfait.id,
         adresse,
         debut: creneau,
-        ...(estConnecte ? {} : { guestEmail: email }),
       });
 
       if (resultat?.validationErrors) {
@@ -146,7 +145,6 @@ export function TunnelReservation({
         interventionId: donnees.interventionId,
         debut: donnees.debut,
         prix: donnees.prix,
-        invitationCompte: donnees.invitationCompte,
       });
     });
   }
@@ -163,15 +161,6 @@ export function TunnelReservation({
           Un email de confirmation vient de partir. Le règlement se fait auprès
           du technicien, sur place, à la fin de l&apos;intervention.
         </p>
-        {confirmation.invitationCompte && (
-          <p>
-            <a className="underline" href="/inscription">
-              Créez votre compte
-            </a>{" "}
-            avec cette même adresse email : cette intervention s&apos;y
-            rattachera automatiquement.
-          </p>
-        )}
       </section>
     );
   }
@@ -275,35 +264,44 @@ export function TunnelReservation({
             </div>
           </dl>
 
-          {!estConnecte && (
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="email-guest">
-                Votre email, pour recevoir la confirmation
-              </Label>
-              <Input
-                id="email-guest"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(evenement) => {
-                  setEmail(evenement.target.value);
-                }}
-              />
-              <p className="text-xs text-muted-foreground">
-                Aucun compte n&apos;est nécessaire pour réserver.
+          {estConnecte ? (
+            <Button
+              type="button"
+              className="rounded-xl"
+              disabled={enCours}
+              onClick={valider}
+            >
+              {enCours ? "Validation…" : "Valider ma réservation"}
+            </Button>
+          ) : (
+            // La garde réelle vit dans la Server Action ; ce bloc-ci évite
+            // seulement de présenter un bouton qui finirait en redirection.
+            <div className="flex flex-col gap-3 rounded-2xl border p-6">
+              <h2 className="text-lg font-semibold">
+                Un compte est nécessaire pour valider
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Votre sélection est conservée. Créez votre compte, activez-le
+                depuis l&apos;email reçu, puis revenez ici pour confirmer.
               </p>
+              <div className="flex flex-wrap gap-3">
+                <Button asChild className="rounded-xl">
+                  <a
+                    href={`/inscription?next=${encodeURIComponent(RETOUR_TUNNEL)}`}
+                  >
+                    Créer mon compte
+                  </a>
+                </Button>
+                <Button asChild variant="outline" className="rounded-xl">
+                  <a
+                    href={`/connexion?next=${encodeURIComponent(RETOUR_TUNNEL)}`}
+                  >
+                    J&apos;ai déjà un compte
+                  </a>
+                </Button>
+              </div>
             </div>
           )}
-
-          <Button
-            type="button"
-            className="rounded-xl"
-            disabled={enCours}
-            onClick={valider}
-          >
-            {enCours ? "Validation…" : "Valider ma réservation"}
-          </Button>
 
           <p className="text-xs text-muted-foreground">
             Le paiement se fait auprès du technicien, sur place, après

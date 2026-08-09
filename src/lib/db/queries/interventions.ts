@@ -1,7 +1,5 @@
 import "server-only";
 
-import { Prisma } from "@prisma/client";
-
 import { ROLE_TECH } from "@/lib/auth/permissions";
 import type { TechnicienCharge } from "@/lib/creneaux/derivation";
 import { db } from "@/lib/db/client";
@@ -112,8 +110,7 @@ export async function reserverIntervention(params: {
   };
   techId: string;
   appointmentAt: Date;
-  clientId: string | null;
-  guestEmail: string | null;
+  clientId: string;
 }): Promise<CreationIntervention> {
   try {
     return await db.$transaction(async (tx) => {
@@ -130,7 +127,6 @@ export async function reserverIntervention(params: {
           street: params.adresse.street,
           cityId,
           point: params.adresse.point,
-          // NULL pour un visiteur : l'adresse suivra le rattachement du compte.
           userId: params.clientId,
         },
         tx,
@@ -148,7 +144,6 @@ export async function reserverIntervention(params: {
           priceSnapshot: forfait.price,
           durationSnapshot: forfait.duration,
           clientId: params.clientId,
-          guestEmail: params.guestEmail,
           techId: params.techId,
           addressId,
           serviceId: params.serviceId,
@@ -175,29 +170,4 @@ export async function reserverIntervention(params: {
     }
     throw error;
   }
-}
-
-/// Rattache à un compte les réservations faites en visiteur avec cet email.
-///
-/// Appelée à l'**activation**, pas à l'inscription : tant que l'email n'est pas
-/// vérifié, quiconque connaît l'adresse d'un tiers pourrait s'attribuer ses
-/// interventions (Constitution §3.2, module 4 §Rattachement post-inscription).
-///
-/// `guest_email` n'est pas effacé : il reste la trace de l'origine de la
-/// réservation, et le `CHECK interventions_requester_present` s'en accommode —
-/// il exige au moins l'un des deux, pas exactement un.
-export async function rattacherInterventionsGuest(
-  /// Le client de transaction de l'appelant : le rattachement doit réussir ou
-  /// échouer **avec** l'activation. Un compte activé dont les réservations
-  /// restent orphelines est le pire des deux états — l'utilisateur voit un
-  /// espace vide et n'a aucun moyen de réclamer ses rendez-vous.
-  tx: Prisma.TransactionClient,
-  params: { email: string; userId: string },
-): Promise<number> {
-  const { count } = await tx.intervention.updateMany({
-    where: { guestEmail: params.email, clientId: null },
-    data: { clientId: params.userId },
-  });
-
-  return count;
 }

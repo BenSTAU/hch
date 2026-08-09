@@ -5,15 +5,28 @@
 -- (Constitution §2.6, alimentée par T-V3-09) ; `photos`, la preuve terrain
 -- horodatée (§2.5, alimentée par T-V3-10).
 --
--- Deux écarts au dictionnaire v2.2, tous deux arbitrés le 2026-08-09 et
--- inscrits en v2.4 :
+-- **La validation exige un compte** — Constitution §3.2 alignée le 2026-08-09,
+-- restauration de la décision B6 Q2 du 2026-07-06. Le tunnel s'explore sans
+-- compte, mais rien ne s'écrit ici avant que le visiteur soit inscrit, activé
+-- et connecté. Conséquences directes sur ces trois tables :
 --
---   · `cycle_id` passe de NN à NULL. `cycle_id NN` rendait la réservation
---     guest impossible : `cycles.user_id` est NN, un guest n'a pas de ligne
---     `users`, alors que `client_id` et `guest_email` autorisent
---     explicitement l'intervention sans compte. Les deux ne pouvaient pas être
---     vrais ensemble. RIEN N'ÉCRIT cette colonne en v1 — qui la remplira n'est
---     pas tranché, et l'inventer serait un ajout de périmètre non instruit.
+--   · `interventions.client_id` est **NOT NULL**, et `guest_email` n'existe
+--     pas. Aucune intervention sans compte ne peut exister, donc aucune clé de
+--     rattachement n'a d'objet ;
+--   · `photos.uploaded_by_user_id` est **NOT NULL**, et `guest_email` non plus.
+--     La contrainte « exactement un des deux auteurs » disparaît avec la
+--     colonne, faute de second candidat.
+--
+-- `addresses.user_id` reste nullable : sa migration (004) est mergée depuis la
+-- PR #23. Vestige assumé — plus rien n'y écrit NULL.
+--
+-- Deux écarts au dictionnaire v2.2, arbitrés le 2026-08-09 et inscrits en v2.4 :
+--
+--   · `cycle_id` est NULL. Le motif n'est plus le visiteur anonyme mais
+--     l'absence d'US : les quatre écrans du tunnel n'ont aucune étape vélo, et
+--     les trois US cycles s'ouvrent sur « Given je suis client authentifié ».
+--     RIEN N'ÉCRIT cette colonne en v1 — qui la remplira n'est pas tranché, et
+--     l'inventer serait un ajout de périmètre non instruit.
 --
 --   · `duration_snapshot` apparaît. Miroir exact de `price_snapshot` : elle
 --     fige la durée du forfait à la réservation. Sans elle, la colonne générée
@@ -40,8 +53,7 @@ CREATE TABLE "interventions" (
     "duration_snapshot" INTEGER NOT NULL,
     "tech_comment" TEXT,
     "is_comment_public" BOOLEAN NOT NULL DEFAULT false,
-    "client_id" UUID,
-    "guest_email" VARCHAR(180),
+    "client_id" UUID NOT NULL,
     "tech_id" UUID NOT NULL,
     "address_id" INTEGER NOT NULL,
     "cycle_id" INTEGER,
@@ -65,19 +77,13 @@ CREATE TABLE "photos" (
     "id" SERIAL NOT NULL,
     "url" VARCHAR(255) NOT NULL,
     "type" VARCHAR(20) NOT NULL,
-    "uploaded_by_user_id" UUID,
-    "guest_email" VARCHAR(255),
+    "uploaded_by_user_id" UUID NOT NULL,
     "intervention_id" INTEGER NOT NULL,
     "created_at" TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "photos_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
---
--- Le rattachement post-inscription cherche « les réservations de cet email
--- restées sans compte ». Sans index, chaque activation balaie la table.
-CREATE INDEX "interventions_guest_email_client_id_idx" ON "interventions"("guest_email", "client_id");
 
 -- CreateIndex
 --
@@ -86,7 +92,7 @@ CREATE INDEX "interventions_guest_email_client_id_idx" ON "interventions"("guest
 CREATE INDEX "interventions_tech_id_appointment_at_idx" ON "interventions"("tech_id", "appointment_at");
 
 -- AddForeignKey
-ALTER TABLE "interventions" ADD CONSTRAINT "interventions_client_id_fkey" FOREIGN KEY ("client_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "interventions" ADD CONSTRAINT "interventions_client_id_fkey" FOREIGN KEY ("client_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "interventions" ADD CONSTRAINT "interventions_tech_id_fkey" FOREIGN KEY ("tech_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -107,7 +113,7 @@ ALTER TABLE "intervention_products" ADD CONSTRAINT "intervention_products_interv
 ALTER TABLE "intervention_products" ADD CONSTRAINT "intervention_products_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "photos" ADD CONSTRAINT "photos_uploaded_by_user_id_fkey" FOREIGN KEY ("uploaded_by_user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "photos" ADD CONSTRAINT "photos_uploaded_by_user_id_fkey" FOREIGN KEY ("uploaded_by_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "photos" ADD CONSTRAINT "photos_intervention_id_fkey" FOREIGN KEY ("intervention_id") REFERENCES "interventions"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -122,22 +128,3 @@ ALTER TABLE "interventions"
 ALTER TABLE "photos"
   ADD CONSTRAINT "photos_type_values"
   CHECK ("type" IN ('BEFORE', 'AFTER'));
-
--- Une intervention doit être rattachable à quelqu'un : un client inscrit, ou
--- l'email d'un guest qui deviendra ce client. Sans les deux, la ligne n'a ni
--- destinataire de confirmation, ni clé de rattachement — elle est
--- irrécupérable.
---
--- Les deux ENSEMBLE restent licites, et c'est voulu : après rattachement,
--- `client_id` est renseigné et `guest_email` demeure comme trace de l'origine.
-ALTER TABLE "interventions"
-  ADD CONSTRAINT "interventions_requester_present"
-  CHECK ("client_id" IS NOT NULL OR "guest_email" IS NOT NULL);
-
--- Exactement UN des deux auteurs, jamais les deux, jamais aucun. Le
--- dictionnaire la qualifie de contrainte applicative ; elle est doublée ici
--- parce qu'une règle qui ne vit que dans l'application ne protège que les
--- écritures qui passent par elle (PLAN S2 §5, doctrine du double filet).
-ALTER TABLE "photos"
-  ADD CONSTRAINT "photos_single_author"
-  CHECK (("uploaded_by_user_id" IS NULL) <> ("guest_email" IS NULL));

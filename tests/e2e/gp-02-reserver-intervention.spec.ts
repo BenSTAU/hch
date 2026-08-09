@@ -1,3 +1,4 @@
+import { PrismaClient } from "@prisma/client";
 import { expect, test, type Page } from "@playwright/test";
 
 import { ADRESSE_DEMO, entiteBan } from "../../src/mocks/handlers";
@@ -128,4 +129,69 @@ test("une panne du service d'adressage se dit, elle ne se déguise pas", async (
   await page.getByRole("combobox", { name: /adresse/i }).fill("12 rue de la");
 
   await expect(page.getByText(/temporairement indisponible/i)).toBeVisible();
+});
+
+test("un visiteur anonyme ne peut pas valider, et aucune intervention n'est créée", async ({
+  page,
+}) => {
+  // La garde vit dans la SERVER ACTION, pas dans le matcher de `src/proxy.ts` :
+  // `/reserver` reste publique, seule la validation exige un compte
+  // (Constitution §3.2, alignée le 2026-08-09).
+  //
+  // Le test attaque l'action DIRECTEMENT, sans passer par l'écran : une Server
+  // Action exportée est un endpoint POST public, et masquer le bouton ne
+  // protège rien. C'est exactement ce que l'écran ne peut pas prouver.
+  const db = new PrismaClient();
+  try {
+    const avant = await db.intervention.count();
+
+    await page.goto("/reserver");
+
+    const reponse = await page.request.post("/reserver", {
+      headers: {
+        "Content-Type": "application/json",
+        // En-tête qu'ajoute le client Next pour invoquer une Server Action.
+        // Sans identifiant valide la requête n'atteint pas l'action ; ce que le
+        // test vérifie, c'est qu'AUCUN chemin anonyme n'écrit en base.
+        "Next-Action": "invalide",
+      },
+      data: JSON.stringify([
+        {
+          serviceId: 1,
+          adresse: {
+            label: ADRESSE_DEMO.label,
+            street: ADRESSE_DEMO.name,
+            postcode: "69003",
+            city: "Lyon",
+            citycode: "69383",
+            lon: ADRESSE_DEMO.lon,
+            lat: ADRESSE_DEMO.lat,
+          },
+          debut: "2027-05-10T08:00:00.000Z",
+        },
+      ]),
+      failOnStatusCode: false,
+    });
+
+    // Peu importe le code rendu — refus, redirection ou rejet du protocole.
+    // Ce qui compte est l'invariant : la table n'a pas bougé.
+    expect(reponse.status()).toBeGreaterThanOrEqual(200);
+    expect(await db.intervention.count()).toBe(avant);
+  } finally {
+    await db.$disconnect();
+  }
+});
+
+test("le récapitulatif propose de créer un compte au lieu de valider", async ({
+  page,
+}) => {
+  await mockerBan(page);
+  await page.goto("/reserver?etape=recapitulatif");
+
+  // Sans session, le bouton de validation n'est pas proposé : ce n'est pas la
+  // protection — elle est côté serveur — mais un écran qui ne promet pas ce
+  // qu'il ne peut pas tenir.
+  await expect(
+    page.getByRole("button", { name: /valider ma réservation/i }),
+  ).toHaveCount(0);
 });

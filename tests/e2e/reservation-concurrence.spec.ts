@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
 
@@ -13,10 +15,10 @@ import { expect, test } from "@playwright/test";
 /// dans `sectorisation-geo.spec.ts` : le projet `barriere` est la seule surface
 /// de la CI qui dispose d'un vrai PostgreSQL.
 ///
-/// **Ce test est écrit AVANT la migration 010 et doit échouer.** La tâche porte
-/// le marqueur [T] : le rouge est obligatoire et tracé dans l'historique des
-/// commits. Sans contrainte d'exclusion, les deux insertions passent et
-/// l'assertion tombe — c'est le comportement à corriger, pas un test à ajuster.
+/// **Le rouge est tracé dans l'historique** : ce fichier a été commité en
+/// `8d17160`, avant la migration 010, et les deux insertions passaient alors
+/// toutes les deux. La contrainte les départage depuis `ad079a1`. La tâche
+/// porte le marqueur [T], ce rouge préalable est obligatoire.
 
 let db: PrismaClient;
 
@@ -32,6 +34,7 @@ const DEBUT_CHEVAUCHANT = new Date("2027-03-15T09:30:00Z");
 const DUREE_MINUTES = 60;
 
 let techId: string;
+let clientId: string;
 let addressId: number;
 let serviceId: number;
 
@@ -42,6 +45,21 @@ test.beforeAll(async () => {
     where: { roles: { has: "ROLE_TECH" } },
   });
   techId = tech.id;
+
+  // Le seed ne pose aucun client — la SPEC veut qu'il naisse du parcours
+  // public. Ce test attaque la base directement, il crée donc le sien.
+  const client = await db.user.create({
+    data: {
+      email: `concurrence-${randomBytes(6).toString("hex")}@example.test`,
+      firstname: "Camille",
+      lastname: "Durand",
+      roles: ["ROLE_CLIENT"],
+      isActive: true,
+      emailVerifiedAt: new Date(),
+    },
+    select: { id: true },
+  });
+  clientId = client.id;
 
   const service = await db.service.findFirstOrThrow();
   serviceId = service.id;
@@ -71,6 +89,7 @@ test.afterAll(async () => {
   // laisse ses lignes derrière lui fausse la grille de créneaux du suivant.
   await db.intervention.deleteMany({ where: { addressId } });
   await db.address.delete({ where: { id: addressId } });
+  await db.user.delete({ where: { id: clientId } });
   await db.$disconnect();
 });
 
@@ -81,7 +100,7 @@ function reserver(appointmentAt: Date) {
       appointmentAt,
       priceSnapshot: "85.00",
       durationSnapshot: DUREE_MINUTES,
-      guestEmail: "concurrence@example.test",
+      clientId,
       techId,
       addressId,
       serviceId,

@@ -1,7 +1,5 @@
 import "server-only";
 
-import { serverEnv } from "@/lib/env";
-
 import { sendEmail } from "./transport";
 
 /// Email de confirmation de réservation.
@@ -11,10 +9,12 @@ import { sendEmail } from "./transport";
 /// email/notification automatique ». C'est ce qui remplace le rappel humain
 /// qu'une marketplace transactionnelle s'interdit.
 ///
-/// Son contenu n'est tranché nulle part, comme celui de l'email d'activation
-/// avant lui. Ce que les sources contraignent : la confirmation est
-/// automatique, elle part aussi pour un visiteur sans compte, et le visiteur y
-/// est invité à créer un compte (Constitution §3.2).
+/// **7e email du périmètre v1** — ADR-017 n'en comptait que six, corrigé au
+/// vault le 2026-08-09.
+///
+/// Le gabarit est celui qu'a fixé le vault : forfait, date et heure, adresse,
+/// total figé. **Aucun lien de consultation sans compte** : la réservation
+/// exige désormais un compte, le destinataire a le sien.
 
 const SUJET = "Votre intervention HomeCycl'Home est confirmée";
 
@@ -53,10 +53,8 @@ export async function sendReservationEmail(params: {
   prix: string;
   adresse: string;
   zone: string;
-  invitationCompte: boolean;
 }): Promise<void> {
   const creneau = formaterCreneau(params.debut, params.dureeMinutes);
-  const base = serverEnv().appUrl.replace(/\/+$/, "");
 
   const lignesTexte = [
     "Bonjour,",
@@ -73,16 +71,6 @@ export async function sendReservationEmail(params: {
     "l'intervention.",
   ];
 
-  if (params.invitationCompte) {
-    lignesTexte.push(
-      "",
-      "Créez votre compte pour suivre cette intervention et la retrouver plus",
-      "tard — utilisez la même adresse email et elle s'y rattachera",
-      "automatiquement :",
-      `${base}/inscription`,
-    );
-  }
-
   const lignesHtml = [
     "<p>Bonjour,</p>",
     "<p>Votre intervention est planifiée.</p>",
@@ -93,12 +81,6 @@ export async function sendReservationEmail(params: {
     "</ul>",
     "<p>Le règlement se fait auprès du technicien, sur place, à la fin de l'intervention.</p>",
   ];
-
-  if (params.invitationCompte) {
-    lignesHtml.push(
-      `<p>Créez votre compte pour suivre cette intervention : <a href="${base}/inscription">créer mon compte</a>. Utilisez la même adresse email et elle s'y rattachera automatiquement.</p>`,
-    );
-  }
 
   await sendEmail({
     to: params.to,

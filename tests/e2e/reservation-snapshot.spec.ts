@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
 
@@ -24,6 +26,7 @@ const DEBUT = new Date("2027-04-12T09:00:00Z");
 let addressId: number;
 let serviceId: number;
 let techId: string;
+let clientId: string;
 
 /// Valeurs d'origine du forfait, restaurées en fin de test : la base de
 /// développement est partagée entre les deux postes, un catalogue laissé modifié
@@ -52,6 +55,21 @@ test.beforeAll(async () => {
   });
   techId = tech.id;
 
+  // Le seed ne pose aucun client — la SPEC veut qu'il naisse du parcours
+  // public. Ce test attaque la base directement, il crée donc le sien.
+  const client = await db.user.create({
+    data: {
+      email: `snapshot-${randomBytes(6).toString("hex")}@example.test`,
+      firstname: "Camille",
+      lastname: "Durand",
+      roles: ["ROLE_CLIENT"],
+      isActive: true,
+      emailVerifiedAt: new Date(),
+    },
+    select: { id: true },
+  });
+  clientId = client.id;
+
   const service = await db.service.findFirstOrThrow();
   serviceId = service.id;
   prixOrigine = service.price.toFixed(2);
@@ -75,6 +93,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await db.intervention.deleteMany({ where: { addressId } });
   await db.address.delete({ where: { id: addressId } });
+  await db.user.delete({ where: { id: clientId } });
   // Restauration du catalogue, sans quoi le forfait resterait au tarif de test.
   await db.service.update({
     where: { id: serviceId },
@@ -90,7 +109,7 @@ test("une hausse de tarif après réservation ne change pas le prix facturé", a
       appointmentAt: DEBUT,
       priceSnapshot: prixOrigine,
       durationSnapshot: dureeOrigine,
-      guestEmail: "snapshot@example.test",
+      clientId,
       techId,
       addressId,
       serviceId,
@@ -124,7 +143,7 @@ test("un changement de durée après réservation ne déplace pas la fenêtre de
       appointmentAt: DEBUT,
       priceSnapshot: prixOrigine,
       durationSnapshot: dureeOrigine,
-      guestEmail: "snapshot@example.test",
+      clientId,
       techId,
       addressId,
       serviceId,
@@ -172,7 +191,9 @@ test("la fenêtre couvre exactement la durée figée, bornes semi-ouvertes", asy
     select: { id: true, durationSnapshot: true },
   });
 
-  const lignes = await db.$queryRaw<{ debut: Date; fin: Date; borne: string }[]>`
+  const lignes = await db.$queryRaw<
+    { debut: Date; fin: Date; borne: string }[]
+  >`
     SELECT lower("reservation_range") AS debut,
            upper("reservation_range") AS fin,
            "reservation_range"::text  AS borne

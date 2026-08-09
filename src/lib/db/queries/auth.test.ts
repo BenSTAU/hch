@@ -18,11 +18,9 @@ const tokenCreate = vi.fn();
 const tokenDeleteMany = vi.fn();
 const tokenFindUnique = vi.fn();
 const tokenUpdate = vi.fn();
-const interventionUpdateMany = vi.fn();
 
 const tx = {
   user: { create: userCreate, update: userUpdate },
-  intervention: { updateMany: interventionUpdateMany },
   authProvider: { create: authProviderCreate },
   verificationToken: {
     create: tokenCreate,
@@ -65,12 +63,6 @@ beforeEach(() => {
   userFindUnique.mockResolvedValue(null);
   tokenFindUnique.mockResolvedValue(null);
   userCreate.mockResolvedValue({ id: "user-1" });
-  // `activateAccountWithToken` lit l'email retourne pour rattacher les
-  // reservations faites en visiteur (T-V3-08). Sans ce retour, la doublure
-  // rend `undefined` et le code casse — la doublure decrivait un contrat que
-  // le code a legitimement etendu.
-  userUpdate.mockResolvedValue({ email: NOUVEAU.email });
-  interventionUpdateMany.mockResolvedValue({ count: 0 });
   tokenDeleteMany.mockResolvedValue({ count: 0 });
 });
 
@@ -392,7 +384,6 @@ describe("activateAccountWithToken", () => {
     expect(userUpdate).toHaveBeenCalledWith({
       where: { id: "user-1", emailVerifiedAt: null, deletedAt: null },
       data: { isActive: true, emailVerifiedAt: MAINTENANT },
-      select: { email: true },
     });
   });
 
@@ -439,60 +430,5 @@ describe("activateAccountWithToken", () => {
 
     expect(tokenUpdate).toHaveBeenCalledOnce();
     expect(userUpdate).toHaveBeenCalledOnce();
-  });
-});
-
-describe("activateAccountWithToken — rattachement des réservations guest", () => {
-  it("rattache les interventions réservées avec cet email, dans la même transaction", async () => {
-    // Constitution §3.2 : la réservation précède l'inscription. Une intervention
-    // faite en visiteur porte `guest_email` et `client_id = NULL` ; c'est ici
-    // qu'elle rejoint son compte.
-    //
-    // À l'ACTIVATION et non à l'inscription : tant que l'email n'est pas
-    // vérifié, quiconque connaît l'adresse d'un tiers pourrait s'attribuer ses
-    // interventions.
-    interventionUpdateMany.mockResolvedValue({ count: 2 });
-
-    const resultat = await activateAccountWithToken({
-      tokenId: "token-1",
-      userId: "user-1",
-      now: MAINTENANT,
-    });
-
-    expect(interventionUpdateMany).toHaveBeenCalledWith({
-      where: { guestEmail: NOUVEAU.email, clientId: null },
-      data: { clientId: "user-1" },
-    });
-    expect(resultat.interventionsRattachees).toBe(2);
-  });
-
-  it("ne réclame aucune intervention déjà rattachée à un compte", async () => {
-    // `clientId: null` dans le WHERE est ce qui l'empêche : sans lui, réactiver
-    // un compte réattribuerait des interventions déjà transférées.
-    await activateAccountWithToken({
-      tokenId: "token-1",
-      userId: "user-1",
-      now: MAINTENANT,
-    });
-
-    const [args] = interventionUpdateMany.mock.calls[0] as [
-      { where: { clientId: null } },
-    ];
-    expect(args.where.clientId).toBeNull();
-  });
-
-  it("n'active pas un compte dont le rattachement échoue", async () => {
-    // Même transaction : un compte activé dont les réservations restent
-    // orphelines est le pire des deux états — l'espace client est vide et le
-    // visiteur n'a aucun moyen de réclamer ses rendez-vous.
-    interventionUpdateMany.mockRejectedValue(new Error("écriture refusée"));
-
-    await expect(
-      activateAccountWithToken({
-        tokenId: "token-1",
-        userId: "user-1",
-        now: MAINTENANT,
-      }),
-    ).rejects.toThrow(/écriture refusée/);
   });
 });
