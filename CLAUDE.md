@@ -502,8 +502,6 @@ Arborescence de référence : [[adr-006-archi-applicative-hch|ADR-006 v2]]
   `foreground #191c1b`, `destructive #ba1a1a`. Traduits en vocabulaire shadcn,
   **jamais en tokens Material 3**.
 - **MUST** `cn()` helper (`clsx` + `tailwind-merge`) dans `src/lib/utils.ts`.
-- **MUST** angles : `rounded-xl` boutons et inputs, `rounded-2xl` cards,
-  `rounded-3xl` grands containers.
 - **MUST NOT** créer `tailwind.config.js` / `tailwind.config.ts` — Tailwind v4
   est CSS-first. Ce que [[adr-006-archi-applicative-hch|ADR-006 v2]] écrit sur
   ce point est stale.
@@ -521,6 +519,12 @@ Arborescence de référence : [[adr-006-archi-applicative-hch|ADR-006 v2]]
   `Badge`, `Avatar`, `DropdownMenu`, `Sonner`, `Skeleton`.
 - **DEFAULT** `cva` pour les variants typés. `tailwind-variants` seulement si
   slots.
+- **DEFAULT** angles : `rounded-xl` boutons, `rounded-2xl` cards, `rounded-3xl`
+  grands containers. Les **inputs n'ont pas d'angle imposé** — suivre la
+  maquette de l'écran.
+- **DEFAULT** ces valeurs sont des défauts, pas un gabarit. Quand une maquette
+  validée diverge, **la maquette fait foi**, sans amendement d'ADR à chaque
+  écran ([[adr-012-maquettage-stitch-shadcn|ADR-012]] §D4).
 - **DEFAULT** avant de coder un écran, lire [[maquettage]] §Notes portage : les
   divergences maquette ↔ SPEC y sont compilées écran par écran (vocabulaire
   « mécanicien » à corriger en « technicien », mentions SMS et Recrutement hors
