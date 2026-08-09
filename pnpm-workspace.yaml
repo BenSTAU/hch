@@ -13,9 +13,15 @@ onlyBuiltDependencies:
   - prisma
   - bcrypt
   - esbuild
+  # sharp          · binaires natifs de traitement d'image. Déplacé DEPUIS
+  #                  `ignoredBuiltDependencies` en T-V3-08 : il n'était tiré
+  #                  que par Next, qui s'en passe, mais le strip EXIF des
+  #                  photos du tunnel l'appelle directement. Sans script
+  #                  d'installation, pnpm 10 le laisse sans binaire — en
+  #                  silence, comme il l'a fait pour bcrypt
+  - sharp
 
 ignoredBuiltDependencies:
-  - sharp
   - unrs-resolver
   # msw ne pose au postinstall que `mockServiceWorker.js` dans `public/`, pour
   # son mode NAVIGATEUR. HCH ne l'utilise que côté Node, dans Vitest — les E2E

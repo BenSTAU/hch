@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { MAX_PHOTOS } from "@/lib/photos/stockage";
+
 import { adresseSelectionneeSchema } from "./adresses";
 
 /// Schémas du domaine `interventions`.
@@ -38,6 +40,19 @@ export const reserverSchema = z.object({
   serviceId: z.number().int().positive(),
   adresse: adresseSelectionneeSchema,
   debut: instantSchema,
+  /// Chemins rendus par `POST /api/upload-intervention-photo`, renvoyés tels
+  /// quels par l'écran.
+  ///
+  /// La forme est vérifiée **strictement** : c'est une valeur qui vient du
+  /// client et qui finit dans `photos.url`. Sans ce motif, un appelant direct y
+  /// écrirait `../../etc/passwd` ou l'URL d'un tiers, et la galerie servirait
+  /// ce qu'il aurait choisi.
+  photos: z
+    .array(
+      z.string().regex(/^uploads\/[0-9a-f-]{36}\.webp$/, "Photo inconnue."),
+    )
+    .max(MAX_PHOTOS, "Cinq photos au maximum.")
+    .default([]),
 });
 
 export type ReserverInput = z.infer<typeof reserverSchema>;

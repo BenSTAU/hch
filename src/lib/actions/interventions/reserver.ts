@@ -144,6 +144,7 @@ export const reserver = authActionClient
       techId,
       appointmentAt: creneau.debut,
       clientId: user.id,
+      photos: parsedInput.photos,
     });
 
     // La course perdue face à la contrainte d'exclusion : deux clients ont

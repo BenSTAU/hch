@@ -111,6 +111,10 @@ export async function reserverIntervention(params: {
   techId: string;
   appointmentAt: Date;
   clientId: string;
+  /// Chemins rendus par `POST /api/upload-intervention-photo`. Les fichiers
+  /// sont déjà sur le disque, dépouillés de leur EXIF ; ce sont les LIGNES qui
+  /// naissent ici.
+  photos: readonly string[];
 }): Promise<CreationIntervention> {
   try {
     return await db.$transaction(async (tx) => {
@@ -152,6 +156,23 @@ export async function reserverIntervention(params: {
         },
         select: { id: true },
       });
+
+      // Après l'intervention, et dans la même transaction : `intervention_id`
+      // est NOT NULL, l'ordre inverse est impossible. Une validation qui échoue
+      // ne laisse donc aucune ligne `photos` orpheline — seuls les fichiers
+      // restent sur le disque, ce qui est sans conséquence et sans référence.
+      if (params.photos.length > 0) {
+        await tx.photo.createMany({
+          data: params.photos.map((url) => ({
+            url,
+            // `BEFORE` : la photo est déposée par le client AVANT
+            // l'intervention. `AFTER` appartient au technicien, sur le terrain.
+            type: "BEFORE",
+            uploadedByUserId: params.clientId,
+            interventionId: intervention.id,
+          })),
+        });
+      }
 
       return {
         ok: true as const,
