@@ -11,6 +11,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { axe } from "jest-axe";
 
 // C'est `loginFormAction` que le formulaire référence depuis T-J0-04 fix :
 // `useActionState` l'appelle avec `(prevState, formData)`, et c'est cette
@@ -330,6 +331,67 @@ describe("LoginForm — refus", () => {
     );
 
     expect(container.innerHTML).not.toContain("un-mot-de-passe");
+  });
+});
+
+// Audit outillé des ÉTATS du formulaire — ajout de l'agent testeur.
+//
+// `connexion-view.test.tsx` couvre l'écran au repos ; ce qu'il ne peut pas
+// couvrir, c'est ce que le formulaire devient APRÈS une soumission, parce que
+// ces états ne naissent que d'un aller-retour avec l'action. Or ce sont eux qui
+// portent les critères AA propres à `US-COMPTE-CONNECTER` §Accessibilité :
+// région live annoncée, focus déplacé, commande désactivée.
+describe("LoginForm — audit jest-axe des états", () => {
+  it("ne présente aucune violation au repos", async () => {
+    const { container } = render(<LoginForm />);
+
+    await expect(axe(container)).resolves.toHaveNoViolations();
+  });
+
+  it("ne présente aucune violation après un refus", async () => {
+    loginFormAction.mockResolvedValue({ error: LOGIN_REFUSED_MESSAGE });
+    const { container } = render(<LoginForm />);
+    const user = userEvent.setup();
+
+    await submit(user);
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).not.toBeEmptyDOMElement(),
+    );
+
+    await expect(axe(container)).resolves.toHaveNoViolations();
+  });
+
+  it("ne présente aucune violation une fois le plafond atteint", async () => {
+    // L'état le moins audité de tous : il n'apparaît qu'à la 6ᵉ soumission. Le
+    // bouton y est `disabled`, donc RETIRÉ de l'ordre de tabulation — et c'est
+    // le moment où il faut vérifier que le message qui l'explique reste, lui,
+    // annoncé et atteignable.
+    loginFormAction.mockResolvedValue({
+      error: LOGIN_RATE_LIMITED_MESSAGE,
+      blocked: true,
+    });
+    const { container } = render(<LoginForm />);
+    const user = userEvent.setup();
+
+    await submit(user);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Se connecter/ })).toBeDisabled(),
+    );
+
+    await expect(axe(container)).resolves.toHaveNoViolations();
+  });
+
+  it("ne présente aucune violation le mot de passe démasqué", async () => {
+    // La bascule change le `type` du champ ET le nom accessible du bouton. Un
+    // `aria-label` oublié sur l'un des deux états laisserait un bouton anonyme.
+    const { container } = render(<LoginForm />);
+    const user = userEvent.setup();
+
+    await user.click(
+      screen.getByRole("button", { name: /Afficher le mot de passe/i }),
+    );
+
+    await expect(axe(container)).resolves.toHaveNoViolations();
   });
 });
 

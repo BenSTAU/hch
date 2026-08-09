@@ -123,6 +123,110 @@ describe("peekRateLimit — lecture seule", () => {
 
     expect(verdict).toEqual({ allowed: true });
   });
+
+  // Ajouts de l'agent testeur. Les quatre propriétés ci-dessous n'étaient
+  // vérifiées que sur `consumeRateLimit` — or la connexion n'appelle JAMAIS
+  // `consumeRateLimit` : elle compose `peek` et `record` autour du bcrypt. Le
+  // chemin réellement emprunté par le plafond de `US-COMPTE-CONNECTER` héritait
+  // donc de sa couverture d'un homonyme.
+
+  it("ne compte que les tentatives DANS la fenêtre de l'appelant", async () => {
+    // Fenêtre GLISSANTE (SPEC §287) : une tentative sortie par le haut libère
+    // un jeton. Sans la borne `gte`, le plafond deviendrait un compteur
+    // cumulatif et cinq erreurs de frappe fermeraient le compte pour toujours.
+    await peekRateLimit("login:a@b.test", 5, 15 * 60_000, { now: MAINTENANT });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          key: "login:a@b.test",
+          attemptedAt: { gte: new Date(MAINTENANT.getTime() - 15 * 60_000) },
+        },
+      }),
+    );
+  });
+
+  it("purge sur 24 h et non sur la fenêtre de l'appelant", async () => {
+    // La connexion lit sur 15 min. Purger sur 15 min effacerait les lignes que
+    // le renvoi d'activation compte encore sur 24 h — et un attaquant obtiendrait
+    // un quota de renvoi neuf en soumettant une connexion.
+    await peekRateLimit("login:a@b.test", 5, 15 * 60_000, { now: MAINTENANT });
+
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: {
+        attemptedAt: { lt: new Date(MAINTENANT.getTime() - 24 * 60 * 60_000) },
+      },
+    });
+  });
+
+  it("borne la lecture au plafond, sans ramener toute la fenêtre", async () => {
+    // `take: limit`. La lecture est faite à chaque soumission, y compris par
+    // un attaquant qui martèle : sans borne, une clé accumulant des milliers
+    // de lignes ferait de chaque refus une lecture de plus en plus lourde.
+    await peekRateLimit("login:a@b.test", 5, 15 * 60_000, { now: MAINTENANT });
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 5 }));
+  });
+
+  it("ne lit que la clé demandée, jamais l'ensemble de la table", async () => {
+    // Un plafond global transformerait cinq erreurs de frappe d'un visiteur en
+    // déni de service pour tous les autres.
+    findMany.mockResolvedValue([ilYA(1), ilYA(2), ilYA(3), ilYA(4), ilYA(5)]);
+
+    await peekRateLimit("login:a@b.test", 5, 15 * 60_000, { now: MAINTENANT });
+
+    const args = findMany.mock.calls[0]?.[0] as { where: { key: string } };
+    expect(args.where.key).toBe("login:a@b.test");
+  });
+});
+
+describe("cloisonnement des trois usages", () => {
+  // Ajouts de l'agent testeur. La table est PARTAGÉE entre trois compteurs aux
+  // plafonds très différents — 5/15 min pour la connexion, 3/24 h pour le
+  // renvoi d'activation, 3/24 h pour la réinitialisation en T-V3-05. Le seul
+  // séparateur est le préfixe de clé : s'il fuit, le quota le plus permissif
+  // rouvre le plus strict.
+
+  it("n'ouvre aucune collision entre les deux espaces de noms", async () => {
+    // Ni l'un ni l'autre des préfixes n'est préfixe de l'autre, donc aucune
+    // adresse — si tordue soit-elle — ne peut fabriquer une clé `login:` qui
+    // vaille une clé `activation:`.
+    const tordues = [
+      "activation:victime@example.test",
+      "login:victime@example.test",
+      "",
+      ":",
+      "a@b.test",
+    ];
+
+    for (const valeur of tordues) {
+      expect(loginRateLimitKey(valeur)).not.toBe(
+        activationRateLimitKey(valeur),
+      );
+      expect(loginRateLimitKey(valeur).startsWith("activation:")).toBe(false);
+      expect(activationRateLimitKey(valeur).startsWith("login:")).toBe(false);
+    }
+  });
+
+  it("n'efface que la clé visée, pas les autres compteurs du même email", async () => {
+    // `clearRateLimit` est appelé par la connexion RÉUSSIE
+    // (src/lib/actions/auth/login.ts:64). S'il effaçait par email plutôt que
+    // par clé, une connexion réussie remettrait à zéro le quota de renvoi
+    // d'activation — 3 emails par 24 h deviendrait 3 par connexion, soit un
+    // relais de spam authentifié.
+    await clearRateLimit(loginRateLimitKey("victime@example.test"));
+
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: { key: "login:victime@example.test" },
+    });
+    expect(deleteMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          key: "activation:victime@example.test",
+        }),
+      }),
+    );
+  });
 });
 
 describe("recordRateLimitAttempt", () => {

@@ -118,6 +118,34 @@ test.describe("connexion du client", () => {
     );
     await expect(page).toHaveURL(/\/connexion/);
   });
+
+  /// Ajout de l'agent testeur. DoD T-V3-03 : « Bouton “Renvoyer un email
+  /// d'activation” sous le formulaire de connexion ».
+  ///
+  /// Ce qui était couvert : le `href` du lien
+  /// (`connexion-view.test.tsx:84`). Ce qui ne l'était pas : que la destination
+  /// serve à quelque chose. Une page qui ignorerait `renvoi=1` afficherait
+  /// « Lien invalide » et aucun formulaire — le test du `href` resterait vert et
+  /// la DoD serait fausse. Or c'est tout l'objet de cette entrée : avant elle,
+  /// le formulaire de renvoi n'était atteignable qu'en cliquant un lien EXPIRÉ,
+  /// donc en l'ayant encore sous la main, ce qu'on ne peut pas supposer de qui
+  /// n'a jamais reçu son email.
+  test("mène de la connexion au renvoi d'activation", async ({ page }) => {
+    await page.goto("/connexion");
+
+    await page
+      .getByRole("link", { name: /Renvoyer un email d'activation/i })
+      .click();
+
+    await expect(page).toHaveURL(/\/activation\?renvoi=1$/);
+    await expect(page.getByLabel("Adresse email")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Renvoyer un email d'activation/i }),
+    ).toBeVisible();
+    // Et surtout : pas de « Lien invalide », qui est ce que rend cette page
+    // quand elle est atteinte sans jeton ET sans le paramètre.
+    await expect(page.getByText(/Lien invalide/i)).toHaveCount(0);
+  });
 });
 
 test.describe("cloisonnement des rôles", () => {
@@ -248,6 +276,147 @@ test.describe("plafond d'échecs", () => {
 
     await expect(page).toHaveURL(/\/$/);
   });
+
+  /// Ajout de l'agent testeur. Les trois tests ci-dessus prouvent que le
+  /// plafond REFUSE ; aucun ne prouve qu'il refuse **le bon mot de passe**.
+  ///
+  /// C'est pourtant la seule formulation qui distingue un vrai contrôle d'accès
+  /// d'un affichage : un plafond implémenté après la vérification du mot de
+  /// passe, ou seulement dans le formulaire, laisserait passer celui-ci. Le
+  /// blocage « front ET serveur » (SPEC §287) se mesure ici, en soumettant des
+  /// identifiants qui marcheraient une minute plus tôt.
+  ///
+  /// Et il rend visible le coût, qui est réel et assumé : cinq échecs sur une
+  /// adresse ferment la connexion à son titulaire pour le quart d'heure. Un
+  /// plafond par email l'implique ; la SPEC le demande ainsi.
+  test("refuse le bon mot de passe une fois le plafond atteint", async ({
+    page,
+  }) => {
+    const { email } = await creerClientActive(page, db, "verrou");
+
+    await echouer(page, email, 5);
+    await soumettre(page, email, MOT_DE_PASSE_CLIENT);
+
+    await expect(alerte(page)).toContainText(/Trop de tentatives/i);
+    await expect(page).toHaveURL(/\/connexion/);
+    // Aucune session posée : le refus est serveur, pas décoratif.
+    expect(
+      (await page.context().cookies()).find((c) => c.name === "hch_session"),
+    ).toBeUndefined();
+  });
+});
+
+test.describe("accueil et session — surface publique", () => {
+  /// Ajouts de l'agent testeur. L'accueil est devenu **dynamique** en T-V3-03 :
+  /// il lit la session par `getOptionalUser` et monte `AppHeader`
+  /// (`src/app/(marketing)/page.tsx:34-41`). C'est une page que la Constitution
+  /// §5.1 veut ouverte à tous, et elle exécute désormais du code
+  /// d'authentification à chaque visite anonyme. Rien ne le couvrait.
+
+  test("reste servi à un visiteur anonyme, sans en-tête connecté", async ({
+    page,
+  }) => {
+    const reponse = await page.goto("/");
+
+    expect(reponse?.status()).toBe(200);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.getByRole("banner")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Se déconnecter" }),
+    ).toHaveCount(0);
+  });
+
+  test("ne casse pas sur un cookie de session forgé", async ({
+    page,
+    context,
+    baseURL,
+  }) => {
+    // Le pendant, côté page PUBLIQUE, du test de cookie forgé de
+    // `admin-parametres.spec.ts`. Là-bas l'attendu est une redirection ; ici il
+    // n'y a rien à protéger, donc l'attendu est un 200 anonyme. Une 500 fermerait
+    // la vitrine à quiconque traîne un cookie périmé — et le catalogue des
+    // forfaits doit rester joignable sans authentification (Constitution §5.1).
+    await context.addCookies([
+      {
+        name: "hch_session",
+        value: "pas.un.jeton",
+        url: baseURL ?? "http://localhost:3000",
+      },
+    ]);
+
+    const reponse = await page.goto("/");
+
+    expect(reponse?.status()).toBe(200);
+    await expect(page.getByRole("banner")).toHaveCount(0);
+  });
+
+  test("retire l'en-tête dès que le compte est désactivé en base", async ({
+    page,
+  }) => {
+    // Révocation effective (`findUserById` filtre `isActive`,
+    // src/lib/db/queries/auth.ts:255). Le JWT reste valide 7 jours : sans cette
+    // relecture, un compte fermé par un administrateur garderait son en-tête
+    // nominatif — et son bouton de déconnexion — sur une page publique.
+    const { email, userId } = await creerClientActive(page, db, "revoque");
+    await soumettre(page, email, MOT_DE_PASSE_CLIENT);
+    await expect(page.getByRole("banner")).toBeVisible();
+
+    await db.user.update({
+      where: { id: userId },
+      data: { isActive: false },
+    });
+
+    const reponse = await page.goto("/");
+
+    expect(reponse?.status()).toBe(200);
+    await expect(page.getByRole("banner")).toHaveCount(0);
+  });
+});
+
+/// Ajout de l'agent testeur. `logout-button.tsx:8-13` affirme que le
+/// `<form action={…}>` « part en POST que React ait hydraté ou non », et en fait
+/// le motif de ne pas écrire un `onClick`. L'affirmation n'était vérifiée nulle
+/// part — or c'est exactement le défaut payé en T-J0-04 sur le formulaire de
+/// connexion, et l'enjeu est plus lourd ici : une déconnexion décorative sur un
+/// poste partagé laisse la session ouverte à la personne suivante, qui croit
+/// que le bouton a fait son office.
+///
+/// Le compte est créé dans le contexte ORDINAIRE, puis la connexion et la
+/// déconnexion sont rejouées dans un second contexte sans JavaScript. Un
+/// `test.use({ javaScriptEnabled: false })` sur tout le scénario ferait passer
+/// l'inscription par la même contrainte, et un échec là-bas se lirait ici comme
+/// un défaut de la déconnexion.
+test("la déconnexion ferme la session sans hydratation", async ({
+  page,
+  browser,
+  baseURL,
+}) => {
+  const { email } = await creerClientActive(page, db, "sansjs");
+
+  // `browser.newContext()` n'hérite RIEN du bloc `use` de la configuration :
+  // sans ce `baseURL` explicite, les navigations relatives échouent.
+  const contexte = await browser.newContext({
+    javaScriptEnabled: false,
+    ...(baseURL ? { baseURL } : {}),
+  });
+  const sansJs = await contexte.newPage();
+
+  await sansJs.goto("/connexion");
+  await sansJs.getByLabel("Adresse email").fill(email);
+  await sansJs
+    .getByLabel("Mot de passe", { exact: true })
+    .fill(MOT_DE_PASSE_CLIENT);
+  await sansJs.getByRole("button", { name: "Se connecter" }).click();
+  await expect(sansJs).toHaveURL(/\/$/);
+
+  await sansJs.getByRole("button", { name: "Se déconnecter" }).click();
+
+  await expect(sansJs).toHaveURL(/\/\?deconnecte=1$/);
+  expect(
+    (await contexte.cookies()).find((c) => c.name === "hch_session"),
+  ).toBeUndefined();
+
+  await contexte.close();
 });
 
 test.describe("accessibilité outillée", () => {
@@ -292,6 +461,39 @@ test.describe("accessibilité outillée", () => {
     // focus déplacé, message associé — et c'est l'état que personne n'audite.
     await soumettre(page, emailUnique("axe-erreur"), "mauvais-mot-de-passe");
     await expect(alerte(page)).not.toBeEmpty();
+
+    const resultats = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+
+    expect(resultats.violations).toEqual([]);
+  });
+
+  /// Ajouts de l'agent testeur. Le parcours de T-V3-03 ne s'arrête pas au
+  /// formulaire : il **atterrit** quelque part, et cet écran d'arrivée est une
+  /// surface neuve — l'accueil porteur d'`AppHeader`, avec son repère `banner`,
+  /// son lien de marque et son bouton de déconnexion. Aucun des deux états
+  /// n'était audité, alors que la sortie de session est le dernier écran du
+  /// golden path.
+
+  test("l'accueil connecté ne présente aucune violation", async ({ page }) => {
+    const { email } = await creerClientActive(page, db, "axe-accueil");
+    await soumettre(page, email, MOT_DE_PASSE_CLIENT);
+    await expect(page.getByRole("banner")).toBeVisible();
+
+    const resultats = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+
+    expect(resultats.violations).toEqual([]);
+  });
+
+  test("la confirmation de déconnexion ne présente aucune violation", async ({
+    page,
+  }) => {
+    // `US-COMPTE-DECONNECTER` §Cas nominal impose un message de confirmation.
+    // Il est rendu dans un `role="status"` : la région doit rester annonçable
+    // et ne pas entrer en concurrence avec un autre repère live de la page.
+    const { email } = await creerClientActive(page, db, "axe-sortie");
+    await soumettre(page, email, MOT_DE_PASSE_CLIENT);
+    await page.getByRole("button", { name: "Se déconnecter" }).click();
+    await expect(page.getByRole("status")).toContainText(/déconnecté/i);
 
     const resultats = await new AxeBuilder({ page }).withTags(TAGS).analyze();
 

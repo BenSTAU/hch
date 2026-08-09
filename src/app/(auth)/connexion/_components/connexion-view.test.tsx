@@ -10,6 +10,7 @@
 // affaiblie, aucun test n'a été supprimé.
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { axe } from "jest-axe";
 
 vi.mock("@/lib/actions/auth/login", () => ({
   loginFormAction: vi.fn(),
@@ -108,6 +109,52 @@ describe("ConnexionView — retours d'un autre parcours", () => {
     render(<ConnexionView />);
 
     expect(screen.queryByText(/Compte activé/i)).not.toBeInTheDocument();
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// DoD T-V3-03 : « `jest-axe` : zéro violation sur la page de connexion (AA
+// v1) ». Ajout de l'agent testeur — la case n'avait AUCUN test qui la couvre.
+//
+// L'inscription (`inscription-view.test.tsx:73`, `signup-form.test.tsx:126`),
+// l'activation (`activation-view.test.tsx:45`) et l'écran d'administration
+// (`settings-form.test.tsx:351`) portent tous cet audit ; la connexion, qui est
+// le seul écran que la SPEC §6.3.2 place au niveau **AA**, ne l'avait pas.
+// `login-form.test.tsx:9-10` renvoie à « `jest-axe` […] couvre cet écran en
+// E2E » — ce sont deux outils distincts : `jest-axe` tourne en jsdom sous
+// Vitest, `@axe-core/playwright` au navigateur, et la DoD les demande en deux
+// lignes séparées.
+//
+// Ce que cet audit-ci NE prouve PAS, et qu'il ne faut pas lui faire dire :
+// axe-core en jsdom ne calcule AUCUN contraste (pas de moteur de rendu) et ne
+// mesure aucun indicateur de focus. Les deux critères AA correspondants — dont
+// la bordure d'input à 1,06:1 arbitrée en T-V3-02 (note write-back 4) — restent
+// hors de sa portée, et le restent volontairement.
+describe("ConnexionView — audit jest-axe", () => {
+  it("ne présente aucune violation au repos", async () => {
+    const { container } = render(<ConnexionView />);
+
+    await expect(axe(container)).resolves.toHaveNoViolations();
+  });
+
+  it("ne présente aucune violation au retour d'activation", async () => {
+    // L'écran porte alors DEUX régions live — le `status` du retour
+    // d'activation et l'`alert` du formulaire. C'est la configuration où une
+    // duplication de repère se glisse sans se voir.
+    const { container } = render(<ConnexionView activated />);
+
+    await expect(axe(container)).resolves.toHaveNoViolations();
+  });
+
+  it("ne présente aucune violation avec une destination portée", async () => {
+    // Le `next` descend en `<input type="hidden">`. Un champ caché sans `name`
+    // ni label est correct ; un champ caché qui deviendrait visible sans label
+    // ne le serait plus.
+    const { container } = render(
+      <ConnexionView next="/admin/parametres?onglet=societe" />,
+    );
+
+    await expect(axe(container)).resolves.toHaveNoViolations();
   });
 });
 

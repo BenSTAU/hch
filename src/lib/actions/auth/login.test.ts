@@ -55,7 +55,7 @@ vi.mock("@/lib/rate-limit", async (importOriginal) => ({
   clearRateLimit: (...args: unknown[]) => clearRateLimit(...args),
 }));
 
-const { login } = await import("./login");
+const { login, loginFormAction } = await import("./login");
 const { LOGIN_REFUSED_MESSAGE, LOGIN_RATE_LIMITED_MESSAGE } =
   await import("@/lib/validations/auth");
 
@@ -440,5 +440,243 @@ describe("login — plafond d'échecs", () => {
     const result = await login(CREDENTIALS);
 
     expect(JSON.stringify(result?.data)).not.toContain("421");
+  });
+
+  // Ajouts de l'agent testeur — les trois cas par lesquels un plafond se
+  // contourne en pratique.
+
+  it("ne se contourne pas en variant la casse de l'adresse", async () => {
+    // Le compteur est porté par une CHAÎNE. Si la clé était construite sur la
+    // saisie brute plutôt que sur `parsedInput`, `Admin@…`, `ADMIN@…` et
+    // `admin@…` ouvriraient trois compteurs de cinq tentatives pour un seul
+    // compte — quinze essais au lieu de cinq, sans rien de plus qu'un clavier.
+    //
+    // Le test existant vérifie la LECTURE du quota sur la clé normalisée ;
+    // celui-ci vérifie l'ÉCRITURE, qui est ce qui fait effectivement monter le
+    // compteur.
+    authenticateWithPassword.mockResolvedValue({ ok: false });
+
+    for (const saisie of [
+      "Admin@HomeCyclHome.FR",
+      "ADMIN@HOMECYCLHOME.FR",
+      "aDmIn@homecyclhome.fr",
+    ]) {
+      await login({ email: saisie, password: "peu-importe" });
+    }
+
+    const cles = recordRateLimitAttempt.mock.calls.map(([cle]) => cle);
+    expect(new Set(cles)).toEqual(new Set(["login:admin@homecyclhome.fr"]));
+  });
+
+  it("refuse même des identifiants VALIDES une fois le plafond atteint", async () => {
+    // « formulaire bloqué en front ET serveur » (SPEC §287) : le plafond est un
+    // contrôle d'accès, pas un simple compteur d'erreurs. La conséquence est
+    // assumée et doit rester visible — cinq échecs sur une adresse ferment la
+    // connexion à son titulaire pendant le quart d'heure, y compris avec le bon
+    // mot de passe. C'est le coût d'un plafond par email, et c'est ce que la
+    // SPEC demande.
+    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 120_000 });
+    authenticateWithPassword.mockResolvedValue({
+      ok: true,
+      user: { id: "user-1", roles: ["ROLE_ADMIN"] },
+    });
+
+    const result = await login(CREDENTIALS);
+
+    expect(result?.data).toMatchObject({ error: LOGIN_RATE_LIMITED_MESSAGE });
+    expect(createSession).not.toHaveBeenCalled();
+    expect(redirect).not.toHaveBeenCalled();
+    // Et le compteur n'est pas purgé : une soumission refusée d'avance n'est
+    // pas une connexion réussie.
+    expect(clearRateLimit).not.toHaveBeenCalled();
+  });
+
+  it("ne redirige pas sur `next` quand le plafond a refusé", async () => {
+    // Sans cette garde, un lien `?next=…` transformerait l'écran de connexion
+    // en redirecteur utilisable SANS aucun identifiant, simplement en saturant
+    // d'abord le compteur d'une adresse quelconque.
+    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 120_000 });
+
+    await login({ ...CREDENTIALS, next: "/admin/parametres" });
+
+    expect(redirect).not.toHaveBeenCalled();
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// `loginFormAction` — l'adaptateur `useActionState`. Ajouts de l'agent testeur.
+//
+// Il était livré SANS AUCUN test direct : `login.test.ts` n'exerçait que
+// `login`, et `login-form.test.tsx` le REMPLACE par un mock. Or c'est lui que
+// `<form action={…}>` référence, donc lui qui est réellement exposé comme
+// endpoint POST public — `login` n'est atteint qu'à travers lui depuis un
+// navigateur.
+//
+// Trois responsabilités vivaient là sans oracle : la conversion `FormData` →
+// objet, l'omission de `next` vide, et la chaîne de priorité des trois canaux
+// d'erreur de next-safe-action.
+// ───────────────────────────────────────────────────────────────────────────
+describe("loginFormAction — adaptateur de formulaire", () => {
+  function champs(valeurs: Record<string, string>): FormData {
+    const formData = new FormData();
+    for (const [nom, valeur] of Object.entries(valeurs)) {
+      formData.set(nom, valeur);
+    }
+    return formData;
+  }
+
+  it("transmet les identifiants saisis à l'authentification", async () => {
+    authenticateWithPassword.mockResolvedValue({ ok: false });
+
+    await loginFormAction(
+      {},
+      champs({ email: "Admin@HomeCyclHome.FR", password: "un-mot-de-passe" }),
+    );
+
+    // Normalisé à l'arrivée, comme par l'appel direct : la conversion ne doit
+    // pas court-circuiter le schéma.
+    expect(authenticateWithPassword).toHaveBeenCalledWith(
+      "admin@homecyclhome.fr",
+      "un-mot-de-passe",
+    );
+  });
+
+  it("rend le message générique sur un refus, sans drapeau de blocage", async () => {
+    authenticateWithPassword.mockResolvedValue({ ok: false });
+
+    const state = await loginFormAction(
+      {},
+      champs({ email: "admin@homecyclhome.fr", password: "faux" }),
+    );
+
+    expect(state).toEqual({ error: LOGIN_REFUSED_MESSAGE });
+    // `blocked` ABSENT et non `false` : le formulaire teste la présence du
+    // drapeau, un `false` traînant brouillerait la lecture de l'état.
+    expect("blocked" in state).toBe(false);
+  });
+
+  it("propage le drapeau de blocage jusqu'au formulaire", async () => {
+    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 120_000 });
+
+    const state = await loginFormAction(
+      {},
+      champs({ email: "admin@homecyclhome.fr", password: "peu-importe" }),
+    );
+
+    expect(state).toEqual({
+      error: LOGIN_RATE_LIMITED_MESSAGE,
+      blocked: true,
+    });
+  });
+
+  it("laisse la redirection traverser sur un succès", async () => {
+    // `redirect()` fonctionne par throw. Un `try/catch` posé ici l'absorberait
+    // et la personne resterait sur le formulaire — connectée sans le savoir,
+    // avec un cookie déjà posé.
+    authenticateWithPassword.mockResolvedValue({
+      ok: true,
+      user: { id: "user-1", roles: ["ROLE_CLIENT"] },
+    });
+
+    await expect(
+      loginFormAction(
+        {},
+        champs({ email: "admin@homecyclhome.fr", password: "bon" }),
+      ),
+    ).rejects.toMatchObject({
+      digest: expect.stringContaining("NEXT_REDIRECT"),
+    });
+  });
+
+  it("refuse un formulaire vide sans toucher à l'authentification", async () => {
+    const state = await loginFormAction({}, new FormData());
+
+    expect(state.error).toBe("Vérifiez les champs du formulaire.");
+    expect(authenticateWithPassword).not.toHaveBeenCalled();
+    // Une saisie invalide n'est pas une tentative : elle ne doit pas consommer
+    // le quota de quelqu'un d'autre.
+    expect(recordRateLimitAttempt).not.toHaveBeenCalled();
+  });
+
+  it("ne réfléchit jamais le mot de passe soumis dans l'état rendu", async () => {
+    // L'état retourné est SÉRIALISÉ dans le document envoyé au navigateur par
+    // `useActionState`. Un mot de passe qui y entre finit dans le HTML, donc
+    // dans le cache disque et dans toute copie de page.
+    authenticateWithPassword.mockResolvedValue({ ok: false });
+
+    const state = await loginFormAction(
+      {},
+      champs({
+        email: "admin@homecyclhome.fr",
+        password: "ceci-est-un-secret-reconnaissable",
+      }),
+    );
+
+    expect(JSON.stringify(state)).not.toContain(
+      "ceci-est-un-secret-reconnaissable",
+    );
+  });
+
+  it("ignore un `next` vide au profit de la destination de rôle", async () => {
+    // Le champ caché est absent du document quand la page n'a pas reçu de
+    // destination, mais une soumission forgée peut poser `next=""`. Une clé
+    // présente à vide n'a pas le même sens qu'une clé absente, et l'omettre est
+    // ce qui laisse `afterLoginPath` décider.
+    authenticateWithPassword.mockResolvedValue({
+      ok: true,
+      user: { id: "client-1", roles: ["ROLE_CLIENT"] },
+    });
+
+    await loginFormAction(
+      {},
+      champs({ email: "admin@homecyclhome.fr", password: "bon", next: "" }),
+    ).catch(() => undefined);
+
+    expect(redirect).toHaveBeenCalledWith("/");
+  });
+
+  it("refiltre un `next` hostile posé dans le champ caché", async () => {
+    // Le champ est dans le document, donc modifiable au DevTools avant
+    // soumission. `page.tsx` filtre au rendu ; ce test vérifie que la frontière
+    // tient aussi quand la valeur n'est jamais passée par ce rendu.
+    authenticateWithPassword.mockResolvedValue({
+      ok: true,
+      user: { id: "client-1", roles: ["ROLE_CLIENT"] },
+    });
+
+    for (const hostile of [
+      "https://phishing.example",
+      "//phishing.example",
+      "/\\phishing.example",
+      "/%2Fphishing.example",
+    ]) {
+      redirect.mockClear();
+      await loginFormAction(
+        {},
+        champs({
+          email: "admin@homecyclhome.fr",
+          password: "bon",
+          next: hostile,
+        }),
+      ).catch(() => undefined);
+
+      expect(redirect).toHaveBeenCalledWith("/");
+    }
+  });
+
+  it("ne fait aucune confiance à l'état précédent qu'on lui passe", async () => {
+    // `_prevState` vient de React en usage normal, mais l'action est un
+    // endpoint POST public : un appelant direct en fournit ce qu'il veut. Un
+    // code qui s'y fierait — pour lever un blocage, par exemple — offrirait le
+    // contournement du plafond au premier `curl` venu.
+    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 120_000 });
+
+    const state = await loginFormAction(
+      { blocked: false, error: "" },
+      champs({ email: "admin@homecyclhome.fr", password: "peu-importe" }),
+    );
+
+    expect(state.blocked).toBe(true);
+    expect(authenticateWithPassword).not.toHaveBeenCalled();
   });
 });
