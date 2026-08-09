@@ -187,7 +187,7 @@ code, la case est mal écrite — remonte-le.
 | ORM | Prisma — `Unsupported("geography")` + `$queryRaw` | [[adr-008-orm-prisma\|ADR-008]] |
 | Auth | Roll-your-own : bcrypt + `jose` + Google OAuth (PKCE) | [[adr-005-auth-hch\|ADR-005 v2]] |
 | UI | Tailwind v4 + shadcn/ui + `cva` + Radix + Lucide | [[adr-012-maquettage-stitch-shadcn\|ADR-012]] |
-| Carto | Google Maps + Geocoding + Drawing Library | [[adr-015-provider-carto\|ADR-015]] |
+| Carto | **BAN / Géoplateforme IGN** (adresse client, sans clé) · Google Maps + Drawing Library (**back-office admin V1 seulement**) | [[adr-015-provider-carto\|ADR-015 v2]] |
 | Server state client | TanStack Query, **3 vues seulement** | [[s1-archi-stack\|S1]] §6.1 |
 | Tests | Vitest + RTL + Playwright + MSW, Testing Trophy | [[adr-014-testing-hch\|ADR-014]] |
 | Runtime | Node 24 LTS, pnpm 10+ | [[s3-infra-ci-cd\|S3]] (amendé 2026-08-05 : 22 → 24, EOL 22 le 30/04/2027) |
@@ -312,8 +312,10 @@ dans les 12 pages d'axe de [[conventions-react-next]].
   attendues, **validé au runtime serveur**, jamais à l'import évalué au build.
   Une variable manquante empêche le conteneur de servir : healthcheck rouge,
   rollback inline vers l'image précédente, job rouge. Sans cette garde, l'absence
-  d'une clé applicative ne se voit qu'à l'usage — la clé de géocodage au tunnel
-  de réservation, le mot de passe d'application email à l'inscription.
+  d'une clé applicative ne se voit qu'à l'usage — le mot de passe d'application
+  email à l'inscription, la clé Google Maps du back-office admin en V1. Le
+  géocodage client, lui, n'a **aucune** variable d'environnement : la BAN n'a
+  pas de clé (ADR-015 v2).
 - **MUST NOT** évaluer ce schéma au chargement d'un module importé par le build.
   C'est exactement le piège payé sur `prisma.config.ts` ci-dessus : le stage
   builder du Dockerfile n'a **aucune** de ces variables.
@@ -489,7 +491,8 @@ Arborescence de référence : [[adr-006-archi-applicative-hch|ADR-006 v2]]
 - **MUST NOT** désactiver le prefetch `<Link>` globalement.
 - **MUST NOT** virtualiser sous 200 items DOM.
 - **DEFAULT** `next/dynamic` + `<Suspense>` pour le client lourd hors du fold —
-  carte Google Maps, calendrier, modales.
+  carte Google Maps du **back-office admin V1**, calendrier, modales. Le
+  parcours client n'a plus de carte depuis ADR-015 v2.
 - **DEFAULT** `experimental.optimizePackageImports` pour `lucide-react` et `zod`.
   L'option vit sous **`experimental`**, et `lucide-react` figure **déjà dans la
   liste optimisée par défaut** de Next 16 — il y est listé pour l'intention,
@@ -640,9 +643,11 @@ Détail applicatif complet : [[s3-infra-ci-cd|PLAN S3]].
   Hiérarchie de queries : Role > LabelText > PlaceholderText > Text >
   DisplayValue > AltText > Title > TestId.
 - **MUST** `@testing-library/user-event` v14+. Pas de `fireEvent`.
-- **MUST** MSW 2 pour mocker à la frontière réseau — endpoint token Google
-  OAuth, Geocoding API. `onUnhandledRequest: 'error'`, handlers partagés entre
-  Vitest et Playwright dans `src/mocks/`.
+- **MUST** MSW 2 pour mocker à la frontière réseau — **recherche BAN**
+  (`data.geopf.fr/geocodage/search/`, branchée depuis T-V3-06), endpoint token
+  Google OAuth. `onUnhandledRequest: 'error'`, handlers partagés entre Vitest
+  et Playwright dans `src/mocks/` — côté Playwright le partage devient effectif
+  avec `GP-02` (T-V3-08).
 - **MUST** Playwright pour l'E2E, `webServer` = `pnpm dev` en local,
   `pnpm build && pnpm start` **en CI** — la CI teste la vraie pipeline de
   production, jamais le dev server.
