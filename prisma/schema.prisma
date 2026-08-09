@@ -1,12 +1,17 @@
 // Schéma Prisma HomeCycl'Home.
 //
-// Source de vérité du modèle : le dictionnaire de données v2.3 du vault
+// Source de vérité du modèle : le dictionnaire de données v2.4 du vault
 // (19 tables), et PLAN S2 pour l'ordre des migrations et les contraintes.
 // Toute divergence entre ce fichier et le dictionnaire se remonte avant
 // d'écrire la migration — elle ne s'absorbe pas ici.
 //
-// Périmètre actuel : migrations 001 à 006 et 014 de PLAN S2 §6. Les rangs 007
-// à 013 arrivent avec leurs tâches (cycles, interventions, paiements).
+// Périmètre actuel : migrations 001 à 008, 010 et 014 de PLAN S2 §6. Restent
+// les rangs 009 (paiements), 011 à 013.
+//
+// ⚠️ Le rang 007 (`init_cycles`) est écrit par T-V3-08 et non par T-V3-07, à
+// qui PLAN S2 §6 l'attribuait : `interventions.cycle_id` la référence par clé
+// étrangère, et T-V3-07 est marquée [P] sacrifiable — le chemin critique ne
+// peut pas dépendre d'une tâche supprimable. T-V3-07 garde le CRUD.
 //
 // ⚠️ Le rang 014 (`init_rate_limits`) est appliqué AVANT les rangs 007 à 013,
 // qui n'existent pas encore. Sans conséquence : la table n'a aucune clé
@@ -23,7 +28,11 @@
 //
 // Conventions :
 //   · noms physiques snake_case (@map / @@map), noms Prisma camelCase
-//   · TIMESTAMP sans fuseau, convention UTC implicite (PLAN S2 T5)
+//   · TIMESTAMP sans fuseau, convention UTC implicite (PLAN S2 T5) — SAUF les
+//     trois horodatages métier d'`interventions`, en `timestamptz`. Exception
+//     écrite au dictionnaire v2.4 : une convention portée par l'application ne
+//     protège que les écritures qui passent par elle, et c'est la seule colonne
+//     du projet sur laquelle une contrainte SQL raisonne
 //   · énumérations en VARCHAR + CHECK SQL, pas en `enum` Prisma — le retrait
 //     d'une valeur d'ENUM Postgres est coûteux, et on l'a déjà fait une fois
 //     (CONFIRMED). Le narrowing typé vit dans src/lib/validations/ via Zod.
@@ -48,16 +57,16 @@ datasource db {
 model User {
   /// UUID v4 et non SERIAL : les identifiants apparaissent dans des URL
   /// publiques, un incrément se laisse énumérer (Constitution §4.2).
-  id        String    @id @default(uuid(4)) @db.Uuid
+  id              String    @id @default(uuid(4)) @db.Uuid
   /// Stockée sous forme canonique — minuscules, sans espaces de bordure —
   /// imposée par le CHECK `users_email_normalized`
   /// (`add_users_email_normalized_check`, T-V3-03). L'index unique est
   /// ORDINAIRE : Postgres y compare octet par octet, et sans la contrainte
   /// « Camille@… » et « camille@… » seraient deux comptes pour une seule
   /// personne, dont un seul se connecterait jamais.
-  email     String    @unique @db.VarChar(180)
-  firstname String    @db.VarChar(100)
-  lastname  String    @db.VarChar(100)
+  email           String    @unique @db.VarChar(180)
+  firstname       String    @db.VarChar(100)
+  lastname        String    @db.VarChar(100)
   /// Format E.164 strict, imposé par un CHECK SQL posé en migration 001.
   ///
   /// NULLable depuis la migration 004, et c'est une dette de la 001 : le
@@ -66,12 +75,12 @@ model User {
   /// fait une décision — `phone=NULL` à la pseudonymisation. Un NOT NULL rend
   /// T-V3-12 inapplicable. Le CHECK E.164 n'est pas concerné : il passe sur
   /// NULL.
-  phone     String?   @db.VarChar(20)
+  phone           String?   @db.VarChar(20)
   /// Tableau Postgres natif : ROLE_CLIENT | ROLE_TECH | ROLE_ADMIN.
-  roles     String[]  @db.VarChar(20)
+  roles           String[]  @db.VarChar(20)
   /// Soft-delete administrateur, réversible. À ne pas confondre avec
   /// deletedAt : deux régimes de fin de vie distincts (PLAN S2 §4).
-  isActive  Boolean   @default(true) @map("is_active")
+  isActive        Boolean   @default(true) @map("is_active")
   /// Horodate la vérification de l'email. NULL = jamais activé.
   ///
   /// ⚠️ Réintroduit ce que le dictionnaire v2.1 avait consolidé : il a supprimé
@@ -89,16 +98,23 @@ model User {
   /// §users et PLAN S2 §4.
   emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamp(6)
   /// Horodate le droit à l'oubli — pseudonymisation in-place, irréversible.
-  deletedAt DateTime? @map("deleted_at") @db.Timestamp(6)
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamp(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
 
-  authProviders      AuthProvider[]
-  verificationTokens VerificationToken[]
-  appSettingsUpdated AppSetting[]
-  auditLogs          AuditLog[]
-  addresses          Address[]
-  technicianZones    TechnicianZone[]
-  servicePriceEdits  ServicePriceHistory[]
+  authProviders         AuthProvider[]
+  verificationTokens    VerificationToken[]
+  appSettingsUpdated    AppSetting[]
+  auditLogs             AuditLog[]
+  addresses             Address[]
+  technicianZones       TechnicianZone[]
+  servicePriceEdits     ServicePriceHistory[]
+  cycles                Cycle[]
+  /// Deux relations distinctes vers la même table : le client d'une
+  /// intervention et le technicien qui s'y rend sont tous deux des `users`,
+  /// séparés par leur rôle et non par leur table (Constitution §3.1).
+  interventionsAsClient Intervention[]        @relation("InterventionClient")
+  interventionsAsTech   Intervention[]        @relation("InterventionTech")
+  photosUploaded        Photo[]
 
   @@map("users")
 }
@@ -272,8 +288,9 @@ model Address {
   /// n'y est attachée (PLAN S2 §4).
   isActive Boolean                               @default(true) @map("is_active")
 
-  city City  @relation(fields: [cityId], references: [id])
-  user User? @relation(fields: [userId], references: [id])
+  city          City           @relation(fields: [cityId], references: [id])
+  user          User?          @relation(fields: [userId], references: [id])
+  interventions Intervention[]
 
   @@index([location], type: Gist)
   @@map("addresses")
@@ -327,7 +344,8 @@ model Service {
   price       Decimal @db.Decimal(10, 2)
   isActive    Boolean @default(true) @map("is_active")
 
-  priceHistory ServicePriceHistory[]
+  priceHistory  ServicePriceHistory[]
+  interventions Intervention[]
 
   @@map("services")
 }
@@ -368,9 +386,137 @@ model Product {
   /// retrait. Le garde anti-négatif vit dans la Server Action de T-V3-09.
   stock       Int     @default(0)
 
-  category ProductCategory? @relation(fields: [categoryId], references: [id])
+  category             ProductCategory?      @relation(fields: [categoryId], references: [id])
+  interventionProducts InterventionProduct[]
 
   @@map("products")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Domaine E — Interventions (migrations 007, 008, 010)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Vélo d'un client. `user_id` est NN et le reste : aucune US ne fait posséder
+/// un vélo à un visiteur anonyme, les trois US cycles s'ouvrent toutes sur
+/// « Given je suis client authentifié » (dictionnaire v2.4).
+model Cycle {
+  id     Int     @id @default(autoincrement())
+  brand  String  @db.VarChar(100)
+  model  String? @db.VarChar(100)
+  /// CLASSIC | ELECTRIC | CARGO — CHECK SQL, motif des migrations 001 et 002.
+  type   String  @db.VarChar(50)
+  year   Int?
+  userId String  @map("user_id") @db.Uuid
+
+  user          User           @relation(fields: [userId], references: [id])
+  interventions Intervention[]
+
+  @@map("cycles")
+}
+
+/// Le pivot du produit. Tout y converge : qui, où, quand, quel forfait, à quel
+/// prix.
+model Intervention {
+  id     Int    @id @default(autoincrement())
+  /// PLANNED | IN_PROGRESS | DONE | CANCELLED — CHECK SQL. Pas de CONFIRMED en
+  /// v1 (basculé v2 par l'audit du 2026-07-06).
+  status String @db.VarChar(50)
+
+  /// `timestamptz` et non `TIMESTAMP`, **exception écrite à PLAN S2 T5**
+  /// (dictionnaire v2.4). Deux motifs qui se cumulent : le cast
+  /// `timestamp → timestamptz` est STABLE, donc interdit dans l'expression de
+  /// la colonne générée `reservation_range` ; et c'est la seule colonne du
+  /// projet sur laquelle une contrainte SQL raisonne — une convention UTC
+  /// portée par l'application ne protège que les écritures qui passent par
+  /// elle.
+  appointmentAt DateTime  @map("appointment_at") @db.Timestamptz(6)
+  startedAt     DateTime? @map("started_at") @db.Timestamptz(6)
+  completedAt   DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  cancellationReason String? @map("cancellation_reason")
+
+  /// Prix TOTAL figé à la réservation (Constitution §4.1).
+  priceSnapshot    Decimal @map("price_snapshot") @db.Decimal(10, 2)
+  /// Durée du forfait en MINUTES, figée au même instant et pour la même
+  /// raison. Elle alimente `reservation_range` : sans elle, l'expression
+  /// devrait aller chercher `services.duration`, et la fenêtre de
+  /// non-chevauchement d'un rendez-vous confirmé se déplacerait le jour où
+  /// l'administrateur retouche le catalogue.
+  durationSnapshot Int     @map("duration_snapshot")
+
+  techComment     String? @map("tech_comment")
+  isCommentPublic Boolean @default(false) @map("is_comment_public")
+
+  /// NULL pendant toute la vie d'une réservation guest — la réservation
+  /// précède l'inscription (Constitution §3.2). `guestEmail` porte alors la
+  /// clé de rattachement.
+  clientId   String? @map("client_id") @db.Uuid
+  guestEmail String? @map("guest_email") @db.VarChar(180)
+
+  /// Technicien affecté. NN : une intervention sans technicien n'a pas de
+  /// planning, et c'est cette colonne que porte la contrainte d'exclusion.
+  techId    String @map("tech_id") @db.Uuid
+  addressId Int    @map("address_id")
+  /// NULLable depuis le dictionnaire v2.4. **Rien ne l'écrit en v1** : aucune
+  /// des quatre étapes du tunnel ne demande le vélo, et qui le renseignera —
+  /// tunnel, espace client ou technicien en V2 — n'est pas tranché.
+  cycleId   Int?   @map("cycle_id")
+  serviceId Int    @map("service_id")
+
+  client  User?   @relation("InterventionClient", fields: [clientId], references: [id])
+  tech    User    @relation("InterventionTech", fields: [techId], references: [id])
+  address Address @relation(fields: [addressId], references: [id])
+  cycle   Cycle?  @relation(fields: [cycleId], references: [id])
+  service Service @relation(fields: [serviceId], references: [id])
+
+  products InterventionProduct[]
+  photos   Photo[]
+
+  /// Le rattachement post-inscription cherche les réservations d'un email
+  /// resté sans compte : sans index, il balaie la table à chaque activation.
+  @@index([guestEmail, clientId])
+  /// Dérivation des créneaux : « les interventions de CE technicien dans CETTE
+  /// fenêtre », à chaque ouverture de la grille et toutes les 30 s ensuite.
+  @@index([techId, appointmentAt])
+  @@map("interventions")
+}
+
+/// Produits vendus pendant l'intervention. Même panier, même facture
+/// (Constitution §2.6). Alimentée par T-V3-09.
+model InterventionProduct {
+  interventionId    Int     @map("intervention_id")
+  productId         Int     @map("product_id")
+  quantity          Int
+  /// Prix unitaire figé à la vente, même règle que `price_snapshot`.
+  unitPriceSnapshot Decimal @map("unit_price_snapshot") @db.Decimal(10, 2)
+
+  intervention Intervention @relation(fields: [interventionId], references: [id])
+  product      Product      @relation(fields: [productId], references: [id])
+
+  @@id([interventionId, productId])
+  @@map("intervention_products")
+}
+
+/// Preuve terrain horodatée (Constitution §2.5). Alimentée par T-V3-10.
+model Photo {
+  id   Int    @id @default(autoincrement())
+  url  String @db.VarChar(255)
+  /// BEFORE | AFTER — CHECK SQL. `PROBLEM` retiré en v2.2.
+  type String @db.VarChar(20)
+
+  /// Exactement UN des deux champs d'auteur est renseigné. `NULL` ici est
+  /// l'upload d'un guest, qui n'a pas encore de ligne `users` — le champ était
+  /// `NN` et rendait l'US inimplémentable, corrigé à l'audit V3.
+  uploadedByUserId String? @map("uploaded_by_user_id") @db.Uuid
+  guestEmail       String? @map("guest_email") @db.VarChar(255)
+
+  interventionId Int      @map("intervention_id")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  uploadedBy   User?        @relation(fields: [uploadedByUserId], references: [id])
+  intervention Intervention @relation(fields: [interventionId], references: [id])
+
+  @@map("photos")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
