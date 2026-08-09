@@ -54,11 +54,60 @@ function seChevauchent(creneau: Creneau, occupe: PlageOccupee): boolean {
   return creneau.debut < occupe.fin && occupe.debut < creneau.fin;
 }
 
+/// Un technicien de la zone et ses interventions déjà planifiées.
+export type TechnicienCharge = {
+  id: string;
+  occupes: readonly PlageOccupee[];
+};
+
+/// Créneau retenu, avec le technicien qui s'y rendra.
+export type CreneauAffecte = Creneau & { techId: string };
+
+/// **Premier technicien libre, dans l'ordre croissant des identifiants.**
+///
+/// Règle écrite, et non comportement émergent d'un `ORDER BY` : ni round-robin
+/// ni équilibrage de charge, qui exigeraient tous deux un état que rien ne
+/// tient en v1. L'ordre est stable pour qu'un même créneau ne change pas de
+/// technicien entre l'affichage de la grille et la validation.
+///
+/// ⚠️ Non démontrable en démonstration : le seed ne porte qu'un technicien.
+export function affecterPremierLibre(
+  creneau: Creneau,
+  techniciens: readonly TechnicienCharge[],
+): string | null {
+  for (const technicien of techniciens) {
+    const libre = !technicien.occupes.some((occupe) =>
+      seChevauchent(creneau, occupe),
+    );
+    if (libre) return technicien.id;
+  }
+  return null;
+}
+
+/// Filtre la grille sur les créneaux qu'au moins un technicien peut prendre, et
+/// nomme lequel.
+export function affecterCreneaux(
+  creneaux: readonly Creneau[],
+  techniciens: readonly TechnicienCharge[],
+): CreneauAffecte[] {
+  const affectes: CreneauAffecte[] = [];
+
+  for (const creneau of creneaux) {
+    const techId = affecterPremierLibre(creneau, techniciens);
+    if (techId === null) continue;
+    affectes.push({ ...creneau, techId });
+  }
+
+  return affectes;
+}
+
 export function deriverCreneaux(params: {
   horaires: HorairesSemaine;
   /// Durée du forfait choisi, en minutes. C'est lui qui dimensionne le créneau.
   dureeMinutes: number;
-  occupes: PlageOccupee[];
+  /// Facultatif : la grille brute ignore l'occupation, que `affecterCreneaux`
+  /// traite ensuite technicien par technicien.
+  occupes?: readonly PlageOccupee[];
   /// Instant de référence — tout créneau qui commence avant est écarté.
   maintenant: Date;
   horizonJours?: number;
@@ -68,7 +117,7 @@ export function deriverCreneaux(params: {
   const {
     horaires,
     dureeMinutes,
-    occupes,
+    occupes = [],
     maintenant,
     horizonJours = HORIZON_JOURS,
     pasMinutes = PAS_MINUTES,

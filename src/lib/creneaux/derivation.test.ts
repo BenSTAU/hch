@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { deriverCreneaux, type HorairesSemaine } from "./derivation";
+import {
+  affecterCreneaux,
+  affecterPremierLibre,
+  deriverCreneaux,
+  type HorairesSemaine,
+} from "./derivation";
 
 /// Horaires de référence, ceux du seed : semaine 08:00-18:00, samedi matin,
 /// dimanche fermé. Heures LOCALES — c'est tout l'enjeu des assertions en `Z`
@@ -178,6 +183,19 @@ describe("deriverCreneaux", () => {
     expect(creneaux).toHaveLength(19 * 5 + 7);
   });
 
+  it("ignore l'occupation quand elle n'est pas fournie", () => {
+    // La grille brute sert de base à `affecterCreneaux`, qui traite ensuite
+    // l'occupation technicien par technicien.
+    const creneaux = deriverCreneaux({
+      horaires: HORAIRES,
+      dureeMinutes: 60,
+      maintenant: LUNDI_ETE,
+      horizonJours: 1,
+    });
+
+    expect(creneaux).toHaveLength(19);
+  });
+
   it("rend une grille vide plutôt que de boucler sur une durée absurde", () => {
     for (const dureeMinutes of [0, -30]) {
       const creneaux = deriverCreneaux({
@@ -189,5 +207,101 @@ describe("deriverCreneaux", () => {
       });
       expect(creneaux, String(dureeMinutes)).toEqual([]);
     }
+  });
+});
+
+const CRENEAU = {
+  debut: new Date("2026-07-13T08:00:00Z"),
+  fin: new Date("2026-07-13T09:00:00Z"),
+};
+
+/// Occupation qui recouvre exactement CRENEAU.
+const CONFLIT = [
+  {
+    debut: new Date("2026-07-13T08:00:00Z"),
+    fin: new Date("2026-07-13T09:00:00Z"),
+  },
+];
+
+describe("affecterPremierLibre", () => {
+  it("rend le premier technicien libre dans l'ordre reçu", () => {
+    const techId = affecterPremierLibre(CRENEAU, [
+      { id: "tech-a", occupes: [] },
+      { id: "tech-b", occupes: [] },
+    ]);
+
+    expect(techId).toBe("tech-a");
+  });
+
+  it("passe au suivant quand le premier est pris", () => {
+    // La règle est « premier LIBRE », pas « premier ». L'ordre du tableau est
+    // celui que la requête impose — croissant par identifiant — pour qu'un même
+    // créneau ne change pas de technicien entre l'affichage et la validation.
+    const techId = affecterPremierLibre(CRENEAU, [
+      { id: "tech-a", occupes: CONFLIT },
+      { id: "tech-b", occupes: [] },
+    ]);
+
+    expect(techId).toBe("tech-b");
+  });
+
+  it("ne rend personne quand tous sont pris", () => {
+    const techId = affecterPremierLibre(CRENEAU, [
+      { id: "tech-a", occupes: CONFLIT },
+      { id: "tech-b", occupes: CONFLIT },
+    ]);
+
+    expect(techId).toBeNull();
+  });
+
+  it("ne rend personne quand la zone n'a aucun technicien affecté", () => {
+    // Une zone sans technicien ne sert personne : c'est la moitié « couverte
+    // par au moins un technicien » de la Constitution §2.2.
+    expect(affecterPremierLibre(CRENEAU, [])).toBeNull();
+  });
+});
+
+describe("affecterCreneaux", () => {
+  it("retire les créneaux que personne ne peut prendre et nomme le technicien des autres", () => {
+    const grille = deriverCreneaux({
+      horaires: HORAIRES,
+      dureeMinutes: 60,
+      maintenant: LUNDI_ETE,
+      horizonJours: 1,
+    });
+
+    const affectes = affecterCreneaux(grille, [
+      { id: "tech-a", occupes: CONFLIT },
+    ]);
+
+    // Le seul technicien est pris de 10:00 à 11:00 locales : trois départs
+    // disparaissent, comme dans le cas mono-technicien.
+    expect(affectes).toHaveLength(16);
+    expect(affectes.every((c) => c.techId === "tech-a")).toBe(true);
+    expect(affectes.map((c) => c.debut.toISOString())).not.toContain(
+      "2026-07-13T08:00:00.000Z",
+    );
+  });
+
+  it("comble le trou d'un technicien avec un autre", () => {
+    const grille = deriverCreneaux({
+      horaires: HORAIRES,
+      dureeMinutes: 60,
+      maintenant: LUNDI_ETE,
+      horizonJours: 1,
+    });
+
+    const affectes = affecterCreneaux(grille, [
+      { id: "tech-a", occupes: CONFLIT },
+      { id: "tech-b", occupes: [] },
+    ]);
+
+    // Aucun créneau ne disparaît : ce que le premier ne peut pas prendre, le
+    // second le prend.
+    expect(affectes).toHaveLength(19);
+    const contesté = affectes.find(
+      (c) => c.debut.toISOString() === "2026-07-13T08:00:00.000Z",
+    );
+    expect(contesté?.techId).toBe("tech-b");
   });
 });
