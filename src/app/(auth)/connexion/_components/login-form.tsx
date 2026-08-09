@@ -125,6 +125,31 @@ export function LoginForm({ next }: { next?: string | undefined }) {
       <Button type="submit" disabled={isPending || state.blocked === true}>
         {isPending ? "Connexion…" : "Se connecter"}
       </Button>
+
+      {/* Sortie de l'écran bloqué — constat E5 de l'agent testeur : le bouton
+          désactivé était le SEUL déclencheur d'un nouvel état, si bien que le
+          message « réessayez dans quelques minutes » n'avait aucun geste
+          possible derrière lui.
+
+          Une balise `<a>` et non `<Link>` : la navigation client de Next ne
+          remonte pas ce composant vers la même route, l'état d'action
+          survivrait et le bouton resterait fermé. Il faut une vraie requête.
+          `next` est reconduit pour ne pas perdre la destination demandée. */}
+      {state.blocked === true ? (
+        <p className="text-center text-sm text-muted-foreground">
+          <a
+            href={
+              next === undefined
+                ? "/connexion"
+                : `/connexion?next=${encodeURIComponent(next)}`
+            }
+            className="font-medium text-primary underline underline-offset-4"
+          >
+            Recharger le formulaire
+          </a>{" "}
+          pour réessayer.
+        </p>
+      ) : null}
     </form>
   );
 }

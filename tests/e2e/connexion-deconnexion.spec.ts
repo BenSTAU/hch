@@ -422,10 +422,18 @@ test("la déconnexion ferme la session sans hydratation", async ({
 test.describe("accessibilité outillée", () => {
   /// `@axe-core/playwright` sur `GP-01` — DoD T-V3-03, reportée de T-V3-02.
   ///
-  /// Deux critères **AA** ne se prouvent pas en jsdom, où `jest-axe` tourne :
-  /// le **contraste** (axe-core ne calcule rien sans moteur de rendu, la règle
-  /// sort en `incomplete` et ne compte pas comme violation) et le **focus
-  /// visible**. Ils ne se mesurent qu'ici, au navigateur.
+  /// Ce que ce scan apporte par rapport à `jest-axe` : le **contraste de
+  /// texte** (WCAG 1.4.3), qu'axe-core ne calcule pas en jsdom faute de moteur
+  /// de rendu — la règle y sort en `incomplete` et ne compte donc pas comme
+  /// violation. C'est le seul critère AA que le passage au navigateur ajoute.
+  ///
+  /// ⚠️ Ce qu'il n'apporte PAS, et qu'il ne faut pas lui faire dire — vérifié
+  /// règle par règle par l'agent testeur (E1) : **WCAG 1.4.11** (contraste
+  /// non-textuel) et **WCAG 2.4.7** (focus visible) ne correspondent à aucune
+  /// règle axe-core sous ces tags. La bordure d'input à 1,06:1 arbitrée en
+  /// T-V3-02 (note write-back 4) n'est donc vue par aucun des audits de cette
+  /// barrière. Ces tests verts ne referment pas cette note, ils ne la
+  /// regardent pas — c'est la déclaration RGAA de T-V3-12 qui l'assumera.
   ///
   /// `wcag21a` / `wcag21aa` inclus : le RGAA 4.1 transpose WCAG **2.1**, et les
   /// seuls tags `wcag2*` laisseraient hors du champ `autocomplete-valid`, qui

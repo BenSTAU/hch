@@ -239,6 +239,67 @@ describe("LoginForm — plafond d'échecs", () => {
     );
     expect(screen.getByRole("button", { name: "Se connecter" })).toBeEnabled();
   });
+
+  it("offre une sortie à l'écran bloqué", async () => {
+    // Constat E5 de l'agent testeur : `blocked` ne retombe qu'à la réponse
+    // suivante, et le seul déclencheur d'une réponse était le bouton que le
+    // plafond vient de désactiver. Le message dit « réessayez dans quelques
+    // minutes » sans qu'aucun geste sur cette page ne le permette.
+    //
+    // Le lien recharge vraiment la page — pas une navigation client, qui ne
+    // remonterait pas le composant et laisserait l'état d'action en place.
+    loginFormAction.mockResolvedValue({
+      error: LOGIN_RATE_LIMITED_MESSAGE,
+      blocked: true,
+    });
+    render(<LoginForm />);
+    const user = userEvent.setup();
+
+    await submit(user);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("link", { name: /Recharger le formulaire/i }),
+      ).toHaveAttribute("href", "/connexion"),
+    );
+  });
+
+  it("reconduit la destination demandée dans le rechargement", async () => {
+    // Sans ça, la personne renvoyée au formulaire par `src/proxy.ts` perd la
+    // page qu'elle demandait au moment précis où on lui demande de recommencer.
+    loginFormAction.mockResolvedValue({
+      error: LOGIN_RATE_LIMITED_MESSAGE,
+      blocked: true,
+    });
+    render(<LoginForm next="/admin/parametres?onglet=societe" />);
+    const user = userEvent.setup();
+
+    await submit(user);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("link", { name: /Recharger le formulaire/i }),
+      ).toHaveAttribute(
+        "href",
+        "/connexion?next=%2Fadmin%2Fparametres%3Fonglet%3Dsociete",
+      ),
+    );
+  });
+
+  it("n'affiche aucune sortie de secours sur un refus ordinaire", async () => {
+    loginFormAction.mockResolvedValue({ error: LOGIN_REFUSED_MESSAGE });
+    render(<LoginForm />);
+    const user = userEvent.setup();
+
+    await submit(user);
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).not.toBeEmptyDOMElement(),
+    );
+    expect(
+      screen.queryByRole("link", { name: /Recharger le formulaire/i }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("LoginForm — refus", () => {
@@ -375,7 +436,9 @@ describe("LoginForm — audit jest-axe des états", () => {
 
     await submit(user);
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Se connecter/ })).toBeDisabled(),
+      expect(
+        screen.getByRole("button", { name: /Se connecter/ }),
+      ).toBeDisabled(),
     );
 
     await expect(axe(container)).resolves.toHaveNoViolations();

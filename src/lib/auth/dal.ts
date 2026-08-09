@@ -15,12 +15,22 @@ export type CurrentUser = {
   roles: string[];
 };
 
+/// Session seule — la charge utile du jeton, sans aller en base.
+///
 /// `cache()` de React, pas de mémoïsation maison : la portée est la requête en
 /// cours. Sans lui, un rendu qui vérifie la session dans trois composants
 /// serveur relit le cookie et le signe trois fois.
 ///
-/// C'est ICI que se fait la vérification réelle, jamais dans `src/proxy.ts` —
-/// leçon structurelle de la CVE-2025-29927, conservée après le correctif.
+/// La vérification réelle se fait dans ce module — jamais dans `src/proxy.ts`,
+/// leçon structurelle de la CVE-2025-29927 conservée après le correctif.
+///
+/// ⚠️ **Aucun appelant en production depuis T-V3-03** : `getCurrentUser` passe
+/// désormais par `getOptionalUser`, qui ne peut pas s'appuyer sur cette
+/// fonction-ci — elle redirige, et une lecture facultative ne le doit pas.
+/// Elle reste exportée parce que CLAUDE.md §Authentication l'impose et qu'elle
+/// est la bonne porte pour un appelant qui n'a besoin que du rôle, sans le
+/// profil ; la brancher dans `getCurrentUser` coûterait une seconde
+/// vérification de signature par requête. Relevé par l'agent testeur (C5).
 export const verifySession = cache(async () => {
   const session = await readSessionToken();
   if (!session) redirect("/connexion");

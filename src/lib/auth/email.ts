@@ -13,6 +13,13 @@
 /// `cdurand@…` sont deux adresses distinctes pour tout le monde sauf Gmail, et
 /// les fondre ferait refuser une inscription légitime au nom d'un doublon qui
 /// n'existe pas.
+///
+/// ⚠️ Les deux filets ne définissent pas tout à fait la même forme canonique :
+/// `String.trim()` retire tout le WhiteSpace Unicode, le `btrim()` du CHECK ne
+/// retire que l'espace ASCII. Le sens actuel est sans danger — ce qui sort d'ici
+/// satisfait toujours la contrainte — mais l'inverse n'est pas vrai : une
+/// insertion portant une espace insécable passerait le CHECK sans être
+/// normalisée au sens de ce module. Relevé par l'agent testeur (E4).
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }

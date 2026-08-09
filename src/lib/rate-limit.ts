@@ -99,8 +99,12 @@ export async function recordRateLimitAttempt(
 /// erreurs de frappe suivies du bon mot de passe ne doivent pas laisser quatre
 /// tentatives armées pour le quart d'heure suivant.
 ///
-/// Non tranché par PLAN S4 §11, arbitré le 2026-08-09 — à répercuter au
-/// write-back.
+/// PLAN S4 §11 ne dit rien du sort du compteur après un succès. Le trou a été
+/// **remonté avant écriture** et tranché par Benjamin le 2026-08-09 — write-back
+/// dû vers S4 §11.
+///
+/// Portée réelle : 1 à 4 échecs. À 5, plus aucun succès ne peut survenir pour
+/// déclencher la purge — c'est le plafond qui gouverne.
 export async function clearRateLimit(key: string): Promise<void> {
   await db.rateLimit.deleteMany({ where: { key } });
 }
