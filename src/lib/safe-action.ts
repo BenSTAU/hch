@@ -2,6 +2,7 @@ import "server-only";
 
 import { createSafeActionClient } from "next-safe-action";
 
+import { getCurrentUser } from "@/lib/auth/dal";
 import { requireAdmin } from "@/lib/auth/permissions";
 
 /// Client d'action de base. Rappel d'ADR-006 v2 : **chaque Server Action
@@ -25,4 +26,16 @@ export const actionClient = createSafeActionClient({
 export const adminActionClient = actionClient.use(async ({ next }) => {
   const admin = await requireAdmin();
   return next({ ctx: { admin } });
+});
+
+/// Client des actions qui exigent une session, **sans exigence de rôle** — la
+/// fiche client, ses adresses, ses cycles.
+///
+/// Même motif que ci-dessus pour la position en middleware : c'est le seul
+/// endroit qui s'exécute avant la validation Zod. `getCurrentUser` redirige
+/// vers `/connexion` en l'absence de session ; l'appelant anonyme n'atteint
+/// donc jamais le corps de l'action, ni la forme de son schéma.
+export const authActionClient = actionClient.use(async ({ next }) => {
+  const user = await getCurrentUser();
+  return next({ ctx: { user } });
 });
