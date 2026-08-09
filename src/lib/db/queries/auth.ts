@@ -2,6 +2,7 @@ import "server-only";
 
 import { normalizeEmail } from "@/lib/auth/email";
 import { db } from "@/lib/db/client";
+import { rattacherInterventionsGuest } from "@/lib/db/queries/interventions";
 
 /// Lecture pour la connexion locale. Charge le provider `local` avec
 /// l'utilisateur : sans lui, vérifier le mot de passe demanderait un second
@@ -234,17 +235,35 @@ export async function activateAccountWithToken(input: {
   tokenId: string;
   userId: string;
   now: Date;
-}): Promise<void> {
-  await db.$transaction(async (tx) => {
+}): Promise<{ interventionsRattachees: number }> {
+  return db.$transaction(async (tx) => {
     await tx.verificationToken.update({
       where: { id: input.tokenId, usedAt: null },
       data: { usedAt: input.now },
     });
 
-    await tx.user.update({
+    const utilisateur = await tx.user.update({
       where: { id: input.userId, emailVerifiedAt: null, deletedAt: null },
       data: { isActive: true, emailVerifiedAt: input.now },
+      select: { email: true },
     });
+
+    // Rattachement des réservations faites en visiteur — Constitution §3.2,
+    // « la réservation précède l'inscription ».
+    //
+    // Ici et pas à l'inscription : tant que l'email n'est pas vérifié,
+    // quiconque connaît l'adresse d'un tiers pourrait s'attribuer ses
+    // interventions. C'est l'activation qui prouve la possession de la boîte.
+    //
+    // Dans la MÊME transaction : un compte activé dont les réservations
+    // restent orphelines est le pire des deux états — l'utilisateur voit un
+    // espace vide et n'a aucun moyen de réclamer ses rendez-vous.
+    const interventionsRattachees = await rattacherInterventionsGuest(tx, {
+      email: utilisateur.email,
+      userId: input.userId,
+    });
+
+    return { interventionsRattachees };
   });
 }
 

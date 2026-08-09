@@ -2,6 +2,12 @@ import "server-only";
 
 import { writeAuditLog } from "@/lib/audit/log";
 import { db } from "@/lib/db/client";
+import type { HorairesSemaine } from "@/lib/creneaux/derivation";
+import {
+  cleHoraires,
+  JOURS_SEMAINE,
+  lirePlageHoraire,
+} from "@/lib/creneaux/horaires";
 import { validateSettingValue } from "@/lib/validations/parametres";
 
 /// Helper métier, pas Server Action : aucun `revalidatePath`, aucun
@@ -120,4 +126,49 @@ export async function updateAppSettings(
 
     return { ok: true, changedKeys: changed.map((change) => change.key) };
   });
+}
+
+/// Horaires d'ouverture de la société, lus depuis les sept clés
+/// `business_hours.*`.
+///
+/// C'est le terme gauche de `planning(tech affecté à zone)` de la Constitution
+/// §2.1. Il n'existe **pas** d'horaire par technicien en v1 : « planning
+/// technicien » se lit *horaires de la société moins les créneaux déjà pris par
+/// ce technicien*. Une table `zone_business_hours` a été écartée — une seule
+/// zone, un seul technicien seedé, et elle exigerait un CRUD d'administration
+/// que la V1 devrait porter.
+///
+/// Les valeurs illisibles sont remontées à part plutôt qu'avalées : une faute
+/// de frappe de l'administrateur ferme une journée, et il faut pouvoir le voir
+/// autrement qu'en constatant une grille vide.
+export async function lireHorairesSemaine(): Promise<{
+  horaires: HorairesSemaine;
+  clesInvalides: string[];
+}> {
+  const lignes = await db.appSetting.findMany({
+    where: { key: { in: JOURS_SEMAINE.map(cleHoraires) } },
+    select: { key: true, value: true },
+  });
+
+  const parCle = new Map(lignes.map((ligne) => [ligne.key, ligne.value]));
+
+  const horaires: HorairesSemaine = {};
+  const clesInvalides: string[] = [];
+
+  for (const jour of JOURS_SEMAINE) {
+    const cle = cleHoraires(jour);
+    const lecture = lirePlageHoraire(parCle.get(cle) ?? null);
+
+    if (lecture.ouvert) {
+      horaires[jour] = lecture.plage;
+      continue;
+    }
+
+    // Fermé et illisible produisent la même grille — aucun créneau ce jour-là.
+    // Seule la trace diffère.
+    horaires[jour] = null;
+    if (lecture.raison === "invalide") clesInvalides.push(cle);
+  }
+
+  return { horaires, clesInvalides };
 }

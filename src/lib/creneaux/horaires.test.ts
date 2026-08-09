@@ -100,10 +100,9 @@ describe("instantUtc", () => {
     const instant = instantUtc({ annee: 2026, mois: 10, jour: 25 }, 150);
 
     expect(Number.isNaN(instant.getTime())).toBe(false);
-    expect([
-      "2026-10-25T00:30:00.000Z",
-      "2026-10-25T01:30:00.000Z",
-    ]).toContain(instant.toISOString());
+    expect(["2026-10-25T00:30:00.000Z", "2026-10-25T01:30:00.000Z"]).toContain(
+      instant.toISOString(),
+    );
   });
 
   it("fait durer 23 h le jour où une heure disparaît", () => {

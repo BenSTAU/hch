@@ -1,7 +1,17 @@
 import "server-only";
 
+import type { Prisma } from "@prisma/client";
+
 import { db } from "@/lib/db/client";
 import { pointGeography, type PointWgs84 } from "@/lib/geo/postgis";
+
+/// Client de base, ou client de transaction quand l'appelant en ouvre une.
+///
+/// La réservation crée l'adresse et l'intervention **ensemble** : si la
+/// contrainte anti-double-réservation rejette la seconde, la première ne doit
+/// pas rester derrière. D'où ce paramètre, plutôt que deux écritures
+/// indépendantes.
+type ClientDb = Prisma.TransactionClient | typeof db;
 
 /// Accès aux adresses — helpers métier, pas Server Actions.
 ///
@@ -27,11 +37,14 @@ export type AdresseClient = {
 /// une clé plus juste — une commune peut porter plusieurs codes postaux — mais
 /// `cities` n'a pas de colonne pour l'accueillir et en ajouter une est une
 /// modification du dictionnaire. Arbitré le 2026-08-09.
-export async function resoudreCommune(commune: {
-  postcode: string;
-  city: string;
-}): Promise<number> {
-  const ligne = await db.city.upsert({
+export async function resoudreCommune(
+  commune: {
+    postcode: string;
+    city: string;
+  },
+  client: ClientDb = db,
+): Promise<number> {
+  const ligne = await client.city.upsert({
     where: {
       zipCode_city: { zipCode: commune.postcode, city: commune.city },
     },
@@ -53,14 +66,17 @@ export async function resoudreCommune(commune: {
 /// SQL brut, et pas par choix de style : `addresses.location` est une colonne
 /// `Unsupported("geography(Point, 4326)")`, ce qui rend `create` indisponible
 /// sur ce modèle Prisma (`prisma/schema.prisma:266`).
-export async function creerAdresse(adresse: {
-  street: string;
-  cityId: number;
-  point: PointWgs84;
-  userId: string | null;
-  memo?: string | undefined;
-}): Promise<number> {
-  const lignes = await db.$queryRaw<{ id: number }[]>`
+export async function creerAdresse(
+  adresse: {
+    street: string;
+    cityId: number;
+    point: PointWgs84;
+    userId: string | null;
+    memo?: string | undefined;
+  },
+  client: ClientDb = db,
+): Promise<number> {
+  const lignes = await client.$queryRaw<{ id: number }[]>`
     INSERT INTO addresses ("street", "city_id", "location", "user_id", "label", "is_active")
     VALUES (
       ${adresse.street},

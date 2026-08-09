@@ -44,7 +44,11 @@ export const verifierAdresse = actionClient
     // une adresse qui n'y est pas.
     const geocodage = await geocoderAdresse(parsedInput.label);
     if (!geocodage.ok) {
-      return { error: messageEchecBan(geocodage) };
+      return {
+        ok: false as const,
+        message: messageEchecBan(geocodage),
+        horsZone: false,
+      };
     }
 
     const adresse = geocodage.data;
@@ -56,10 +60,11 @@ export const verifierAdresse = actionClient
     if (!couverture.ok) {
       // Pas de suggestion de repli, pas de « zone la plus proche » : hors zone
       // est un refus net (Constitution §2.2), et l'étape créneau reste bloquée.
-      return { error: MESSAGE_HORS_ZONE, horsZone: true };
+      return { ok: false as const, message: MESSAGE_HORS_ZONE, horsZone: true };
     }
 
     return {
+      ok: true as const,
       adresse,
       zoneId: couverture.zoneId,
       zoneName: couverture.zoneName,
