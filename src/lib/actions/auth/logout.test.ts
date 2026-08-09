@@ -27,7 +27,12 @@ vi.mock("next/navigation", () => ({
   redirect: (url: string) => redirect(url),
 }));
 
-const { AFTER_LOGOUT, logout } = await import("./logout");
+const { logout } = await import("./logout");
+// La destination est déclarée avec celles de la connexion : un fichier
+// `"use server"` n'exporte que des fonctions asynchrones, et Next refuse le
+// build sur une constante exportée — constaté au premier `pnpm dev` de la
+// barrière, pas en relisant le fichier.
+const { AFTER_LOGOUT } = await import("@/lib/auth/after-login");
 
 beforeEach(() => vi.clearAllMocks());
 

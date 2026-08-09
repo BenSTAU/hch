@@ -37,7 +37,9 @@ export async function inscrire(page: Page, email: string): Promise<void> {
   // englobant : tout champ ajouté ici doit être vérifié contre ses voisins.
   await page.getByLabel("Nom", { exact: true }).fill("Durand");
   await page.getByLabel("Adresse email").fill(email);
-  await page.getByLabel("Mot de passe", { exact: true }).fill(MOT_DE_PASSE_CLIENT);
+  await page
+    .getByLabel("Mot de passe", { exact: true })
+    .fill(MOT_DE_PASSE_CLIENT);
   await page.getByLabel("Confirmer le mot de passe").fill(MOT_DE_PASSE_CLIENT);
   await page.getByRole("button", { name: "Créer mon compte" }).click();
 }

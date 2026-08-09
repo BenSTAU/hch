@@ -92,13 +92,7 @@ describe("peekRateLimit — lecture seule", () => {
   });
 
   it("refuse au seuil et donne le délai depuis la tentative la plus ancienne", async () => {
-    findMany.mockResolvedValue([
-      ilYA(14),
-      ilYA(10),
-      ilYA(6),
-      ilYA(3),
-      ilYA(1),
-    ]);
+    findMany.mockResolvedValue([ilYA(14), ilYA(10), ilYA(6), ilYA(3), ilYA(1)]);
 
     const verdict = await peekRateLimit("login:a@b.test", 5, 15 * 60_000, {
       now: MAINTENANT,
@@ -110,13 +104,7 @@ describe("peekRateLimit — lecture seule", () => {
   it("n'enregistre rien même quand il refuse", async () => {
     // Sinon une soumission bloquée repousserait sa propre échéance, et le
     // plafond deviendrait un bannissement définitif pour qui insiste.
-    findMany.mockResolvedValue([
-      ilYA(14),
-      ilYA(10),
-      ilYA(6),
-      ilYA(3),
-      ilYA(1),
-    ]);
+    findMany.mockResolvedValue([ilYA(14), ilYA(10), ilYA(6), ilYA(3), ilYA(1)]);
 
     await peekRateLimit("login:a@b.test", 5, 15 * 60_000, { now: MAINTENANT });
 

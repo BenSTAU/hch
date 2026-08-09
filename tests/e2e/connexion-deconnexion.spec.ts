@@ -95,9 +95,9 @@ test.describe("connexion du client", () => {
     await expect(page).toHaveURL(/\/connexion\?next=/);
 
     await page.getByLabel("Adresse email").fill(email);
-    await page.getByLabel("Mot de passe", { exact: true }).fill(
-      MOT_DE_PASSE_CLIENT,
-    );
+    await page
+      .getByLabel("Mot de passe", { exact: true })
+      .fill(MOT_DE_PASSE_CLIENT);
     await page.getByRole("button", { name: "Se connecter" }).click();
 
     // Le client est bien mené à la destination demandée — et c'est le 403 qui
@@ -202,7 +202,9 @@ test.describe("plafond d'échecs", () => {
     }
   }
 
-  test("bloque la 6ᵉ tentative et désactive le formulaire", async ({ page }) => {
+  test("bloque la 6ᵉ tentative et désactive le formulaire", async ({
+    page,
+  }) => {
     const { email } = await creerClientActive(page, db, "plafond");
 
     await echouer(page, email, 5);
@@ -211,7 +213,9 @@ test.describe("plafond d'échecs", () => {
     await expect(alerte(page)).toContainText(/Trop de tentatives/i);
     // « bloqué front ET serveur » : le serveur a refusé, et le bouton ne
     // permet plus de marteler.
-    await expect(page.getByRole("button", { name: "Se connecter" })).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Se connecter" }),
+    ).toBeDisabled();
   });
 
   test("compte aussi pour une adresse qui n'a aucun compte", async ({
@@ -259,7 +263,9 @@ test.describe("accessibilité outillée", () => {
   /// porte précisément sur un formulaire d'identification.
   const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 
-  test("la page de connexion ne présente aucune violation", async ({ page }) => {
+  test("la page de connexion ne présente aucune violation", async ({
+    page,
+  }) => {
     await page.goto("/connexion");
 
     const resultats = await new AxeBuilder({ page }).withTags(TAGS).analyze();

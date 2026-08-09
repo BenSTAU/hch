@@ -56,9 +56,8 @@ vi.mock("@/lib/rate-limit", async (importOriginal) => ({
 }));
 
 const { login } = await import("./login");
-const { LOGIN_REFUSED_MESSAGE, LOGIN_RATE_LIMITED_MESSAGE } = await import(
-  "@/lib/validations/auth"
-);
+const { LOGIN_REFUSED_MESSAGE, LOGIN_RATE_LIMITED_MESSAGE } =
+  await import("@/lib/validations/auth");
 
 const CREDENTIALS = {
   email: "admin@homecyclhome.fr",
@@ -398,9 +397,7 @@ describe("login — plafond d'échecs", () => {
 
     await login(CREDENTIALS).catch(() => undefined);
 
-    expect(clearRateLimit).toHaveBeenCalledWith(
-      "login:admin@homecyclhome.fr",
-    );
+    expect(clearRateLimit).toHaveBeenCalledWith("login:admin@homecyclhome.fr");
     expect(recordRateLimitAttempt).not.toHaveBeenCalled();
   });
 

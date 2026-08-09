@@ -9,6 +9,10 @@
 // Le composant reçoit son utilisateur en prop et ne lit rien : la lecture vit
 // dans le layout serveur, et la garde de rôle reste dans chaque page
 // (CLAUDE.md §Authentication — jamais de check d'autorisation en layout).
+//
+// Rangé dans `components/layouts/` plutôt que dans un private folder : deux
+// surfaces le montent — l'espace connecté et l'accueil, qui est la destination
+// post-connexion provisoire du client. Règle des 2 usages.
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
@@ -44,19 +48,16 @@ describe("AppHeader", () => {
   it("ramène à l'accueil par un lien nommé", () => {
     render(<AppHeader user={CAMILLE} />);
 
-    expect(screen.getByRole("link", { name: /HomeCycl'Home/i })).toHaveAttribute(
-      "href",
-      "/",
-    );
+    expect(
+      screen.getByRole("link", { name: /HomeCycl'Home/i }),
+    ).toHaveAttribute("href", "/");
   });
 
   it("n'affiche ni email ni rôle", () => {
     // Le DTO du DAL porte l'email et les rôles ; l'en-tête n'a besoin ni de
     // l'un ni de l'autre. Sur un poste partagé, l'adresse affichée en
     // permanence est une donnée personnelle exposée sans motif.
-    render(
-      <AppHeader user={{ ...CAMILLE }} />,
-    );
+    render(<AppHeader user={{ ...CAMILLE }} />);
 
     expect(screen.queryByText(/@/)).not.toBeInTheDocument();
     expect(screen.queryByText(/ROLE_/)).not.toBeInTheDocument();

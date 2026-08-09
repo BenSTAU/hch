@@ -73,7 +73,19 @@ const ETATS: Record<
   },
 };
 
-export function ActivationView({ token }: { token?: string | undefined }) {
+export function ActivationView({
+  token,
+  demandeRenvoi = false,
+}: {
+  token?: string | undefined;
+  /// Arrivée depuis le formulaire de connexion (`/activation?renvoi=1`),
+  /// ajoutée en T-V3-03. `US-COMPTE-CONNECTER` §Cas d'erreur veut un point
+  /// d'entrée au renvoi sous le formulaire ; sans cet état, la seule façon
+  /// d'atteindre le formulaire de renvoi était de cliquer un lien EXPIRÉ —
+  /// donc de l'avoir encore sous la main, ce qui est exactement le cas qu'on
+  /// ne peut pas supposer.
+  demandeRenvoi?: boolean;
+}) {
   const [etat, activer, activationEnCours] = useActionState(
     activateFormAction,
     ACTIVATION_INITIALE,
@@ -85,11 +97,20 @@ export function ActivationView({ token }: { token?: string | undefined }) {
 
   // Un lien tronqué par un client de messagerie arrive ici sans jeton. Ce n'est
   // pas un cas d'attaque, mais le message reste générique : pas d'énumération
-  // des jetons valides (SPEC §Cas d'erreur).
+  // des jetons valides (SPEC §Cas d'erreur). Une demande de renvoi explicite,
+  // elle, n'est pas un lien cassé : elle n'affiche donc aucune erreur.
   const issue: Issue | undefined =
-    token === undefined ? "invalid" : etat.outcome;
+    token === undefined
+      ? demandeRenvoi
+        ? undefined
+        : "invalid"
+      : etat.outcome;
   const affiche = issue ? ETATS[issue] : undefined;
   const Icone = affiche?.icone ?? Mail;
+
+  // Le formulaire de renvoi sert deux entrées : le lien expiré, et la demande
+  // explicite depuis la connexion.
+  const offrirRenvoi = issue === "expired" || demandeRenvoi;
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -133,12 +154,17 @@ export function ActivationView({ token }: { token?: string | undefined }) {
                     ambigus. */}
                 <div role="alert">
                   <h2 className="font-heading text-lg font-bold">
-                    {affiche?.titre ?? "Confirmez votre activation"}
+                    {affiche?.titre ??
+                      (demandeRenvoi
+                        ? "Renvoyer un email d'activation"
+                        : "Confirmez votre activation")}
                   </h2>
                   <p className="mt-1 text-sm">
                     {etat.error ??
                       affiche?.texte ??
-                      "Un dernier geste : validez pour activer votre compte."}
+                      (demandeRenvoi
+                        ? "Saisissez l'adresse utilisée à l'inscription : si un compte est en attente d'activation, un nouveau lien part immédiatement."
+                        : "Un dernier geste : validez pour activer votre compte.")}
                   </p>
                 </div>
               </div>
@@ -161,7 +187,7 @@ export function ActivationView({ token }: { token?: string | undefined }) {
                 </form>
               ) : null}
 
-              {issue === "expired" ? (
+              {offrirRenvoi ? (
                 <form action={renvoyer} className="flex flex-col gap-3">
                   <div className="flex flex-col gap-2">
                     {/* L'adresse est DEMANDÉE, pas déduite du jeton expiré : le
@@ -203,7 +229,7 @@ export function ActivationView({ token }: { token?: string | undefined }) {
                     : "")}
               </p>
 
-              {issue === "already_used" || issue === "expired" ? (
+              {issue === "already_used" || offrirRenvoi ? (
                 <Link
                   href="/connexion"
                   className="text-center text-sm font-medium text-primary underline underline-offset-4"

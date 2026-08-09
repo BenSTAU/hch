@@ -13,13 +13,22 @@ export const metadata: Metadata = {
 export default async function ActivationPage({
   searchParams,
 }: {
-  searchParams: Promise<{ token?: string | string[] }>;
+  searchParams: Promise<{
+    token?: string | string[];
+    renvoi?: string | string[];
+  }>;
 }) {
-  const { token } = await searchParams;
+  const { token, renvoi } = await searchParams;
 
   // Un paramètre répété (`?token=a&token=b`) arrive en tableau. On ne devine pas
   // lequel comptait : aucun des deux.
   return (
-    <ActivationView token={typeof token === "string" ? token : undefined} />
+    <ActivationView
+      token={typeof token === "string" ? token : undefined}
+      // `?renvoi=1` vient du lien posé sous le formulaire de connexion
+      // (T-V3-03). Il ne porte aucune donnée et n'ouvre aucun droit : il
+      // choisit l'écran, et le quota reste décompté côté action.
+      demandeRenvoi={renvoi === "1"}
+    />
   );
 }

@@ -18,9 +18,7 @@ const { normalizeEmail } = await import("./email");
 
 describe("normalizeEmail", () => {
   it("abaisse la casse", () => {
-    expect(normalizeEmail("Camille@Example.TEST")).toBe(
-      "camille@example.test",
-    );
+    expect(normalizeEmail("Camille@Example.TEST")).toBe("camille@example.test");
   });
 
   it("retire les espaces de bordure", () => {

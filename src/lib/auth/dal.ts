@@ -27,17 +27,26 @@ export const verifySession = cache(async () => {
   return session;
 });
 
-/// Renvoie un DTO, jamais l'entité Prisma : le téléphone, `deletedAt` et les
-/// horodatages n'ont aucune raison de traverser la frontière serveur/client
-/// (CLAUDE.md §Authentication).
-export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
-  const session = await verifySession();
+/// Lecture **non redirigeante** de l'utilisateur courant — `null` quand il n'y
+/// a pas de session utilisable.
+///
+/// Elle existe pour les surfaces publiques qui s'adaptent à la présence d'une
+/// session sans l'exiger : l'accueil, qui porte l'en-tête de l'espace connecté
+/// depuis T-V3-03. `getCurrentUser` y redirigerait vers `/connexion` un
+/// visiteur anonyme, sur une page dont la Constitution §5.1 fait justement une
+/// page ouverte à tous.
+///
+/// Ce n'est **pas** une garde : elle n'autorise rien, elle renseigne. Les
+/// contrôles d'accès restent dans `permissions.ts`, appelés par chaque page.
+export const getOptionalUser = cache(async (): Promise<CurrentUser | null> => {
+  const session = await readSessionToken();
+  if (!session) return null;
 
   // La session peut survivre à l'utilisateur qu'elle désigne : compte
   // désactivé, pseudonymisé, ou supprimé depuis l'émission du jeton. Un JWT
   // valide ne prouve pas que le compte l'est encore.
   const user = await findUserById(session.sub);
-  if (!user) redirect("/connexion");
+  if (!user) return null;
 
   // Projection explicite, et non un simple passe-plat de la requête. Le
   // `select` de `findUserById` fait déjà le tri, mais s'y fier seul rendrait
@@ -50,4 +59,13 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
     lastname: user.lastname,
     roles: user.roles,
   };
+});
+
+/// Renvoie un DTO, jamais l'entité Prisma : le téléphone, `deletedAt` et les
+/// horodatages n'ont aucune raison de traverser la frontière serveur/client
+/// (CLAUDE.md §Authentication).
+export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
+  const user = await getOptionalUser();
+  if (!user) redirect("/connexion");
+  return user;
 });

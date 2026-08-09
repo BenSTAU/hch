@@ -5,7 +5,7 @@
 // POST que React ait hydraté ou non. C'est la même leçon que le `<form action>`
 // de la connexion, payée en T-J0-04 — un bouton sans formulaire ne fait
 // strictement rien tant que le JavaScript n'est pas chargé.
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -15,6 +15,11 @@ vi.mock("@/lib/actions/auth/logout", () => ({
 }));
 
 const { LogoutButton } = await import("./logout-button");
+
+// Sans ça les appels s'accumulent d'un test à l'autre et toute assertion de
+// CARDINALITÉ devient fausse — même défaut que dans `login-form.test.tsx`, où
+// il avait été corrigé après coup.
+beforeEach(() => vi.clearAllMocks());
 
 describe("LogoutButton", () => {
   it("expose un bouton nommé, dans un formulaire", () => {
@@ -42,7 +47,9 @@ describe("LogoutButton", () => {
     const user = userEvent.setup();
 
     await user.tab();
-    expect(screen.getByRole("button", { name: "Se déconnecter" })).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: "Se déconnecter" }),
+    ).toHaveFocus();
     await user.keyboard("{Enter}");
 
     await waitFor(() => expect(logout).toHaveBeenCalledOnce());
@@ -51,9 +58,8 @@ describe("LogoutButton", () => {
   it("porte `type=submit` explicitement", () => {
     render(<LogoutButton />);
 
-    expect(screen.getByRole("button", { name: "Se déconnecter" })).toHaveAttribute(
-      "type",
-      "submit",
-    );
+    expect(
+      screen.getByRole("button", { name: "Se déconnecter" }),
+    ).toHaveAttribute("type", "submit");
   });
 });

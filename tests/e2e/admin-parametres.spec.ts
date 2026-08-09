@@ -270,7 +270,9 @@ test.describe("sans JavaScript", () => {
   }) => {
     await page.goto("/connexion");
     await page.getByLabel("Adresse email").fill(ADMIN_EMAIL);
-    await page.getByLabel("Mot de passe", { exact: true }).fill(motDePasseAdmin());
+    await page
+      .getByLabel("Mot de passe", { exact: true })
+      .fill(motDePasseAdmin());
     await page.getByRole("button", { name: "Se connecter" }).click();
 
     await expect(page).toHaveURL(/\/admin\/parametres$/);

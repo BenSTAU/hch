@@ -22,9 +22,8 @@ vi.mock("@/lib/actions/auth/login", () => ({
 }));
 
 const { LoginForm } = await import("./login-form");
-const { LOGIN_REFUSED_MESSAGE, LOGIN_RATE_LIMITED_MESSAGE } = await import(
-  "@/lib/validations/auth"
-);
+const { LOGIN_REFUSED_MESSAGE, LOGIN_RATE_LIMITED_MESSAGE } =
+  await import("@/lib/validations/auth");
 
 // Sans ça les appels s'accumulent d'un test à l'autre et toute assertion de
 // CARDINALITÉ devient fausse — défaut de ce fichier, corrigé après l'avoir
@@ -219,7 +218,9 @@ describe("LoginForm — plafond d'échecs", () => {
     await submit(user);
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Se connecter/ })).toBeDisabled(),
+      expect(
+        screen.getByRole("button", { name: /Se connecter/ }),
+      ).toBeDisabled(),
     );
   });
 
@@ -235,9 +236,7 @@ describe("LoginForm — plafond d'échecs", () => {
     await waitFor(() =>
       expect(screen.getByRole("alert")).not.toBeEmptyDOMElement(),
     );
-    expect(
-      screen.getByRole("button", { name: "Se connecter" }),
-    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Se connecter" })).toBeEnabled();
   });
 });
 
