@@ -6,7 +6,14 @@
 // non fiable dans l'action de connexion.
 import { describe, expect, it } from "vitest";
 
-import { LOGIN_REFUSED_MESSAGE, loginSchema } from "./auth";
+import {
+  LOGIN_REFUSED_MESSAGE,
+  SIGNUP_ACKNOWLEDGED_MESSAGE,
+  activationSchema,
+  loginSchema,
+  resendActivationSchema,
+  signupSchema,
+} from "./auth";
 
 describe("LOGIN_REFUSED_MESSAGE", () => {
   it("reprend mot pour mot la formulation imposée par la SPEC", async () => {
@@ -142,5 +149,245 @@ describe("loginSchema — normalisation de l'email", () => {
       password: "x",
     });
     expect(parsed.email).toBe("admin@homecyclhome.fr");
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Inscription — T-V3-02, `US-COMPTE-CREER`.
+// ───────────────────────────────────────────────────────────────────────────
+
+const VALIDE = {
+  firstname: "Camille",
+  lastname: "Durand",
+  email: "camille@example.test",
+  password: "un-mot-de-passe-long",
+  passwordConfirmation: "un-mot-de-passe-long",
+};
+
+describe("signupSchema — cas nominal", () => {
+  it("accepte un formulaire bien rempli", () => {
+    expect(signupSchema.safeParse(VALIDE).success).toBe(true);
+  });
+
+  it("normalise l'email en minuscules", () => {
+    // Même motif qu'à la connexion : `users.email` est sous index unique
+    // ordinaire, comparé octet par octet. Sans normalisation à l'inscription,
+    // « Camille@Example.test » créerait un second compte pour la même personne
+    // et l'unicité ne le verrait pas.
+    const parsed = signupSchema.parse({
+      ...VALIDE,
+      email: "Camille@Example.TEST",
+    });
+
+    expect(parsed.email).toBe("camille@example.test");
+  });
+
+  it("retire les espaces autour du prénom et du nom", () => {
+    const parsed = signupSchema.parse({
+      ...VALIDE,
+      firstname: "  Camille ",
+      lastname: " Durand  ",
+    });
+
+    expect(parsed.firstname).toBe("Camille");
+    expect(parsed.lastname).toBe("Durand");
+  });
+
+  it("écarte les champs surnuméraires", () => {
+    const parsed = signupSchema.parse({ ...VALIDE, roles: ["ROLE_ADMIN"] });
+
+    expect(Object.keys(parsed)).not.toContain("roles");
+  });
+});
+
+describe("signupSchema — messages imposés par la SPEC", () => {
+  it("refuse un email mal formé avec « Email invalide »", () => {
+    // US-COMPTE-CREER §Cas d'erreur, module-1-utilisateurs.md:169. Le texte est
+    // dans la SPEC, il ne se reformule pas.
+    const parsed = signupSchema.safeParse({ ...VALIDE, email: "pas-un-email" });
+
+    expect(parsed.success).toBe(false);
+    expect(JSON.stringify(parsed.error)).toContain("Email invalide");
+  });
+
+  it("refuse un mot de passe de moins de 12 caractères", () => {
+    const parsed = signupSchema.safeParse({
+      ...VALIDE,
+      password: "onzecaract1",
+      passwordConfirmation: "onzecaract1",
+    });
+
+    expect(parsed.success).toBe(false);
+    expect(JSON.stringify(parsed.error)).toContain(
+      "Mot de passe : 12 caractères minimum",
+    );
+  });
+
+  it("accepte tout juste 12 caractères", () => {
+    expect(
+      signupSchema.safeParse({
+        ...VALIDE,
+        password: "douzecaract1",
+        passwordConfirmation: "douzecaract1",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("refuse deux mots de passe différents", () => {
+    const parsed = signupSchema.safeParse({
+      ...VALIDE,
+      passwordConfirmation: "un-autre-mot-de-passe",
+    });
+
+    expect(parsed.success).toBe(false);
+    expect(JSON.stringify(parsed.error)).toContain(
+      "Les mots de passe ne correspondent pas",
+    );
+  });
+
+  it("rattache l'erreur de confirmation au champ de confirmation", () => {
+    // WCAG 3.3.1 (AA) : le message doit être lié au champ fautif par
+    // `aria-describedby`. Sans `path`, l'erreur flotte au niveau du formulaire
+    // et aucun champ ne peut la porter.
+    const parsed = signupSchema.safeParse({
+      ...VALIDE,
+      passwordConfirmation: "un-autre-mot-de-passe",
+    });
+
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0]?.path).toEqual(["passwordConfirmation"]);
+  });
+
+  it("refuse un prénom vide avec « Ce champ est requis »", () => {
+    const parsed = signupSchema.safeParse({ ...VALIDE, firstname: "" });
+
+    expect(parsed.success).toBe(false);
+    expect(JSON.stringify(parsed.error)).toContain("Ce champ est requis");
+  });
+
+  it("refuse un nom fait d'espaces seulement", () => {
+    const parsed = signupSchema.safeParse({ ...VALIDE, lastname: "   " });
+
+    expect(parsed.success).toBe(false);
+  });
+});
+
+describe("signupSchema — bornes", () => {
+  it("plafonne le mot de passe à 72 OCTETS", () => {
+    // Dette pré-enregistrée par ce fichier même (cf. « n'impose aucune longueur
+    // maximale » plus haut) : bcrypt tronque silencieusement à 72 octets. Sans
+    // borne, deux mots de passe distincts de 80 caractères ouvriraient le même
+    // compte — et l'utilisateur croirait avoir choisi le second.
+    const parsed = signupSchema.safeParse({
+      ...VALIDE,
+      password: "a".repeat(73),
+      passwordConfirmation: "a".repeat(73),
+    });
+
+    expect(parsed.success).toBe(false);
+    expect(JSON.stringify(parsed.error)).toContain("72");
+  });
+
+  it("compte en octets, pas en caractères", () => {
+    // 24 emoji de 4 octets font 96 octets pour 24 « caractères » perçus. Une
+    // borne posée sur `.length` laisserait passer la troncature.
+    const parsed = signupSchema.safeParse({
+      ...VALIDE,
+      password: "🚲".repeat(24),
+      passwordConfirmation: "🚲".repeat(24),
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it("accepte exactement 72 octets", () => {
+    expect(
+      signupSchema.safeParse({
+        ...VALIDE,
+        password: "a".repeat(72),
+        passwordConfirmation: "a".repeat(72),
+      }).success,
+    ).toBe(true);
+  });
+
+  it("plafonne l'email à la largeur de la colonne", () => {
+    // `users.email` est une VARCHAR(180) (prisma/schema.prisma:52). Sans borne
+    // ici, le refus viendrait de Postgres, donc après le bcrypt et l'insertion
+    // — une erreur 500 au lieu d'un message de formulaire.
+    const parsed = signupSchema.safeParse({
+      ...VALIDE,
+      email: `${"a".repeat(180)}@example.test`,
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it("plafonne prénom et nom à la largeur de leurs colonnes", () => {
+    // VARCHAR(100) tous les deux (prisma/schema.prisma:53-54).
+    expect(
+      signupSchema.safeParse({ ...VALIDE, firstname: "a".repeat(101) }).success,
+    ).toBe(false);
+    expect(
+      signupSchema.safeParse({ ...VALIDE, lastname: "a".repeat(101) }).success,
+    ).toBe(false);
+  });
+});
+
+describe("SIGNUP_ACKNOWLEDGED_MESSAGE", () => {
+  it("reprend la formulation générique imposée par la SPEC", () => {
+    // US-COMPTE-CREER §Cas d'erreur, module-1-utilisateurs.md:165.
+    expect(SIGNUP_ACKNOWLEDGED_MESSAGE).toBe(
+      "Si un compte existe pour cet email, un email d'activation vient d'être envoyé",
+    );
+  });
+
+  it("ne dit pas si le compte existait déjà", () => {
+    for (const indice of [
+      "déjà utilisé",
+      "déjà pris",
+      "existe déjà",
+      "connu",
+    ]) {
+      expect(SIGNUP_ACKNOWLEDGED_MESSAGE.toLowerCase()).not.toContain(indice);
+    }
+  });
+});
+
+describe("resendActivationSchema", () => {
+  it("n'exige que l'email, et le normalise", () => {
+    const parsed = resendActivationSchema.parse({
+      email: "Camille@Example.fr",
+    });
+
+    expect(parsed).toEqual({ email: "camille@example.fr" });
+  });
+
+  it("refuse un email vide", () => {
+    expect(resendActivationSchema.safeParse({ email: "" }).success).toBe(false);
+  });
+});
+
+describe("activationSchema", () => {
+  it("accepte un jeton de 43 caractères URL-safe", () => {
+    expect(activationSchema.safeParse({ token: "a".repeat(43) }).success).toBe(
+      true,
+    );
+  });
+
+  it("refuse un jeton vide", () => {
+    expect(activationSchema.safeParse({ token: "" }).success).toBe(false);
+  });
+
+  it("refuse un jeton qui n'a pas la forme d'un jeton", () => {
+    // Le hash d'une chaîne arbitraire ne correspondra à aucune ligne, donc le
+    // refus arriverait de toute façon. Le borner ici évite une requête en base
+    // par lien malformé, et coupe court à une charge de 10 Mo dans la query
+    // string.
+    expect(activationSchema.safeParse({ token: "pas/un+jeton=" }).success).toBe(
+      false,
+    );
+    expect(
+      activationSchema.safeParse({ token: "a".repeat(5000) }).success,
+    ).toBe(false);
   });
 });

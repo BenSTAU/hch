@@ -75,6 +75,14 @@ services:
       # invitation à copier l'un dans l'autre.
       SESSION_SECRET: e2e-session-secret-jetable-32-octets-au-moins
       SEED_ADMIN_PASSWORD: e2e-admin-password
+      # ADR-017 : la barrière n'envoie aucun email. Le lien d'activation part
+      # dans les logs du conteneur, et l'E2E lit `verification_tokens` en base —
+      # le test ne dépend d'aucun transport, c'est la propriété qui compte.
+      #
+      # Variable OBLIGATOIRE, sans valeur par défaut côté `src/lib/env.ts` : sans
+      # elle, /api/health répond 503 et le conteneur reste unhealthy. C'est voulu
+      # — le même mécanisme protège les deux piles d'une configuration muette.
+      HCH_MAIL_TRANSPORT: noop
     ports:
       - "127.0.0.1:3000:3000"
     healthcheck:

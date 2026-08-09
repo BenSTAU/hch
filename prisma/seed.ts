@@ -238,12 +238,21 @@ async function main() {
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
 
+  // Les comptes seedés sont **pré-vérifiés** : personne ne cliquera de lien
+  // d'activation pour eux. Sans cette date, ils sont « jamais activés » aux yeux
+  // de `findAccountForSignup`, donc éligibles à un renvoi d'activation depuis le
+  // formulaire public — qui rouvrirait un compte que l'admin aurait fermé.
+  // Constaté par l'agent testeur en T-V3-02 (B1).
+  const emailVerifiedAt = new Date();
+
   for (const admin of ADMINS) {
     const user = await db.user.upsert({
       where: { email: admin.email },
-      // Aucune mise à jour : le seed ne réécrit pas une identité existante.
+      // Aucune mise à jour : le seed ne réécrit pas une identité existante. Les
+      // lignes antérieures à la migration `add_users_email_verified_at` sont
+      // reprises par le `UPDATE` de cette migration, pas ici.
       update: {},
-      create: { ...admin, roles: ["ROLE_ADMIN"] },
+      create: { ...admin, roles: ["ROLE_ADMIN"], emailVerifiedAt },
     });
 
     await db.authProvider.upsert({
@@ -352,7 +361,7 @@ async function main() {
   const technicien = await db.user.upsert({
     where: { email: TECHNICIEN.email },
     update: {},
-    create: { ...TECHNICIEN, roles: ["ROLE_TECH"] },
+    create: { ...TECHNICIEN, roles: ["ROLE_TECH"], emailVerifiedAt },
   });
 
   await db.authProvider.upsert({

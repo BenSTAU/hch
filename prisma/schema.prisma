@@ -66,6 +66,22 @@ model User {
   /// Soft-delete administrateur, réversible. À ne pas confondre avec
   /// deletedAt : deux régimes de fin de vie distincts (PLAN S2 §4).
   isActive  Boolean   @default(true) @map("is_active")
+  /// Horodate la vérification de l'email. NULL = jamais activé.
+  ///
+  /// ⚠️ Réintroduit ce que le dictionnaire v2.1 avait consolidé : il a supprimé
+  /// `is_activated` en le fondant dans `is_active` (mcd-dictionnaire.md:89,
+  /// :484). La consolidation rend « jamais activé » et « désactivé par un
+  /// administrateur » indistinguables sur une seule colonne — donc un renvoi
+  /// d'activation réactive un compte que l'admin a fermé. Constaté par l'agent
+  /// testeur en T-V3-02 sur les trois comptes du seed, qui n'ont aucun jeton.
+  ///
+  /// L'historique de `verification_tokens` ne peut pas servir de substitut : le
+  /// dictionnaire écrit que cette table « ne s'applique pas aux comptes 100%
+  /// OAuth Google » (:182), et T-V3-04 puis l'invitation admin en créeront.
+  ///
+  /// Arbitré par Benjamin le 2026-08-08. **Writeback dû** : dictionnaire
+  /// §users et PLAN S2 §4.
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamp(6)
   /// Horodate le droit à l'oubli — pseudonymisation in-place, irréversible.
   deletedAt DateTime? @map("deleted_at") @db.Timestamp(6)
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
