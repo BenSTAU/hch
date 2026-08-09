@@ -367,9 +367,13 @@ dans les 12 pages d'axe de [[conventions-react-next]].
 - **DEFAULT** règle des 2 usages : un composant naît dans
   `app/<route>/_components/` et monte dans `components/features/<domaine>/` au
   **2ᵉ** usage, pas avant.
-- **DEFAULT** routes en **français** (`/client/reserver`, `/tech/planning`,
+- **DEFAULT** routes en **français** (`/reserver`, `/tech/planning`,
   `/admin/zones`), noms de fichiers composants en **anglais**
   (`reservation-form.tsx`, `intervention-card.tsx`).
+- **MUST NOT** poser sous `/client/`, `/tech/` ou `/admin/` une route ouverte
+  au visiteur anonyme — `src/proxy.ts` matche ces trois préfixes et la
+  redirigerait vers `/connexion`. Le tunnel de réservation est **public**
+  (Constitution §3.2) : il vit à la racine, `/reserver`.
 
 Arborescence de référence : [[adr-006-archi-applicative-hch|ADR-006 v2]]
 §Structure cible, peuplée par [[s1-archi-stack|S1]] §3.
