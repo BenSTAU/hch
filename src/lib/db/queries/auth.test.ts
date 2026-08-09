@@ -257,6 +257,23 @@ describe("createLocalAccount", () => {
     ]);
     expect(ecrit).not.toContain("un-mot-de-passe");
   });
+
+  it("normalise l'email à l'écriture, sans dépendre du schéma d'entrée", async () => {
+    // Dette reportée de T-J0-04. Le `.toLowerCase()` de Zod referme le symptôme
+    // à la LECTURE ; il ne protège pas d'un doublon écrit par un appelant qui
+    // aurait oublié la transformation — l'index unique de Postgres compare
+    // octet par octet, et `Camille@…` n'y est pas `camille@…`.
+    //
+    // Ce helper est le premier des deux filets ; le CHECK SQL
+    // `email = lower(email)` est le second.
+    await createLocalAccount({ ...NOUVEAU, email: " Camille@Example.TEST " });
+
+    expect(userCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ email: "camille@example.test" }),
+      }),
+    );
+  });
 });
 
 describe("replacePendingEmailVerificationToken", () => {

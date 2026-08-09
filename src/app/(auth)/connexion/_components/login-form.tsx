@@ -1,6 +1,8 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import Link from "next/link";
+import { Eye, EyeOff } from "lucide-react";
+import { useActionState, useEffect, useRef, useState } from "react";
 
 import { loginFormAction, type LoginFormState } from "@/lib/actions/auth/login";
 import { Button } from "@/components/ui/button";
@@ -14,6 +16,7 @@ const ETAT_INITIAL: LoginFormState = {};
 /// formulaire n'est pas une frontière de sécurité, il est manipulable.
 export function LoginForm({ next }: { next?: string | undefined }) {
   const emailRef = useRef<HTMLInputElement>(null);
+  const [visible, setVisible] = useState(false);
   const [state, formAction, isPending] = useActionState(
     loginFormAction,
     ETAT_INITIAL,
@@ -63,18 +66,90 @@ export function LoginForm({ next }: { next?: string | undefined }) {
 
       <div className="flex flex-col gap-2">
         <Label htmlFor="password">Mot de passe</Label>
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          required
-        />
+        <div className="relative">
+          <Input
+            id="password"
+            name="password"
+            type={visible ? "text" : "password"}
+            autoComplete="current-password"
+            className="pr-11"
+            required
+          />
+          {/* Bascule d'affichage de la maquette C6, conservée au portage : sur
+              mobile, une faute de frappe invisible est le premier motif
+              d'échec de connexion.
+
+              `type="button"` explicite — un `<button>` sans type vaut
+              `submit`, et révéler son mot de passe enverrait le formulaire.
+              Sans JavaScript il ne fait rien, ce qui est le bon défaut : le
+              champ reste masqué. */}
+          <button
+            type="button"
+            onClick={() => setVisible((etat) => !etat)}
+            aria-label={
+              visible ? "Masquer le mot de passe" : "Afficher le mot de passe"
+            }
+            className="absolute inset-y-0 right-0 flex items-center rounded-xl px-3 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            {visible ? (
+              <EyeOff aria-hidden="true" className="size-4" />
+            ) : (
+              <Eye aria-hidden="true" className="size-4" />
+            )}
+          </button>
+        </div>
       </div>
 
-      <Button type="submit" disabled={isPending}>
+      {/* La maquette pose « Se souvenir de moi » et « Mot de passe oublié ? »
+          côte à côte, écrasés l'un contre l'autre — divergence recensée dans
+          [[maquettage]] §Notes portage §C6. La case n'est pas portée : aucun
+          critère d'acceptation ne la prescrit et ADR-005 v2 fixe la session à
+          7 jours fermes, elle ne commanderait donc rien.
+
+          Le lien, lui, est exigé nommément par US-COMPTE-CONNECTER
+          §Accessibilité AA (WCAG 2.4.6) et il est l'unique entrée du parcours
+          de réinitialisation. La page arrive avec T-V3-05 — d'ici là le lien
+          mène à un 404, même précédent que la mention RGPD de T-V3-02. */}
+      <div className="flex justify-end">
+        <Link
+          href="/mot-de-passe-oublie"
+          className="text-sm font-medium text-primary underline underline-offset-4"
+        >
+          Mot de passe oublié ?
+        </Link>
+      </div>
+
+      {/* « formulaire bloqué en front ET serveur » (§Cas d'erreur). Le serveur
+          refuse dans tous les cas ; ceci évite de laisser marteler un bouton
+          qui ne peut plus rien produire pendant un quart d'heure. */}
+      <Button type="submit" disabled={isPending || state.blocked === true}>
         {isPending ? "Connexion…" : "Se connecter"}
       </Button>
+
+      {/* Sortie de l'écran bloqué — constat E5 de l'agent testeur : le bouton
+          désactivé était le SEUL déclencheur d'un nouvel état, si bien que le
+          message « réessayez dans quelques minutes » n'avait aucun geste
+          possible derrière lui.
+
+          Une balise `<a>` et non `<Link>` : la navigation client de Next ne
+          remonte pas ce composant vers la même route, l'état d'action
+          survivrait et le bouton resterait fermé. Il faut une vraie requête.
+          `next` est reconduit pour ne pas perdre la destination demandée. */}
+      {state.blocked === true ? (
+        <p className="text-center text-sm text-muted-foreground">
+          <a
+            href={
+              next === undefined
+                ? "/connexion"
+                : `/connexion?next=${encodeURIComponent(next)}`
+            }
+            className="font-medium text-primary underline underline-offset-4"
+          >
+            Recharger le formulaire
+          </a>{" "}
+          pour réessayer.
+        </p>
+      ) : null}
     </form>
   );
 }

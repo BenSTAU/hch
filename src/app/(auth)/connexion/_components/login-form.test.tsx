@@ -11,6 +11,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { axe } from "jest-axe";
 
 // C'est `loginFormAction` que le formulaire référence depuis T-J0-04 fix :
 // `useActionState` l'appelle avec `(prevState, formData)`, et c'est cette
@@ -22,7 +23,8 @@ vi.mock("@/lib/actions/auth/login", () => ({
 }));
 
 const { LoginForm } = await import("./login-form");
-const { LOGIN_REFUSED_MESSAGE } = await import("@/lib/validations/auth");
+const { LOGIN_REFUSED_MESSAGE, LOGIN_RATE_LIMITED_MESSAGE } =
+  await import("@/lib/validations/auth");
 
 // Sans ça les appels s'accumulent d'un test à l'autre et toute assertion de
 // CARDINALITÉ devient fausse — défaut de ce fichier, corrigé après l'avoir
@@ -82,6 +84,13 @@ describe("LoginForm — structure accessible", () => {
   it("suit un ordre de tabulation logique et sans piège", () => {
     // WCAG 2.1.1 + 2.1.2 (A) : on traverse tout le formulaire au clavier et
     // on en ressort.
+    //
+    // ⚠️ Oracle ÉLARGI en T-V3-03, pas affaibli. Le portage de l'écran C6 pose
+    // deux commandes supplémentaires que le formulaire du jalon 0 n'avait
+    // pas — la bascule d'affichage du mot de passe et le lien « Mot de passe
+    // oublié ? », ce dernier exigé nommément par US-COMPTE-CONNECTER
+    // §Accessibilité AA (WCAG 2.4.6). L'ancien oracle décrivait trois arrêts
+    // et devenait faux ; celui-ci décrit les cinq, dans l'ordre du document.
     render(<LoginForm />);
     const user = userEvent.setup();
 
@@ -92,6 +101,14 @@ describe("LoginForm — structure accessible", () => {
       expect(screen.getByLabelText("Mot de passe")).toHaveFocus();
       await user.tab();
       expect(
+        screen.getByRole("button", { name: /Afficher le mot de passe/i }),
+      ).toHaveFocus();
+      await user.tab();
+      expect(
+        screen.getByRole("link", { name: /Mot de passe oublié/i }),
+      ).toHaveFocus();
+      await user.tab();
+      expect(
         screen.getByRole("button", { name: "Se connecter" }),
       ).toHaveFocus();
       await user.tab();
@@ -99,6 +116,189 @@ describe("LoginForm — structure accessible", () => {
         screen.getByRole("button", { name: "Se connecter" }),
       ).not.toHaveFocus();
     })();
+  });
+
+  it("expose le lien « Mot de passe oublié ? » vers le parcours de reset", () => {
+    // WCAG 2.4.6 (AA), exigé nommément par US-COMPTE-CONNECTER §Accessibilité,
+    // et pointé par US-COMPTE-MOT-DE-PASSE-OUBLIE §Cas nominal comme unique
+    // point d'entrée du parcours. La page est livrée par T-V3-05 : d'ici là le
+    // lien mène à un 404, même précédent que la mention RGPD de T-V3-02.
+    render(<LoginForm />);
+
+    expect(
+      screen.getByRole("link", { name: /Mot de passe oublié/i }),
+    ).toHaveAttribute("href", "/mot-de-passe-oublie");
+  });
+
+  it("ne porte pas de case « Se souvenir de moi »", () => {
+    // La maquette C6 en pose une ; aucun critère d'acceptation ne la prescrit,
+    // et ADR-005 v2 fixe la session à 7 jours fermes — la case n'aurait donc
+    // rien à commander. Arbitré le 2026-08-09, même raisonnement que la case
+    // CGV non portée en T-V3-02.
+    render(<LoginForm />);
+
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Se souvenir/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("LoginForm — affichage du mot de passe", () => {
+  // Commande de la maquette C6, conservée au portage : elle sert directement
+  // la saisie sur mobile, où une faute de frappe invisible est le premier
+  // motif d'échec de connexion.
+
+  it("bascule le champ en texte, puis le remasque", async () => {
+    render(<LoginForm />);
+    const user = userEvent.setup();
+
+    const champ = screen.getByLabelText("Mot de passe");
+    expect(champ).toHaveAttribute("type", "password");
+
+    await user.click(
+      screen.getByRole("button", { name: /Afficher le mot de passe/i }),
+    );
+    expect(screen.getByLabelText("Mot de passe")).toHaveAttribute(
+      "type",
+      "text",
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /Masquer le mot de passe/i }),
+    );
+    expect(screen.getByLabelText("Mot de passe")).toHaveAttribute(
+      "type",
+      "password",
+    );
+  });
+
+  it("ne soumet pas le formulaire en basculant", async () => {
+    // Un `<button>` sans `type` vaut `type="submit"` : sans l'attribut
+    // explicite, révéler son mot de passe enverrait le formulaire.
+    loginFormAction.mockResolvedValue({});
+    render(<LoginForm />);
+    const user = userEvent.setup();
+
+    await user.click(
+      screen.getByRole("button", { name: /Afficher le mot de passe/i }),
+    );
+
+    expect(loginFormAction).not.toHaveBeenCalled();
+  });
+});
+
+describe("LoginForm — plafond d'échecs", () => {
+  // « formulaire bloqué en front ET serveur » (US-COMPTE-CONNECTER §Cas
+  // d'erreur). Le serveur refuse dans tous les cas ; le blocage côté front
+  // évite de laisser marteler un bouton qui ne peut plus rien produire.
+
+  it("annonce le message de plafond dans la région `alert`", async () => {
+    loginFormAction.mockResolvedValue({
+      error: LOGIN_RATE_LIMITED_MESSAGE,
+      blocked: true,
+    });
+    render(<LoginForm />);
+    const user = userEvent.setup();
+
+    await submit(user);
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        LOGIN_RATE_LIMITED_MESSAGE,
+      ),
+    );
+  });
+
+  it("désactive le bouton une fois le plafond atteint", async () => {
+    loginFormAction.mockResolvedValue({
+      error: LOGIN_RATE_LIMITED_MESSAGE,
+      blocked: true,
+    });
+    render(<LoginForm />);
+    const user = userEvent.setup();
+
+    await submit(user);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Se connecter/ }),
+      ).toBeDisabled(),
+    );
+  });
+
+  it("laisse le bouton actif sur un refus ordinaire", async () => {
+    // Le refus générique n'est pas un blocage : la personne doit pouvoir
+    // corriger sa saisie et réessayer immédiatement.
+    loginFormAction.mockResolvedValue({ error: LOGIN_REFUSED_MESSAGE });
+    render(<LoginForm />);
+    const user = userEvent.setup();
+
+    await submit(user);
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).not.toBeEmptyDOMElement(),
+    );
+    expect(screen.getByRole("button", { name: "Se connecter" })).toBeEnabled();
+  });
+
+  it("offre une sortie à l'écran bloqué", async () => {
+    // Constat E5 de l'agent testeur : `blocked` ne retombe qu'à la réponse
+    // suivante, et le seul déclencheur d'une réponse était le bouton que le
+    // plafond vient de désactiver. Le message dit « réessayez dans quelques
+    // minutes » sans qu'aucun geste sur cette page ne le permette.
+    //
+    // Le lien recharge vraiment la page — pas une navigation client, qui ne
+    // remonterait pas le composant et laisserait l'état d'action en place.
+    loginFormAction.mockResolvedValue({
+      error: LOGIN_RATE_LIMITED_MESSAGE,
+      blocked: true,
+    });
+    render(<LoginForm />);
+    const user = userEvent.setup();
+
+    await submit(user);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("link", { name: /Recharger le formulaire/i }),
+      ).toHaveAttribute("href", "/connexion"),
+    );
+  });
+
+  it("reconduit la destination demandée dans le rechargement", async () => {
+    // Sans ça, la personne renvoyée au formulaire par `src/proxy.ts` perd la
+    // page qu'elle demandait au moment précis où on lui demande de recommencer.
+    loginFormAction.mockResolvedValue({
+      error: LOGIN_RATE_LIMITED_MESSAGE,
+      blocked: true,
+    });
+    render(<LoginForm next="/admin/parametres?onglet=societe" />);
+    const user = userEvent.setup();
+
+    await submit(user);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("link", { name: /Recharger le formulaire/i }),
+      ).toHaveAttribute(
+        "href",
+        "/connexion?next=%2Fadmin%2Fparametres%3Fonglet%3Dsociete",
+      ),
+    );
+  });
+
+  it("n'affiche aucune sortie de secours sur un refus ordinaire", async () => {
+    loginFormAction.mockResolvedValue({ error: LOGIN_REFUSED_MESSAGE });
+    render(<LoginForm />);
+    const user = userEvent.setup();
+
+    await submit(user);
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).not.toBeEmptyDOMElement(),
+    );
+    expect(
+      screen.queryByRole("link", { name: /Recharger le formulaire/i }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -192,6 +392,69 @@ describe("LoginForm — refus", () => {
     );
 
     expect(container.innerHTML).not.toContain("un-mot-de-passe");
+  });
+});
+
+// Audit outillé des ÉTATS du formulaire — ajout de l'agent testeur.
+//
+// `connexion-view.test.tsx` couvre l'écran au repos ; ce qu'il ne peut pas
+// couvrir, c'est ce que le formulaire devient APRÈS une soumission, parce que
+// ces états ne naissent que d'un aller-retour avec l'action. Or ce sont eux qui
+// portent les critères AA propres à `US-COMPTE-CONNECTER` §Accessibilité :
+// région live annoncée, focus déplacé, commande désactivée.
+describe("LoginForm — audit jest-axe des états", () => {
+  it("ne présente aucune violation au repos", async () => {
+    const { container } = render(<LoginForm />);
+
+    await expect(axe(container)).resolves.toHaveNoViolations();
+  });
+
+  it("ne présente aucune violation après un refus", async () => {
+    loginFormAction.mockResolvedValue({ error: LOGIN_REFUSED_MESSAGE });
+    const { container } = render(<LoginForm />);
+    const user = userEvent.setup();
+
+    await submit(user);
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).not.toBeEmptyDOMElement(),
+    );
+
+    await expect(axe(container)).resolves.toHaveNoViolations();
+  });
+
+  it("ne présente aucune violation une fois le plafond atteint", async () => {
+    // L'état le moins audité de tous : il n'apparaît qu'à la 6ᵉ soumission. Le
+    // bouton y est `disabled`, donc RETIRÉ de l'ordre de tabulation — et c'est
+    // le moment où il faut vérifier que le message qui l'explique reste, lui,
+    // annoncé et atteignable.
+    loginFormAction.mockResolvedValue({
+      error: LOGIN_RATE_LIMITED_MESSAGE,
+      blocked: true,
+    });
+    const { container } = render(<LoginForm />);
+    const user = userEvent.setup();
+
+    await submit(user);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Se connecter/ }),
+      ).toBeDisabled(),
+    );
+
+    await expect(axe(container)).resolves.toHaveNoViolations();
+  });
+
+  it("ne présente aucune violation le mot de passe démasqué", async () => {
+    // La bascule change le `type` du champ ET le nom accessible du bouton. Un
+    // `aria-label` oublié sur l'un des deux états laisserait un bouton anonyme.
+    const { container } = render(<LoginForm />);
+    const user = userEvent.setup();
+
+    await user.click(
+      screen.getByRole("button", { name: /Afficher le mot de passe/i }),
+    );
+
+    await expect(axe(container)).resolves.toHaveNoViolations();
   });
 });
 

@@ -49,6 +49,12 @@ model User {
   /// UUID v4 et non SERIAL : les identifiants apparaissent dans des URL
   /// publiques, un incrément se laisse énumérer (Constitution §4.2).
   id        String    @id @default(uuid(4)) @db.Uuid
+  /// Stockée sous forme canonique — minuscules, sans espaces de bordure —
+  /// imposée par le CHECK `users_email_normalized`
+  /// (`add_users_email_normalized_check`, T-V3-03). L'index unique est
+  /// ORDINAIRE : Postgres y compare octet par octet, et sans la contrainte
+  /// « Camille@… » et « camille@… » seraient deux comptes pour une seule
+  /// personne, dont un seul se connecterait jamais.
   email     String    @unique @db.VarChar(180)
   firstname String    @db.VarChar(100)
   lastname  String    @db.VarChar(100)

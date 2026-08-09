@@ -1,8 +1,8 @@
 import Link from "next/link";
 
+import { AuthSidePanel } from "@/components/features/auth/auth-side-panel";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
-import { AuthSidePanel } from "./auth-side-panel";
 import { SignupForm } from "./signup-form";
 
 /// Coquille de la page d'inscription — écran **C6**, vue inscription.

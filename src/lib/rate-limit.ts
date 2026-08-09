@@ -4,8 +4,8 @@ import { db } from "@/lib/db/client";
 
 /// Compteur anti-abus à fenêtre glissante — PLAN S4 §11, table `rate_limits`
 /// (migration 014, T-V3-01). Un helper pour les trois usages : renvois
-/// d'activation (ici), échecs de connexion (T-V3-03), demandes de
-/// réinitialisation (T-V3-05).
+/// d'activation, échecs de connexion (T-V3-03), demandes de réinitialisation
+/// (T-V3-05).
 ///
 /// La table n'a **aucune clé étrangère**, et c'est le cœur de la décision. Un
 /// compteur porté par des colonnes de `users` n'existerait pas pour un email
@@ -18,6 +18,13 @@ import { db } from "@/lib/db/client";
 export const ACTIVATION_RESEND_LIMIT = 3;
 export const ACTIVATION_RESEND_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/// `US-COMPTE-CONNECTER` §Cas d'erreur : « 5 tentatives échouées dans les 15
+/// dernières minutes ». Ce sont les ÉCHECS qui comptent, pas les soumissions —
+/// d'où les deux temps (`peekRateLimit` puis `recordRateLimitAttempt`) là où
+/// l'activation décompte d'un seul geste.
+export const LOGIN_FAILURE_LIMIT = 5;
+export const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+
 /// La plus large des trois fenêtres. Purger sur la fenêtre de l'appelant
 /// effacerait les lignes que les deux autres usages comptent encore.
 const PURGE_MS = 24 * 60 * 60 * 1000;
@@ -28,15 +35,21 @@ export function activationRateLimitKey(email: string): string {
   return `activation:${email}`;
 }
 
+export function loginRateLimitKey(email: string): string {
+  return `login:${email}`;
+}
+
 export type RateLimitVerdict =
   { allowed: true } | { allowed: false; retryAfterMs: number };
 
-/// Décompte une tentative sur `key`. Autorise et enregistre tant que la fenêtre
-/// n'est pas pleine, refuse sans rien écrire ensuite.
+/// Lit l'état du quota **sans rien écrire**.
 ///
-/// Rien n'est enregistré sur un refus, volontairement : sinon chaque tentative
-/// refusée repousse l'échéance et le plafond devient un bannissement définitif.
-export async function consumeRateLimit(
+/// La connexion ne peut pas décompter à l'entrée : la SPEC compte les
+/// tentatives ÉCHOUÉES, et on ne sait pas si l'authentification échoue avant de
+/// l'avoir tentée. Décompter d'avance ferait tomber le plafond sur les
+/// connexions réussies — cinq connexions légitimes dans le quart d'heure, un
+/// technicien qui change d'appareil, et le compte se ferme.
+export async function peekRateLimit(
   key: string,
   limit: number,
   windowMs: number,
@@ -68,6 +81,54 @@ export async function consumeRateLimit(
     };
   }
 
-  await db.rateLimit.create({ data: { key, attemptedAt: now } });
+  return { allowed: true };
+}
+
+/// Inscrit une tentative sur `key`, sans relire la fenêtre — l'appelant vient
+/// de le faire, et chaque aller-retour se paie dans le tunnel SSH.
+export async function recordRateLimitAttempt(
+  key: string,
+  options: { now?: Date } = {},
+): Promise<void> {
+  await db.rateLimit.create({
+    data: { key, attemptedAt: options.now ?? new Date() },
+  });
+}
+
+/// Efface le compteur d'une clé. Appelé après une connexion réussie : quatre
+/// erreurs de frappe suivies du bon mot de passe ne doivent pas laisser quatre
+/// tentatives armées pour le quart d'heure suivant.
+///
+/// PLAN S4 §11 ne dit rien du sort du compteur après un succès. Le trou a été
+/// **remonté avant écriture** et tranché par Benjamin le 2026-08-09 — write-back
+/// dû vers S4 §11.
+///
+/// Portée réelle : 1 à 4 échecs. À 5, plus aucun succès ne peut survenir pour
+/// déclencher la purge — c'est le plafond qui gouverne.
+export async function clearRateLimit(key: string): Promise<void> {
+  await db.rateLimit.deleteMany({ where: { key } });
+}
+
+/// Décompte une tentative sur `key`. Autorise et enregistre tant que la fenêtre
+/// n'est pas pleine, refuse sans rien écrire ensuite.
+///
+/// Rien n'est enregistré sur un refus, volontairement : sinon chaque tentative
+/// refusée repousse l'échéance et le plafond devient un bannissement définitif.
+///
+/// Reste l'entrée des deux usages qui décomptent **à l'appel** — renvoi
+/// d'activation, et demande de réinitialisation en T-V3-05. La connexion, elle,
+/// compose `peek` et `record` autour de la vérification du mot de passe.
+export async function consumeRateLimit(
+  key: string,
+  limit: number,
+  windowMs: number,
+  options: { now?: Date } = {},
+): Promise<RateLimitVerdict> {
+  const now = options.now ?? new Date();
+
+  const verdict = await peekRateLimit(key, limit, windowMs, { now });
+  if (!verdict.allowed) return verdict;
+
+  await recordRateLimitAttempt(key, { now });
   return { allowed: true };
 }

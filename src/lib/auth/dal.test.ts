@@ -18,7 +18,8 @@ vi.mock("@/lib/db/queries/auth", () => ({
   findUserById: (id: string) => findUserById(id),
 }));
 
-const { verifySession, getCurrentUser } = await import("./dal");
+const { verifySession, getOptionalUser, getCurrentUser } =
+  await import("./dal");
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -84,6 +85,138 @@ describe("getCurrentUser", () => {
     readSessionToken.mockResolvedValue({ sub: "fantome", roles: [] });
     findUserById.mockResolvedValue(null);
     await expect(getCurrentUser()).rejects.toThrow("NEXT_REDIRECT:/connexion");
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// `getOptionalUser` — ajoutée en T-V3-03, livrée SANS TEST. Ajouts de l'agent
+// testeur.
+//
+// Elle n'est pas un doublon commode de `getCurrentUser` : c'est la seule
+// lecture de session montée sur une surface **publique**
+// (`src/app/(marketing)/page.tsx:36`, la destination post-connexion provisoire
+// du client), et c'est ce qui alimente `AppHeader`. Trois propriétés portent
+// donc plus lourd ici que sur son homologue redirigeant :
+//
+//   · elle NE redirige JAMAIS — un `redirect("/connexion")` glissé ici fermerait
+//     l'accueil aux visiteurs anonymes, page que la Constitution §5.1 veut
+//     ouverte à tous ;
+//   · elle applique la MÊME révocation que `getCurrentUser` — sans quoi un
+//     compte désactivé garderait son en-tête nominatif sur une page publique ;
+//   · elle ferme le MÊME DTO — c'est la valeur qui descend jusqu'au rendu.
+// ───────────────────────────────────────────────────────────────────────────
+describe("getOptionalUser", () => {
+  const EN_BASE = {
+    id: "user-1",
+    email: "camille@example.test",
+    firstname: "Camille",
+    lastname: "Durand",
+    roles: ["ROLE_CLIENT"],
+  };
+
+  it("renvoie `null` sans session, sans rediriger ni interroger la base", async () => {
+    readSessionToken.mockResolvedValue(null);
+
+    await expect(getOptionalUser()).resolves.toBeNull();
+    expect(redirect).not.toHaveBeenCalled();
+    expect(findUserById).not.toHaveBeenCalled();
+  });
+
+  it("renvoie le DTO quand la session est utilisable", async () => {
+    readSessionToken.mockResolvedValue({
+      sub: "user-1",
+      roles: ["ROLE_CLIENT"],
+    });
+    findUserById.mockResolvedValue(EN_BASE);
+
+    await expect(getOptionalUser()).resolves.toEqual(EN_BASE);
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it("renvoie `null` — et ne redirige pas — sur un compte révoqué", async () => {
+    // `findUserById` filtre `isActive: true` et `deletedAt: null`
+    // (src/lib/db/queries/auth.ts:255). Un compte désactivé par un
+    // administrateur ou pseudonymisé au titre du droit à l'oubli remonte donc
+    // `null` alors que le JWT reste valide jusqu'à 7 jours.
+    //
+    // Sur `getCurrentUser` cet état produit une redirection ; ici il DOIT
+    // produire `null`, sinon l'accueil public renverrait vers `/connexion`
+    // toute personne portant un cookie périmé — y compris celle qui vient de
+    // se faire fermer son compte, qui ne pourrait plus consulter le catalogue
+    // que la Constitution §5.1 ouvre à tous.
+    readSessionToken.mockResolvedValue({
+      sub: "user-desactive",
+      roles: ["ROLE_CLIENT"],
+    });
+    findUserById.mockResolvedValue(null);
+
+    await expect(getOptionalUser()).resolves.toBeNull();
+    expect(redirect).not.toHaveBeenCalled();
+    expect(findUserById).toHaveBeenCalledWith("user-desactive");
+  });
+
+  it("préfère les rôles de la base à ceux du jeton", async () => {
+    // Même exigence de fraîcheur que `getCurrentUser`. Elle compte aussi ici :
+    // rien n'interdit à une surface publique de conditionner un affichage au
+    // rôle, et le faire sur les rôles du JETON hériterait d'un retard de 7
+    // jours sur toute rétrogradation.
+    readSessionToken.mockResolvedValue({
+      sub: "user-1",
+      roles: ["ROLE_ADMIN"],
+    });
+    findUserById.mockResolvedValue({ ...EN_BASE, roles: ["ROLE_CLIENT"] });
+
+    await expect(getOptionalUser()).resolves.toMatchObject({
+      roles: ["ROLE_CLIENT"],
+    });
+  });
+
+  it("ferme la projection quoi qu'ajoute le `select` de la requête", async () => {
+    // Propriété générale, et non la forme d'un jeu de champs donné : c'est la
+    // valeur qui descend jusqu'à `AppHeader`, sur une page servie à des
+    // visiteurs anonymes. Un passe-plat de l'entité Prisma y ferait fuir le
+    // hash du mot de passe dans la charge utile du rendu.
+    readSessionToken.mockResolvedValue({
+      sub: "user-1",
+      roles: ["ROLE_CLIENT"],
+    });
+    findUserById.mockResolvedValue({
+      ...EN_BASE,
+      passwordHash: "$2b$10$hash-qui-n-a-rien-a-faire-la",
+      phone: "+33639980001",
+      deletedAt: null,
+      createdAt: new Date(),
+    });
+
+    const user = await getOptionalUser();
+
+    expect(Object.keys(user ?? {}).sort()).toEqual([
+      "email",
+      "firstname",
+      "id",
+      "lastname",
+      "roles",
+    ]);
+    expect(JSON.stringify(user)).not.toContain("$2b$10$");
+  });
+
+  it("ne mémoïse pas au-delà de la requête", async () => {
+    // Même garde que pour les deux autres lectures : une mémoïsation au niveau
+    // du module vivrait aussi longtemps que le processus Next et servirait la
+    // session du premier visiteur à tous les suivants. Le risque est PLUS
+    // grand ici — c'est la seule des trois montée sur une page publique, donc
+    // la plus sollicitée par des visiteurs distincts.
+    readSessionToken.mockResolvedValue({
+      sub: "user-1",
+      roles: ["ROLE_CLIENT"],
+    });
+    findUserById.mockResolvedValue(EN_BASE);
+    await getOptionalUser();
+
+    readSessionToken.mockResolvedValue(null);
+
+    await expect(getOptionalUser()).resolves.toBeNull();
+    expect(readSessionToken).toHaveBeenCalledTimes(2);
   });
 });
 

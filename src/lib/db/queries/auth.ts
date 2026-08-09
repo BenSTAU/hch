@@ -1,5 +1,6 @@
 import "server-only";
 
+import { normalizeEmail } from "@/lib/auth/email";
 import { db } from "@/lib/db/client";
 
 /// Lecture pour la connexion locale. Charge le provider `local` avec
@@ -108,7 +109,11 @@ export async function createLocalAccount(input: {
   return db.$transaction(async (tx) => {
     const user = await tx.user.create({
       data: {
-        email: input.email,
+        // Normalisé ICI, et pas seulement dans le schéma Zod de l'appelant :
+        // l'index unique de Postgres compare octet par octet, et une écriture
+        // qui échapperait au schéma créerait un doublon invisible. Le CHECK
+        // SQL `email = lower(email)` est le second filet.
+        email: normalizeEmail(input.email),
         firstname: input.firstname,
         lastname: input.lastname,
         roles: ["ROLE_CLIENT"],

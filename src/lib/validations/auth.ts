@@ -7,6 +7,17 @@ import { z } from "zod";
 export const LOGIN_REFUSED_MESSAGE =
   "Identifiants invalides ou compte non activé — vérifiez votre email d'activation si vous venez de créer un compte";
 
+/// `US-COMPTE-CONNECTER` §Cas d'erreur, mot pour mot. **Pas de délai chiffré**
+/// dedans : une échéance à la seconde dirait quand la première des cinq
+/// tentatives a eu lieu, donc l'activité d'un tiers sur cette adresse.
+///
+/// Ce message est distinct du refus générique, et ce n'est pas une fuite : le
+/// compteur vit dans `rate_limits`, table sans clé étrangère qui compte pour
+/// toute chaîne tentée. Il apparaît donc à l'identique sur une adresse qui n'a
+/// aucun compte (PLAN S4 §11.2).
+export const LOGIN_RATE_LIMITED_MESSAGE =
+  "Trop de tentatives — réessayez dans quelques minutes";
+
 export const loginSchema = z.object({
   // `users.email` est une VARCHAR sous index unique ordinaire, donc comparée
   // octet par octet par Postgres, et le seed écrit en minuscules : sans

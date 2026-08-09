@@ -15,29 +15,48 @@ export type CurrentUser = {
   roles: string[];
 };
 
+/// Session seule — la charge utile du jeton, sans aller en base.
+///
 /// `cache()` de React, pas de mémoïsation maison : la portée est la requête en
 /// cours. Sans lui, un rendu qui vérifie la session dans trois composants
 /// serveur relit le cookie et le signe trois fois.
 ///
-/// C'est ICI que se fait la vérification réelle, jamais dans `src/proxy.ts` —
-/// leçon structurelle de la CVE-2025-29927, conservée après le correctif.
+/// La vérification réelle se fait dans ce module — jamais dans `src/proxy.ts`,
+/// leçon structurelle de la CVE-2025-29927 conservée après le correctif.
+///
+/// ⚠️ **Aucun appelant en production depuis T-V3-03** : `getCurrentUser` passe
+/// désormais par `getOptionalUser`, qui ne peut pas s'appuyer sur cette
+/// fonction-ci — elle redirige, et une lecture facultative ne le doit pas.
+/// Elle reste exportée parce que CLAUDE.md §Authentication l'impose et qu'elle
+/// est la bonne porte pour un appelant qui n'a besoin que du rôle, sans le
+/// profil ; la brancher dans `getCurrentUser` coûterait une seconde
+/// vérification de signature par requête. Relevé par l'agent testeur (C5).
 export const verifySession = cache(async () => {
   const session = await readSessionToken();
   if (!session) redirect("/connexion");
   return session;
 });
 
-/// Renvoie un DTO, jamais l'entité Prisma : le téléphone, `deletedAt` et les
-/// horodatages n'ont aucune raison de traverser la frontière serveur/client
-/// (CLAUDE.md §Authentication).
-export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
-  const session = await verifySession();
+/// Lecture **non redirigeante** de l'utilisateur courant — `null` quand il n'y
+/// a pas de session utilisable.
+///
+/// Elle existe pour les surfaces publiques qui s'adaptent à la présence d'une
+/// session sans l'exiger : l'accueil, qui porte l'en-tête de l'espace connecté
+/// depuis T-V3-03. `getCurrentUser` y redirigerait vers `/connexion` un
+/// visiteur anonyme, sur une page dont la Constitution §5.1 fait justement une
+/// page ouverte à tous.
+///
+/// Ce n'est **pas** une garde : elle n'autorise rien, elle renseigne. Les
+/// contrôles d'accès restent dans `permissions.ts`, appelés par chaque page.
+export const getOptionalUser = cache(async (): Promise<CurrentUser | null> => {
+  const session = await readSessionToken();
+  if (!session) return null;
 
   // La session peut survivre à l'utilisateur qu'elle désigne : compte
   // désactivé, pseudonymisé, ou supprimé depuis l'émission du jeton. Un JWT
   // valide ne prouve pas que le compte l'est encore.
   const user = await findUserById(session.sub);
-  if (!user) redirect("/connexion");
+  if (!user) return null;
 
   // Projection explicite, et non un simple passe-plat de la requête. Le
   // `select` de `findUserById` fait déjà le tri, mais s'y fier seul rendrait
@@ -50,4 +69,13 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
     lastname: user.lastname,
     roles: user.roles,
   };
+});
+
+/// Renvoie un DTO, jamais l'entité Prisma : le téléphone, `deletedAt` et les
+/// horodatages n'ont aucune raison de traverser la frontière serveur/client
+/// (CLAUDE.md §Authentication).
+export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
+  const user = await getOptionalUser();
+  if (!user) redirect("/connexion");
+  return user;
 });
