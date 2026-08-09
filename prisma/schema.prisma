@@ -469,6 +469,17 @@ model Intervention {
   cycle   Cycle?  @relation(fields: [cycleId], references: [id])
   service Service @relation(fields: [serviceId], references: [id])
 
+  /// Colonne GÉNÉRÉE par la migration 010, jamais écrite par l'application :
+  /// `tstzrange(appointment_at, appointment_at + duration_snapshot)`. Elle
+  /// porte la contrainte `no_double_booking`.
+  ///
+  /// `Unsupported` parce que le client ne sait ni lire ni écrire un
+  /// `tstzrange`. `@default(dbgenerated())` parce que Prisma ne modélise pas
+  /// les colonnes générées : sans lui, chaque `migrate dev` propose un
+  /// `ALTER COLUMN … DROP DEFAULT` que PostgreSQL refuserait, et réclame une
+  /// migration de plus à chaque exécution.
+  reservationRange Unsupported("tstzrange")? @default(dbgenerated()) @map("reservation_range")
+
   products InterventionProduct[]
   photos   Photo[]
 
