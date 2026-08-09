@@ -21,8 +21,14 @@ vi.mock("@/lib/db/client", () => ({
 const {
   ACTIVATION_RESEND_LIMIT,
   ACTIVATION_RESEND_WINDOW_MS,
+  LOGIN_FAILURE_LIMIT,
+  LOGIN_FAILURE_WINDOW_MS,
   activationRateLimitKey,
+  clearRateLimit,
   consumeRateLimit,
+  loginRateLimitKey,
+  peekRateLimit,
+  recordRateLimitAttempt,
 } = await import("./rate-limit");
 
 const MAINTENANT = new Date("2026-08-08T12:00:00.000Z");
@@ -50,6 +56,117 @@ describe("seuils", () => {
     expect(activationRateLimitKey("client@example.test")).toBe(
       "activation:client@example.test",
     );
+  });
+
+  it("plafonne les échecs de connexion à 5 par 15 min", () => {
+    // module-1-utilisateurs.md:285-287, repris par PLAN S4 §11.1.
+    expect(LOGIN_FAILURE_LIMIT).toBe(5);
+    expect(LOGIN_FAILURE_WINDOW_MS).toBe(15 * 60 * 1000);
+  });
+
+  it("donne à la connexion un préfixe distinct de l'activation", () => {
+    expect(loginRateLimitKey("client@example.test")).toBe(
+      "login:client@example.test",
+    );
+    expect(loginRateLimitKey("client@example.test")).not.toBe(
+      activationRateLimitKey("client@example.test"),
+    );
+  });
+});
+
+// La connexion compte les tentatives ÉCHOUÉES (SPEC §285-287), pas les
+// tentatives tout court : on ne sait pas si l'authentification échoue avant de
+// l'avoir tentée. `consumeRateLimit` — qui lit et enregistre d'un seul geste —
+// ne peut donc pas servir tel quel, d'où les deux temps ci-dessous. Il reste,
+// inchangé, pour les deux usages qui décomptent à l'appel.
+describe("peekRateLimit — lecture seule", () => {
+  it("autorise sous le seuil sans rien enregistrer", async () => {
+    findMany.mockResolvedValue([ilYA(10), ilYA(5)]);
+
+    const verdict = await peekRateLimit("login:a@b.test", 5, 15 * 60_000, {
+      now: MAINTENANT,
+    });
+
+    expect(verdict).toEqual({ allowed: true });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("refuse au seuil et donne le délai depuis la tentative la plus ancienne", async () => {
+    findMany.mockResolvedValue([
+      ilYA(14),
+      ilYA(10),
+      ilYA(6),
+      ilYA(3),
+      ilYA(1),
+    ]);
+
+    const verdict = await peekRateLimit("login:a@b.test", 5, 15 * 60_000, {
+      now: MAINTENANT,
+    });
+
+    expect(verdict).toEqual({ allowed: false, retryAfterMs: 60_000 });
+  });
+
+  it("n'enregistre rien même quand il refuse", async () => {
+    // Sinon une soumission bloquée repousserait sa propre échéance, et le
+    // plafond deviendrait un bannissement définitif pour qui insiste.
+    findMany.mockResolvedValue([
+      ilYA(14),
+      ilYA(10),
+      ilYA(6),
+      ilYA(3),
+      ilYA(1),
+    ]);
+
+    await peekRateLimit("login:a@b.test", 5, 15 * 60_000, { now: MAINTENANT });
+
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("compte pour une chaîne qui ne désigne aucun compte", async () => {
+    // PLAN S4 §11.2. C'est la propriété qui empêche « trop de tentatives » de
+    // devenir un oracle d'existence : le helper ne consulte jamais `users`.
+    const verdict = await peekRateLimit(
+      "login:inconnu@example.test",
+      5,
+      15 * 60_000,
+      { now: MAINTENANT },
+    );
+
+    expect(verdict).toEqual({ allowed: true });
+  });
+});
+
+describe("recordRateLimitAttempt", () => {
+  it("enregistre une tentative sur la clé", async () => {
+    await recordRateLimitAttempt("login:a@b.test", { now: MAINTENANT });
+
+    expect(create).toHaveBeenCalledWith({
+      data: { key: "login:a@b.test", attemptedAt: MAINTENANT },
+    });
+  });
+
+  it("ne relit pas la fenêtre pour enregistrer", async () => {
+    // L'appelant vient de la lire. Un second aller-retour se paierait dans le
+    // tunnel SSH, sur le chemin d'un utilisateur qui vient déjà d'attendre un
+    // bcrypt.
+    await recordRateLimitAttempt("login:a@b.test", { now: MAINTENANT });
+
+    expect(findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("clearRateLimit", () => {
+  it("efface les tentatives de la seule clé visée", async () => {
+    // Purge après une connexion réussie : quatre erreurs de frappe suivies du
+    // bon mot de passe ne doivent pas laisser une mine à retardement pour les
+    // quinze minutes suivantes. Non tranché par S4 §11 — arbitré le 2026-08-09,
+    // à répercuter au write-back.
+    await clearRateLimit("login:a@b.test");
+
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: { key: "login:a@b.test" },
+    });
   });
 });
 

@@ -2,6 +2,12 @@ import { createHash, randomBytes } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
 
+import {
+  MOT_DE_PASSE_CLIENT,
+  emailUnique,
+  inscrire,
+} from "../support/compte-client";
+
 /// Inscription et activation de bout en bout — T-V3-02, `US-COMPTE-CREER` et
 /// `US-COMPTE-ACTIVER`.
 ///
@@ -28,14 +34,12 @@ test.afterAll(async () => {
   await db.$disconnect();
 });
 
-const MOT_DE_PASSE = "un-mot-de-passe-long-v3";
-
-/// Une adresse par exécution : la base de la barrière est jetable en CI, mais
-/// elle survit d'un run à l'autre en local, et l'index unique sur `users.email`
-/// ferait échouer la seconde passe.
-function emailUnique(prefixe: string): string {
-  return `${prefixe}-${randomBytes(6).toString("hex")}@example.test`;
-}
+/// Mot de passe, adresse jetable et séquence d'inscription **extraits vers
+/// `tests/support/compte-client.ts`** en T-V3-03 : `connexion-deconnexion.spec.ts`
+/// a besoin exactement de la même, et deux copies finiraient par diverger. Le
+/// piège `getByLabel("Nom")` qui a coûté 9 tests en CI sur la PR #17 vit
+/// désormais à un seul endroit, commenté.
+const MOT_DE_PASSE = MOT_DE_PASSE_CLIENT;
 
 function hash(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -54,27 +58,6 @@ function hash(token: string): string {
 /// voient pas non plus — ils rendent le composant, pas le document Next.
 function alerte(page: import("@playwright/test").Page) {
   return page.getByRole("main").getByRole("alert");
-}
-
-async function inscrire(
-  page: import("@playwright/test").Page,
-  email: string,
-): Promise<void> {
-  await page.goto("/inscription");
-  await page.getByLabel("Prénom").fill("Camille");
-  // `exact` obligatoire : `getByLabel` compare en SOUS-CHAÎNE insensible à la
-  // casse, et « nom » est contenu dans « Prénom ». Sans lui, deux champs
-  // matchent et le mode strict de Playwright échoue — 9 tests sur 19 en CI sur
-  // la barrière de la PR #17. Le champ « Mot de passe » portait déjà la même
-  // précaution, pour la même raison face à « Confirmer le mot de passe ».
-  //
-  // Le piège est silencieux tant que le formulaire n'a qu'un seul libellé
-  // englobant : tout champ ajouté ici doit être vérifié contre ses voisins.
-  await page.getByLabel("Nom", { exact: true }).fill("Durand");
-  await page.getByLabel("Adresse email").fill(email);
-  await page.getByLabel("Mot de passe", { exact: true }).fill(MOT_DE_PASSE);
-  await page.getByLabel("Confirmer le mot de passe").fill(MOT_DE_PASSE);
-  await page.getByRole("button", { name: "Créer mon compte" }).click();
 }
 
 test.describe("inscription", () => {
@@ -151,7 +134,7 @@ test.describe("inscription", () => {
 
     await page.goto("/connexion");
     await page.getByLabel("Adresse email").fill(email);
-    await page.getByLabel("Mot de passe").fill(MOT_DE_PASSE);
+    await page.getByLabel("Mot de passe", { exact: true }).fill(MOT_DE_PASSE);
     await page.getByRole("button", { name: "Se connecter" }).click();
 
     // Le message est celui des quatre causes de refus, à l'identique : le
@@ -235,7 +218,7 @@ test.describe("activation", () => {
     ).toBe(true);
 
     await page.getByLabel("Adresse email").fill(email);
-    await page.getByLabel("Mot de passe").fill(MOT_DE_PASSE);
+    await page.getByLabel("Mot de passe", { exact: true }).fill(MOT_DE_PASSE);
     await page.getByRole("button", { name: "Se connecter" }).click();
 
     // ⚠️ On vérifie que la connexion N'EST PLUS REFUSÉE, pas la destination.

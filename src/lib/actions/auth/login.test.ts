@@ -34,19 +34,49 @@ vi.mock("next/navigation", () => ({
   redirect: (url: string) => redirect(url),
 }));
 
+// Le module de quota reste RÉEL pour ses constantes et sa fonction de clé — ce
+// sont elles que l'orchestration doit employer, et les dupliquer ici ferait un
+// second oracle. Seules ses trois fonctions d'accès sont remplacées, et le
+// client Prisma qu'il importe est neutralisé pour que rien ne parte vers le
+// tunnel.
+vi.mock("@/lib/db/client", () => ({ db: {} }));
+
+// Le quota vit dans son propre module (`src/lib/rate-limit.ts`, PLAN S4 §11) et
+// il est testé là-bas. Ici, ce qui compte est l'ORCHESTRATION : quand il est
+// lu, quand il est alimenté, et ce que l'action fait de son verdict.
+const peekRateLimit = vi.fn();
+const recordRateLimitAttempt = vi.fn();
+const clearRateLimit = vi.fn();
+vi.mock("@/lib/rate-limit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/rate-limit")>()),
+  peekRateLimit: (...args: unknown[]) => peekRateLimit(...args),
+  recordRateLimitAttempt: (...args: unknown[]) =>
+    recordRateLimitAttempt(...args),
+  clearRateLimit: (...args: unknown[]) => clearRateLimit(...args),
+}));
+
 const { login } = await import("./login");
-const { LOGIN_REFUSED_MESSAGE } = await import("@/lib/validations/auth");
+const { LOGIN_REFUSED_MESSAGE, LOGIN_RATE_LIMITED_MESSAGE } = await import(
+  "@/lib/validations/auth"
+);
 
 const CREDENTIALS = {
   email: "admin@homecyclhome.fr",
   password: "bon-mot-de-passe",
 };
 
-/// Destination par défaut, créée par T-J0-05. Avant elle, le chemin nominal de
-/// la connexion aboutissait sur un 404.
+/// Destination de l'ADMINISTRATEUR depuis T-V3-03 — c'était celle de tout le
+/// monde depuis T-J0-05, ce qui déposait un client fraîchement activé sur le
+/// 403 de `requireAdmin()`. Les identifiants de ce fichier portent un compte
+/// `ROLE_ADMIN`, la destination par rôle est couverte plus bas.
 const DEFAULT_DESTINATION = "/admin/parametres";
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Quota disponible par défaut : les tests qui ne parlent pas du plafond ne
+  // doivent pas dépendre de son état.
+  peekRateLimit.mockResolvedValue({ allowed: true });
+});
 
 describe("login — refus", () => {
   it("renvoie le message générique et ne pose aucune session", async () => {
@@ -253,5 +283,165 @@ describe("destination post-connexion", () => {
 
       expect(redirect).not.toHaveBeenCalled();
     });
+  });
+
+  describe("selon le rôle", () => {
+    // DoD T-V3-03, reportée de T-V3-02. Les destinations métier de la SPEC
+    // n'existent pas encore : le client et le technicien vont à l'accueil,
+    // T-V3-10 porte la DoD finale côté client.
+    it("dépose le client sur l'accueil, pas sur le back-office", async () => {
+      authenticateWithPassword.mockResolvedValue({
+        ok: true,
+        user: { id: "client-1", roles: ["ROLE_CLIENT"] },
+      });
+
+      await login(CREDENTIALS).catch(() => undefined);
+
+      expect(redirect).toHaveBeenCalledWith("/");
+    });
+
+    it("dépose le technicien sur l'accueil", async () => {
+      authenticateWithPassword.mockResolvedValue({
+        ok: true,
+        user: { id: "tech-1", roles: ["ROLE_TECH"] },
+      });
+
+      await login(CREDENTIALS).catch(() => undefined);
+
+      expect(redirect).toHaveBeenCalledWith("/");
+    });
+
+    it("laisse `next` primer sur la destination de rôle", async () => {
+      // La personne demandait une page précise avant d'être renvoyée au
+      // formulaire par `src/proxy.ts`. La lui rendre est tout l'objet du
+      // paramètre.
+      authenticateWithPassword.mockResolvedValue({
+        ok: true,
+        user: { id: "client-1", roles: ["ROLE_CLIENT"] },
+      });
+
+      await login({ ...CREDENTIALS, next: "/client/mes-velos" }).catch(
+        () => undefined,
+      );
+
+      expect(redirect).toHaveBeenCalledWith("/client/mes-velos");
+    });
+  });
+});
+
+describe("login — plafond d'échecs", () => {
+  // 5 échecs / 15 min par email, fenêtre glissante (SPEC §285-287, PLAN S4
+  // §11.1). Reporté de T-J0-04 : le leurre bcrypt ferme la fuite
+  // d'INFORMATION, pas celle de DÉBIT — sans plafond, un attaquant garde le
+  // droit d'essayer sans fin.
+
+  it("refuse la 6ᵉ tentative sans même vérifier le mot de passe", async () => {
+    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 120_000 });
+
+    const result = await login(CREDENTIALS);
+
+    expect(result?.data).toMatchObject({ error: LOGIN_RATE_LIMITED_MESSAGE });
+    expect(authenticateWithPassword).not.toHaveBeenCalled();
+    expect(createSession).not.toHaveBeenCalled();
+  });
+
+  it("signale le blocage au formulaire, pour qu'il puisse fermer la porte", async () => {
+    // « bloqué front ET serveur » (SPEC §287). Le serveur refuse ; le drapeau
+    // est ce qui permet au formulaire de ne pas laisser marteler le bouton.
+    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 120_000 });
+
+    const result = await login(CREDENTIALS);
+
+    expect(result?.data?.blocked).toBe(true);
+  });
+
+  it("lit le quota sur la clé `login:` de l'email normalisé", async () => {
+    authenticateWithPassword.mockResolvedValue({ ok: false });
+
+    await login({ ...CREDENTIALS, email: "Admin@HomeCyclHome.FR" });
+
+    expect(peekRateLimit).toHaveBeenCalledWith(
+      "login:admin@homecyclhome.fr",
+      5,
+      15 * 60 * 1000,
+    );
+  });
+
+  it("enregistre une tentative APRÈS un échec, pas avant", async () => {
+    // Décompter à l'entrée ferait tomber le plafond sur les connexions
+    // réussies : cinq connexions légitimes dans le quart d'heure — un
+    // technicien qui change d'appareil — bloqueraient le compte.
+    authenticateWithPassword.mockResolvedValue({ ok: false });
+
+    await login(CREDENTIALS);
+
+    expect(recordRateLimitAttempt).toHaveBeenCalledWith(
+      "login:admin@homecyclhome.fr",
+    );
+  });
+
+  it("n'enregistre rien quand la tentative est déjà refusée par le plafond", async () => {
+    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 120_000 });
+
+    await login(CREDENTIALS);
+
+    expect(recordRateLimitAttempt).not.toHaveBeenCalled();
+  });
+
+  it("purge le compteur après une connexion réussie", async () => {
+    // Quatre erreurs de frappe suivies du bon mot de passe ne doivent pas
+    // laisser quatre tentatives armées pour le quart d'heure suivant.
+    authenticateWithPassword.mockResolvedValue({
+      ok: true,
+      user: { id: "user-1", roles: ["ROLE_CLIENT"] },
+    });
+
+    await login(CREDENTIALS).catch(() => undefined);
+
+    expect(clearRateLimit).toHaveBeenCalledWith(
+      "login:admin@homecyclhome.fr",
+    );
+    expect(recordRateLimitAttempt).not.toHaveBeenCalled();
+  });
+
+  it("compte pour un email qui ne correspond à aucun compte", async () => {
+    // DoD T-V3-03 : sans ça, « trop de tentatives » ne s'afficherait que pour
+    // les comptes existants et redeviendrait l'oracle d'énumération que le
+    // durcissement à temps constant de T-J0-04 a fermé.
+    authenticateWithPassword.mockResolvedValue({ ok: false });
+
+    await login({ email: "personne@example.test", password: "peu-importe" });
+
+    expect(peekRateLimit).toHaveBeenCalledWith(
+      "login:personne@example.test",
+      5,
+      15 * 60 * 1000,
+    );
+    expect(recordRateLimitAttempt).toHaveBeenCalledWith(
+      "login:personne@example.test",
+    );
+  });
+
+  it("affiche le même blocage que le compte existe ou non", async () => {
+    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 120_000 });
+
+    const connu = await login(CREDENTIALS);
+    const inconnu = await login({
+      email: "personne@example.test",
+      password: "peu-importe",
+    });
+
+    expect(connu?.data).toEqual(inconnu?.data);
+  });
+
+  it("ne divulgue pas le délai restant dans le message", async () => {
+    // Le message de la SPEC est « réessayez dans quelques minutes ». Un délai
+    // à la seconde dirait quand la première des cinq tentatives a eu lieu,
+    // donc l'activité d'un tiers sur cette adresse.
+    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 421_000 });
+
+    const result = await login(CREDENTIALS);
+
+    expect(JSON.stringify(result?.data)).not.toContain("421");
   });
 });

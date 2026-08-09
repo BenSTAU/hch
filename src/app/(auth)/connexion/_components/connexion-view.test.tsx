@@ -56,6 +56,59 @@ describe("ConnexionView — repères et titres", () => {
       screen.getByRole("button", { name: "Se connecter" }),
     ).toBeInTheDocument();
   });
+
+  it("place le formulaire AVANT le panneau latéral dans le document", () => {
+    // Écran C6 porté en T-V3-03 : le panneau vert passe à gauche à partir de
+    // `lg` par `order`, jamais par l'ordre du DOM. C'est le formulaire que la
+    // personne est venue remplir — il doit venir en premier au clavier et au
+    // lecteur d'écran, et donner sa hiérarchie de titres (H1 avant H2).
+    render(<ConnexionView />);
+
+    const titres = screen.getAllByRole("heading");
+    expect(titres[0]).toHaveTextContent("Connexion");
+    expect(titres[0]?.tagName).toBe("H1");
+  });
+});
+
+describe("ConnexionView — sorties de l'écran", () => {
+  it("propose le renvoi d'un email d'activation", () => {
+    // `US-COMPTE-CONNECTER` §Cas d'erreur : « un bouton “Renvoyer un email
+    // d'activation” est présent en dessous du formulaire ». T-V3-02 a livré
+    // l'action et le formulaire de renvoi sur l'écran C9 ; il manquait le
+    // point d'entrée, seul chemin praticable pour qui n'a plus son lien.
+    render(<ConnexionView />);
+
+    expect(
+      screen.getByRole("link", { name: /Renvoyer un email d'activation/i }),
+    ).toHaveAttribute("href", "/activation?renvoi=1");
+  });
+
+  it("renvoie vers l'inscription", () => {
+    render(<ConnexionView />);
+
+    expect(
+      screen.getByRole("link", { name: /Créer un compte/i }),
+    ).toHaveAttribute("href", "/inscription");
+  });
+});
+
+describe("ConnexionView — retours d'un autre parcours", () => {
+  it("annonce l'activation réussie sans voler le repère d'alerte", () => {
+    // `US-COMPTE-ACTIVER` §Cas nominal redirige ici avec ce message.
+    // `role="status"` et non `alert` : le repère `alert` de cet écran
+    // appartient au refus de connexion, et deux le rendraient ambigu.
+    render(<ConnexionView activated />);
+
+    const statut = screen.getByRole("status");
+    expect(statut).toHaveTextContent(/Compte activé/i);
+    expect(screen.getByRole("alert")).toBeEmptyDOMElement();
+  });
+
+  it("n'affiche rien de tel sur une visite ordinaire", () => {
+    render(<ConnexionView />);
+
+    expect(screen.queryByText(/Compte activé/i)).not.toBeInTheDocument();
+  });
 });
 
 describe("ConnexionView — destination transmise", () => {
