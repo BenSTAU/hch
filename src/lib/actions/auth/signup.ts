@@ -124,7 +124,12 @@ export const signup = actionClient
   });
 
 type ChampInscription =
-  "firstname" | "lastname" | "email" | "password" | "passwordConfirmation";
+  | "firstname"
+  | "lastname"
+  | "email"
+  | "phone"
+  | "password"
+  | "passwordConfirmation";
 
 /// Ordre du formulaire, et non ordre des clés de l'objet d'erreurs : c'est lui
 /// qui décide sur quel champ le focus atterrit (WCAG 3.3.3 AA).
@@ -132,6 +137,9 @@ const CHAMPS: readonly ChampInscription[] = [
   "firstname",
   "lastname",
   "email",
+  // Renseigné par le seul bloc « Vos coordonnées » de C5. Présent ici pour que
+  // son message de validation atteigne le champ, comme les autres.
+  "phone",
   "password",
   "passwordConfirmation",
 ];
@@ -161,6 +169,11 @@ export async function signupFormAction(
     email: champ("email"),
     password: champ("password"),
     passwordConfirmation: champ("passwordConfirmation"),
+    // Facultatif, et seul le bloc « Vos coordonnées » de C5 le renseigne.
+    // `undefined` plutôt que `""` : le schéma rend `undefined` sur vide, mais
+    // ne pas envoyer la clé du tout évite de faire dépendre ce contrat d'un
+    // détail de normalisation.
+    ...(champ("phone") === "" ? {} : { phone: champ("phone") }),
   });
 
   // En cas de succès, `signup` a déjà lancé la redirection par throw : ce point

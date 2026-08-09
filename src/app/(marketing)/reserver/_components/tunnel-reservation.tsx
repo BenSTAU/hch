@@ -1,7 +1,7 @@
 "use client";
 
 import { parseAsInteger, parseAsStringLiteral, useQueryState } from "nuqs";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 import { AddressAutocomplete } from "@/components/features/adresses/address-autocomplete";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,9 @@ import type { ForfaitPublic } from "@/lib/db/queries/forfaits";
 import type { SuggestionAdresse } from "@/lib/geo/ban";
 import { cn } from "@/lib/utils";
 
+import { EtapeCoordonnees } from "./etape-coordonnees";
 import { EtapeCreneau } from "./etape-creneau";
+import { EtapePhotos, type PhotoDeposee } from "./etape-photos";
 
 /// Tunnel de réservation — écrans **C2 à C5**.
 ///
@@ -46,6 +48,44 @@ type Confirmation = {
 /// récapitulatif est restauré depuis l'état conservé côté navigateur.
 const RETOUR_TUNNEL = "/reserver?etape=recapitulatif";
 
+/// Clé de conservation du tunnel en cours.
+///
+/// `sessionStorage` et non `localStorage` : l'état meurt avec l'onglet. Il
+/// porte une adresse postale, qui n'a pas à survivre à la visite.
+const CLE_REPRISE = "hch:tunnel";
+
+type EtatConserve = {
+  adresse: SuggestionAdresse | null;
+  zoneId: number | null;
+  creneau: string | null;
+  photos: PhotoDeposee[];
+};
+
+/// Lu à l'initialisation et non dans un effet : un effet qui appelle `setState`
+/// déclenche un rendu en cascade, que le compilateur React refuse.
+///
+/// Rend l'état vide côté serveur — `sessionStorage` n'y existe pas.
+function lireEtatConserve(): EtatConserve {
+  const vide: EtatConserve = {
+    adresse: null,
+    zoneId: null,
+    creneau: null,
+    photos: [],
+  };
+  if (typeof window === "undefined") return vide;
+
+  try {
+    const brut = window.sessionStorage.getItem(CLE_REPRISE);
+    return brut
+      ? { ...vide, ...(JSON.parse(brut) as Partial<EtatConserve>) }
+      : vide;
+  } catch {
+    // Donnée corrompue ou stockage refusé (navigation privée stricte) : on
+    // repart d'un tunnel neuf plutôt que de casser l'écran.
+    return vide;
+  }
+}
+
 const dateComplete = new Intl.DateTimeFormat("fr-FR", {
   dateStyle: "full",
   timeStyle: "short",
@@ -64,15 +104,36 @@ export function TunnelReservation({
   );
   const [forfaitId, setForfaitId] = useQueryState("forfait", parseAsInteger);
 
-  const [adresse, setAdresse] = useState<SuggestionAdresse | null>(null);
-  const [zoneId, setZoneId] = useState<number | null>(null);
-  const [creneau, setCreneau] = useState<string | null>(null);
+  // Conservé pendant l'aller-retour de création de compte : le visiteur part
+  // s'inscrire, active, se connecte, et retrouve sa sélection. Le CRÉNEAU, lui,
+  // n'est pas tenu — il est revalidé au retour, et la grille rafraîchie prend
+  // le relais s'il est parti.
+  const [conserve] = useState(lireEtatConserve);
+  const [adresse, setAdresse] = useState<SuggestionAdresse | null>(
+    conserve.adresse,
+  );
+  const [zoneId, setZoneId] = useState<number | null>(conserve.zoneId);
+  const [creneau, setCreneau] = useState<string | null>(conserve.creneau);
+  const [photos, setPhotos] = useState<PhotoDeposee[]>(conserve.photos);
 
   const [erreur, setErreur] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [enCours, demarrer] = useTransition();
 
   const forfait = forfaits.find((f) => f.id === forfaitId) ?? null;
+
+  // Écriture seule : aucun `setState`, donc aucun rendu en cascade.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.sessionStorage.setItem(
+        CLE_REPRISE,
+        JSON.stringify({ adresse, zoneId, creneau, photos }),
+      );
+    } catch {
+      // Stockage refusé : la reprise ne fonctionnera pas, le tunnel si.
+    }
+  }, [adresse, zoneId, creneau, photos]);
 
   function choisirForfait(id: number) {
     void setForfaitId(id);
@@ -114,6 +175,7 @@ export function TunnelReservation({
         serviceId: forfait.id,
         adresse,
         debut: creneau,
+        photos: photos.map((photo) => photo.url),
       });
 
       if (resultat?.validationErrors) {
@@ -265,42 +327,27 @@ export function TunnelReservation({
           </dl>
 
           {estConnecte ? (
-            <Button
-              type="button"
-              className="rounded-xl"
-              disabled={enCours}
-              onClick={valider}
-            >
-              {enCours ? "Validation…" : "Valider ma réservation"}
-            </Button>
+            <>
+              <EtapePhotos photos={photos} onChangement={setPhotos} />
+
+              <Button
+                type="button"
+                className="rounded-xl"
+                disabled={enCours}
+                onClick={valider}
+              >
+                {enCours ? "Validation…" : "Valider ma réservation"}
+              </Button>
+            </>
           ) : (
-            // La garde réelle vit dans la Server Action ; ce bloc-ci évite
-            // seulement de présenter un bouton qui finirait en redirection.
-            <div className="flex flex-col gap-3 rounded-2xl border p-6">
-              <h2 className="text-lg font-semibold">
-                Un compte est nécessaire pour valider
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                Votre sélection est conservée. Créez votre compte, activez-le
-                depuis l&apos;email reçu, puis revenez ici pour confirmer.
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <Button asChild className="rounded-xl">
-                  <a
-                    href={`/inscription?next=${encodeURIComponent(RETOUR_TUNNEL)}`}
-                  >
-                    Créer mon compte
-                  </a>
-                </Button>
-                <Button asChild variant="outline" className="rounded-xl">
-                  <a
-                    href={`/connexion?next=${encodeURIComponent(RETOUR_TUNNEL)}`}
-                  >
-                    J&apos;ai déjà un compte
-                  </a>
-                </Button>
-              </div>
-            </div>
+            // Les photos n'apparaissent qu'une fois connecté : leur dépôt exige
+            // une session, et proposer un champ qui refuserait le fichier serait
+            // une promesse qu'on ne tient pas.
+            //
+            // La garde réelle de la validation vit dans la Server Action ; ce
+            // bloc-ci évite seulement d'afficher un bouton qui finirait en
+            // redirection.
+            <EtapeCoordonnees retour={RETOUR_TUNNEL} />
           )}
 
           <p className="text-xs text-muted-foreground">
