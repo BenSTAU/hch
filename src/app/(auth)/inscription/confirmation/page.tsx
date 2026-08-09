@@ -60,12 +60,23 @@ export default function ConfirmationInscriptionPage() {
               </div>
             </CardHeader>
 
+            {/* Formulation reprise en T-V3-03. Elle envoyait « demander un
+                nouvel envoi depuis le lien d'activation expiré ou la page de
+                connexion » — circulaire pour qui n'a justement rien reçu, donc
+                aucun lien sous la main, et la page de connexion n'offrait alors
+                aucune entrée vers le renvoi. Elle en offre une depuis cette
+                tâche ; l'écran pointe désormais droit dessus. */}
             <CardContent className="flex flex-col gap-3 text-sm text-muted-foreground">
               <p>
                 Rien reçu ? Vérifiez vos indésirables, puis demandez un nouvel
-                envoi depuis le lien d&apos;activation expiré ou la page de
-                connexion.
+                envoi. Le lien précédent sera alors invalidé.
               </p>
+              <Link
+                href="/activation?renvoi=1"
+                className="font-medium text-primary underline underline-offset-4"
+              >
+                Renvoyer un email d&apos;activation
+              </Link>
               <Link
                 href="/connexion"
                 className="font-medium text-primary underline underline-offset-4"
