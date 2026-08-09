@@ -175,7 +175,7 @@ export const reserver = authActionClient
           dureeMinutes: resultat.durationSnapshot,
           prix: resultat.priceSnapshot,
           adresse: adresse.label,
-          zone: couverture.zoneName,
+          forfait: resultat.forfaitLabel,
         }),
     );
 

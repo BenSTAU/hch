@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 
 import { getOptionalUser } from "@/lib/auth/dal";
 import { enregistrerPhoto, messageRefus } from "@/lib/photos/stockage";
+import {
+  consumeRateLimit,
+  UPLOAD_LIMIT,
+  UPLOAD_WINDOW_MS,
+  uploadRateLimitKey,
+} from "@/lib/rate-limit";
 
 /// Dépôt d'une photo du tunnel — l'un des **trois** Route Handlers que
 /// CLAUDE.md autorise, avec le callback OAuth et l'initiation Google.
@@ -28,6 +34,28 @@ export async function POST(requete: Request): Promise<NextResponse> {
     return NextResponse.json(
       { ok: false, message: "Connectez-vous pour joindre des photos." },
       { status: 401 },
+    );
+  }
+
+  // Le quota borne le DISQUE, pas le dossier : celui des cinq photos par
+  // intervention ne mord qu'à la validation, et rien ne ramasse les fichiers
+  // d'un tunnel abandonné. Décompté AVANT de lire le corps — accepter cinq
+  // mégaoctets pour les refuser ensuite ne protégerait rien.
+  const verdict = await consumeRateLimit(
+    uploadRateLimitKey(utilisateur.id),
+    UPLOAD_LIMIT,
+    UPLOAD_WINDOW_MS,
+  );
+
+  if (!verdict.allowed) {
+    return NextResponse.json(
+      { ok: false, message: "Trop de photos envoyées — réessayez plus tard." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(Math.ceil(verdict.retryAfterMs / 1000)),
+        },
+      },
     );
   }
 

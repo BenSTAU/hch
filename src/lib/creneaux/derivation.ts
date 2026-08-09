@@ -130,6 +130,18 @@ export function deriverCreneaux(params: {
   if (dureeMinutes <= 0 || pasMinutes <= 0) return [];
 
   const creneaux: Creneau[] = [];
+  /// Instants déjà retenus.
+  ///
+  /// Deux heures murales distinctes peuvent rendre le MÊME instant, la nuit où
+  /// une heure disparaît : le 29 mars 2026, 02:00 locales n'existe pas, et
+  /// `instantUtc` projette cette heure absente sur 03:00. Sans ce garde, une
+  /// plage `02:00-05:00` proposerait deux boutons pour un seul rendez-vous, et
+  /// deux clés React identiques.
+  ///
+  /// Inatteignable avec les horaires seedés (08:00-18:00 n'enjambe pas le
+  /// trou), mais la CRUD `app_settings` laisse saisir n'importe quelle plage.
+  /// Relevé par l'agent testeur.
+  const instantsRetenus = new Set<number>();
   const depart = jourLocal(maintenant, fuseau);
 
   for (let decalage = 0; decalage < horizonJours; decalage += 1) {
@@ -153,9 +165,14 @@ export function deriverCreneaux(params: {
 
       if (debut.getTime() < maintenant.getTime()) continue;
 
+      // Voir `instantsRetenus` : deux heures murales peuvent désigner le même
+      // instant la nuit où une heure disparaît.
+      if (instantsRetenus.has(debut.getTime())) continue;
+
       const creneau = { debut, fin };
       if (occupes.some((occupe) => seChevauchent(creneau, occupe))) continue;
 
+      instantsRetenus.add(debut.getTime());
       creneaux.push(creneau);
     }
   }

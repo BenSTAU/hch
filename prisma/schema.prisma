@@ -270,9 +270,13 @@ model Zone {
   @@map("zones")
 }
 
-/// Lieu d'intervention. Séparé de `users` parce qu'un client en a plusieurs,
-/// et rattachable à personne : `userId` NULL est l'adresse d'un visiteur qui
-/// réserve sans compte (Constitution §3.2).
+/// Lieu d'intervention. Séparé de `users` parce qu'un client en a plusieurs.
+///
+/// `userId` est nullable par HÉRITAGE : la colonne date de la migration 004,
+/// mergée en PR #23, quand la réservation était ouverte au visiteur. Depuis
+/// l'alignement de Constitution §3.2 du 2026-08-09, plus rien n'y écrit NULL.
+/// Vestige assumé — sa migration est mergée, la relâcher coûterait une
+/// migration pour un gain nul.
 model Address {
   id       Int                                   @id @default(autoincrement())
   street   String                                @db.VarChar(255)

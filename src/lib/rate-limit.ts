@@ -29,7 +29,38 @@ export const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000;
 /// effacerait les lignes que les deux autres usages comptent encore.
 const PURGE_MS = 24 * 60 * 60 * 1000;
 
-/// Trois usages partagent la table : sans préfixe, un échec de connexion
+/// Quotas des surfaces publiques du tunnel — **valeurs non prescrites par le
+/// vault**, posées ici faute de mieux et à faire arbitrer (cf. body de PR).
+///
+/// Motif : `verifierAdresse` et `listerCreneaux` sont ouvertes au visiteur
+/// anonyme et déclenchent, pour la première, un appel sortant vers la BAN de
+/// l'IGN. Sans quota, elles servent de relais et peuvent faire blacklister
+/// l'IP du VPS — la géolocalisation de tout le produit tomberait avec elle.
+/// Relevé par l'agent testeur.
+export const GEOCODAGE_LIMIT = 30;
+export const GEOCODAGE_WINDOW_MS = 10 * 60 * 1000;
+
+/// Dépôt de photos : cinq mégaoctets par fichier, et rien ne ramasse les
+/// orphelins d'un tunnel abandonné. Le quota des cinq photos ne mord qu'à la
+/// validation ; celui-ci borne le DISQUE.
+export const UPLOAD_LIMIT = 30;
+export const UPLOAD_WINDOW_MS = 60 * 60 * 1000;
+
+/// Clé d'un appelant anonyme. L'adresse IP est le seul discriminant
+/// disponible — imparfait derrière un NAT, mais c'est ce que le proxy expose,
+/// et l'alternative est de ne rien compter du tout.
+export function anonymousRateLimitKey(
+  surface: string,
+  ip: string | null,
+): string {
+  return `${surface}:${ip ?? "inconnue"}`;
+}
+
+export function uploadRateLimitKey(userId: string): string {
+  return `upload:${userId}`;
+}
+
+/// Cinq usages partagent la table : sans préfixe, un échec de connexion
 /// consommerait le quota de renvoi d'activation du même email.
 export function activationRateLimitKey(email: string): string {
   return `activation:${email}`;

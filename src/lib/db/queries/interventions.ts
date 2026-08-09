@@ -84,6 +84,8 @@ export type CreationIntervention =
       /// foi (Constitution §4.1).
       priceSnapshot: string;
       durationSnapshot: number;
+      /// Libellé du forfait, que la DoD veut dans l'email de confirmation.
+      forfaitLabel: string;
     }
   | { ok: false; reason: "creneau_pris" };
 
@@ -126,19 +128,36 @@ export async function reserverIntervention(params: {
         tx,
       );
 
-      const addressId = await creerAdresse(
-        {
+      // Réutiliser l'adresse déjà connue plutôt qu'en créer une par
+      // réservation : le libellé vient de la BAN, il est canonique, donc deux
+      // réservations au même endroit donnent exactement la même rue et la même
+      // commune. Sans ce filtre, un client fidèle accumule des lignes
+      // indiscernables dans son sélecteur. Relevé par l'agent testeur.
+      const existante = await tx.address.findFirst({
+        where: {
+          userId: params.clientId,
           street: params.adresse.street,
           cityId,
-          point: params.adresse.point,
-          userId: params.clientId,
+          isActive: true,
         },
-        tx,
-      );
+        select: { id: true },
+      });
+
+      const addressId =
+        existante?.id ??
+        (await creerAdresse(
+          {
+            street: params.adresse.street,
+            cityId,
+            point: params.adresse.point,
+            userId: params.clientId,
+          },
+          tx,
+        ));
 
       const forfait = await tx.service.findUniqueOrThrow({
         where: { id: params.serviceId },
-        select: { price: true, duration: true },
+        select: { price: true, duration: true, label: true },
       });
 
       const intervention = await tx.intervention.create({
@@ -179,6 +198,7 @@ export async function reserverIntervention(params: {
         interventionId: intervention.id,
         priceSnapshot: forfait.price.toFixed(2),
         durationSnapshot: forfait.duration,
+        forfaitLabel: forfait.label,
       };
     });
   } catch (error) {

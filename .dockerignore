@@ -42,3 +42,9 @@ tests
 Dockerfile
 .dockerignore
 docker-compose*.yml
+
+# Photos deposees dans le tunnel. Le `COPY . .` du stage builder copie le
+# REPERTOIRE DE TRAVAIL, pas l index Git : `.gitignore` n y protege de rien.
+# Sans cette ligne, les photos de developpement sont cuites dans une couche
+# d image et partent en production.
+uploads

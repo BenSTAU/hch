@@ -52,7 +52,7 @@ export async function sendReservationEmail(params: {
   dureeMinutes: number;
   prix: string;
   adresse: string;
-  zone: string;
+  forfait: string;
 }): Promise<void> {
   const creneau = formaterCreneau(params.debut, params.dureeMinutes);
 
@@ -61,6 +61,7 @@ export async function sendReservationEmail(params: {
     "",
     "Votre intervention est planifiée.",
     "",
+    `Prestation : ${params.forfait}`,
     `Créneau : ${creneau}`,
     `Adresse : ${params.adresse}`,
     `Montant : ${params.prix} € TTC`,
@@ -75,6 +76,7 @@ export async function sendReservationEmail(params: {
     "<p>Bonjour,</p>",
     "<p>Votre intervention est planifiée.</p>",
     "<ul>",
+    `<li><strong>Prestation</strong> : ${echapper(params.forfait)}</li>`,
     `<li><strong>Créneau</strong> : ${echapper(creneau)}</li>`,
     `<li><strong>Adresse</strong> : ${echapper(params.adresse)}</li>`,
     `<li><strong>Montant</strong> : ${echapper(params.prix)} € TTC</li>`,
