@@ -102,6 +102,9 @@ export async function createLocalAccount(input: {
   email: string;
   firstname: string;
   lastname: string;
+  /// `undefined` laisse la colonne NULL — elle est nullable depuis la migration
+  /// 004, et le CHECK E.164 passe sur NULL.
+  phone?: string | undefined;
   passwordHash: string;
   tokenHash: string;
   expiresAt: Date;
@@ -116,6 +119,7 @@ export async function createLocalAccount(input: {
         email: normalizeEmail(input.email),
         firstname: input.firstname,
         lastname: input.lastname,
+        phone: input.phone ?? null,
         roles: ["ROLE_CLIENT"],
         // La colonne a `DEFAULT true` : l'omettre créerait un compte utilisable
         // sans avoir vérifié l'email (US-COMPTE-CREER §Cas nominal).

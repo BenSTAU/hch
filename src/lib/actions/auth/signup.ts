@@ -38,7 +38,7 @@ const AFTER_SIGNUP = "/inscription/confirmation";
 export const signup = actionClient
   .inputSchema(signupSchema)
   .action(async ({ parsedInput }) => {
-    const { firstname, lastname, email, password } = parsedInput;
+    const { firstname, lastname, email, password, phone } = parsedInput;
 
     // AVANT toute lecture en base, et sur TOUS les chemins. Le hachage coûte
     // ~21 ms ; un chemin qui l'éviterait répondrait en 0,03 ms et l'existence
@@ -64,6 +64,7 @@ export const signup = actionClient
           email,
           firstname,
           lastname,
+          phone,
           passwordHash,
           tokenHash,
           expiresAt: verificationTokenExpiry(),

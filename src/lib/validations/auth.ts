@@ -81,6 +81,22 @@ function tientDansBcrypt(valeur: string): boolean {
 /// Largeurs alignées sur les colonnes (`prisma/schema.prisma:52-54`). Sans
 /// bornes ici, le refus viendrait de Postgres — donc après le hachage bcrypt et
 /// pendant l'insertion, en 500 au lieu d'un message de formulaire.
+/// Passe un numéro français en E.164, seule forme que le CHECK de
+/// `users.phone` accepte. `06 12 34 56 78` et `+33 6 12 34 56 78` désignent le
+/// même abonné ; les refuser sur la forme serait un obstacle sans objet.
+///
+/// Rend `undefined` sur une chaîne vide — le champ est facultatif, et écrire
+/// `""` en base ferait échouer le CHECK au lieu de laisser NULL.
+export function normaliserTelephoneFr(valeur: string): string | undefined {
+  const compact = valeur.replace(/[\s.\-()]/g, "");
+  if (compact === "") return undefined;
+  if (compact.startsWith("+")) return compact;
+  if (compact.startsWith("00")) return `+${compact.slice(2)}`;
+  // `0X…` national : l'indicatif France remplace le zéro de tête.
+  if (/^0[1-9][0-9]{8}$/.test(compact)) return `+33${compact.slice(1)}`;
+  return compact;
+}
+
 export const signupSchema = z
   .object({
     firstname: z.string().trim().min(1, REQUIS).max(100, REQUIS),
@@ -102,6 +118,22 @@ export const signupSchema = z
         `Mot de passe : ${PASSWORD_MAX_BYTES} octets maximum`,
       ),
     passwordConfirmation: z.string().min(1, REQUIS),
+    /// Optionnel, et il le reste : `/inscription` ne le demande pas, seul le
+    /// bloc « Vos coordonnées » du récapitulatif (C5) le collecte. Le rendre
+    /// obligatoire fermerait un parcours déjà livré.
+    ///
+    /// Normalisé en E.164 avant validation : `users.phone` porte un CHECK SQL
+    /// strict posé en migration 001, et la maquette C5 propose `06 12 34 56 78`
+    /// — un numéro national, que ce CHECK refuserait tel quel.
+    phone: z
+      .string()
+      .trim()
+      .transform(normaliserTelephoneFr)
+      .refine(
+        (valeur) => valeur === undefined || /^\+[1-9][0-9]{7,14}$/.test(valeur),
+        "Téléphone invalide — exemple : 06 12 34 56 78",
+      )
+      .optional(),
   })
   // `path` explicite : sans lui l'erreur flotte au niveau du formulaire, et
   // aucun champ ne peut la porter par `aria-describedby` (WCAG 3.3.1 AA).
