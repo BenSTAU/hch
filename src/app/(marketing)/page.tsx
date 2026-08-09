@@ -1,86 +1,35 @@
-import { getOptionalUser } from "@/lib/auth/dal";
-import { AppHeader } from "@/components/layouts/app-header";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { listForfaitsPublics } from "@/lib/db/queries/forfaits";
 
-/// Accueil public — et, depuis T-V3-03, **destination post-connexion provisoire
-/// du client et du technicien** ainsi que destination de la déconnexion.
+import { LandingView } from "./_components/landing-view";
+
+/// Accueil public — écran **C1**, `US-FORFAIT-CONSULTER`.
 ///
-/// Deux conséquences, toutes deux assumées :
+/// C'est la porte d'entrée du parcours : le visiteur y voit ce que ça coûte,
+/// sans compte et sans devis intermédiaire (Constitution §5.1). C'est aussi,
+/// depuis T-V3-03, la destination post-connexion provisoire du client et du
+/// technicien, ainsi que celle de la déconnexion — le vrai tableau de bord,
+/// écran C7, arrive avec T-V3-10.
 ///
-///   · la page lit la session, donc elle devient dynamique. Elle reste ouverte
-///     à tous (Constitution §5.1) : `getOptionalUser` renseigne, il n'autorise
-///     rien et ne redirige personne ;
-///   · elle porte l'en-tête de l'espace connecté quand une session existe.
-///     Sans lui, un client connecté n'aurait aucun moyen de se déconnecter :
-///     c'est ici qu'il atterrit, et l'en-tête du groupe `(app)` ne couvre pas
-///     cette route.
+/// La page est **dynamique** : elle lit le catalogue et `searchParams`. Elle
+/// n'exige aucune session pour autant — l'en-tête du layout lit la sienne par
+/// `getOptionalUser`, qui renseigne sans rediriger.
 ///
-/// Le vrai tableau de bord client — écran C7, avec son menu utilisateur —
-/// arrive avec T-V3-10, qui reprendra les deux destinations.
+/// Elle ne porte que la récupération. Tout le rendu vit dans `LandingView`, qui
+/// est synchrone et donc déroulable sous RTL et `jest-axe` — un RSC asynchrone
+/// ne l'est pas (ADR-014 : async Server Components → E2E uniquement).
 export default async function AccueilPage({
   searchParams,
 }: {
   searchParams: Promise<{ deconnecte?: string | string[] }>;
 }) {
   // Les deux lectures sont indépendantes : en parallèle, jamais en cascade
-  // (CLAUDE.md §Data fetching).
-  const [{ deconnecte }, user] = await Promise.all([
+  // (CLAUDE.md §Data fetching). `listForfaitsPublics` est enveloppée dans
+  // `cache()` — le layout l'a déjà appelée dans ce rendu, il n'y a qu'une
+  // requête.
+  const [{ deconnecte }, forfaits] = await Promise.all([
     searchParams,
-    getOptionalUser(),
+    listForfaitsPublics(),
   ]);
 
-  return (
-    <div className="flex min-h-dvh flex-col">
-      {user ? <AppHeader user={user} /> : null}
-
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-8 px-6 py-16">
-        {/* `US-COMPTE-DECONNECTER` §Cas nominal : « un message de confirmation
-            “Vous êtes déconnecté” est affiché ». `role="status"` et non
-            `alert` : c'est une confirmation attendue, pas une alerte, et le
-            lecteur d'écran l'annonce sans interrompre. */}
-        <p
-          role="status"
-          className="rounded-xl bg-primary-fixed px-3 py-2 text-sm text-accent-foreground empty:hidden"
-        >
-          {deconnecte === "1" ? "Vous êtes déconnecté." : ""}
-        </p>
-
-        <header className="flex flex-col gap-3">
-          <p className="text-sm font-semibold text-primary">
-            HomeCycl&apos;Home
-          </p>
-          <h1 className="text-4xl">La réparation de vélo vient à vous</h1>
-          <p className="max-w-xl text-muted-foreground">
-            Le technicien se déplace à votre adresse. Vous choisissez un forfait
-            et un créneau, et vous réglez sur place une fois l&apos;intervention
-            terminée.
-          </p>
-        </header>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Squelette déployé</CardTitle>
-            <CardDescription>
-              Jalon 0, tâche T-J0-01. Next.js, Tailwind v4 et shadcn/ui sont en
-              place, la palette Kinetic Urbanist et les deux polices sont
-              câblées.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-3">
-            <Button size="lg">Réserver une intervention</Button>
-            <Button size="lg" variant="outline">
-              Voir les forfaits
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
-    </div>
-  );
+  return <LandingView forfaits={forfaits} deconnecte={deconnecte === "1"} />;
 }

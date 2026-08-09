@@ -308,22 +308,38 @@ test.describe("plafond d'échecs", () => {
 
 test.describe("accueil et session — surface publique", () => {
   /// Ajouts de l'agent testeur. L'accueil est devenu **dynamique** en T-V3-03 :
-  /// il lit la session par `getOptionalUser` et monte `AppHeader`
-  /// (`src/app/(marketing)/page.tsx:34-41`). C'est une page que la Constitution
+  /// il lit la session par `getOptionalUser`. C'est une page que la Constitution
   /// §5.1 veut ouverte à tous, et elle exécute désormais du code
   /// d'authentification à chaque visite anonyme. Rien ne le couvrait.
 
   test("reste servi à un visiteur anonyme, sans en-tête connecté", async ({
     page,
   }) => {
+    /// ⚠️ **Oracle repris en T-V3-13** — règle du test rouge, cas 3
+    /// (dépendance à un détail d'implémentation invalidé par un changement
+    /// légitime). Ce test assertait `getByRole("banner")).toHaveCount(0)` :
+    /// à l'écriture, l'accueil ne montait un `<header>` QUE pour une session
+    /// ouverte, et l'absence de repère `banner` était donc un proxy fidèle de
+    /// « pas d'en-tête connecté ».
+    ///
+    /// T-V3-13 pose une coquille publique : le `<header>` existe pour tout le
+    /// monde, y compris le visiteur anonyme, et il DOIT exister — c'est lui qui
+    /// porte la navigation et l'accès à la connexion. Le proxy est devenu faux
+    /// sans que l'intention change.
+    ///
+    /// L'intention est donc réécrite en propre : la page reste servie, et rien
+    /// n'y trahit une session ouverte. Vérifié plus fort qu'avant, puisque le
+    /// nom de l'utilisateur est maintenant observé lui aussi.
     const reponse = await page.goto("/");
 
     expect(reponse?.status()).toBe(200);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(page.getByRole("banner")).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Se déconnecter" }),
     ).toHaveCount(0);
+    await expect(
+      page.getByRole("banner").getByRole("link", { name: "Connexion" }),
+    ).toBeVisible();
   });
 
   test("ne casse pas sur un cookie de session forgé", async ({
@@ -347,19 +363,22 @@ test.describe("accueil et session — surface publique", () => {
     const reponse = await page.goto("/");
 
     expect(reponse?.status()).toBe(200);
-    await expect(page.getByRole("banner")).toHaveCount(0);
+    // Oracle repris en T-V3-13, même motif que le test d'ouverture de ce bloc :
+    // l'en-tête existe désormais pour tout le monde. Ce qui doit rester absent,
+    // c'est ce qu'une session ouverte y ferait apparaître.
+    await verifierEtatSession(page, false);
   });
 
-  test("retire l'en-tête dès que le compte est désactivé en base", async ({
+  test("retire les marques de session dès que le compte est désactivé en base", async ({
     page,
   }) => {
     // Révocation effective (`findUserById` filtre `isActive`,
     // src/lib/db/queries/auth.ts:255). Le JWT reste valide 7 jours : sans cette
-    // relecture, un compte fermé par un administrateur garderait son en-tête
-    // nominatif — et son bouton de déconnexion — sur une page publique.
+    // relecture, un compte fermé par un administrateur garderait son nom — et
+    // son bouton de déconnexion — dans l'en-tête d'une page publique.
     const { email, userId } = await creerClientActive(page, db, "revoque");
     await soumettre(page, email, MOT_DE_PASSE_CLIENT);
-    await expect(page.getByRole("banner")).toBeVisible();
+    await verifierEtatSession(page, true);
 
     await db.user.update({
       where: { id: userId },
@@ -369,9 +388,36 @@ test.describe("accueil et session — surface publique", () => {
     const reponse = await page.goto("/");
 
     expect(reponse?.status()).toBe(200);
-    await expect(page.getByRole("banner")).toHaveCount(0);
+    await verifierEtatSession(page, false);
   });
 });
+
+/// Ce que « l'accueil me traite comme connecté » veut dire depuis T-V3-13.
+///
+/// Jusque-là, l'oracle des trois tests ci-dessus était `getByRole("banner")` :
+/// l'accueil ne montait un `<header>` QUE pour une session ouverte, l'absence de
+/// repère `banner` était donc un proxy fidèle. La coquille publique de T-V3-13
+/// pose cet en-tête pour tout le monde — et elle le doit, c'est lui qui porte la
+/// navigation et l'accès à la connexion. Le proxy est devenu faux sans que
+/// l'intention change (règle du test rouge, cas 3).
+///
+/// L'intention est donc nommée ici plutôt que réécrite trois fois : est
+/// considéré comme connecté un visiteur à qui l'en-tête propose de se
+/// déconnecter, et à qui il ne propose plus de se connecter.
+///
+/// Assertions `toHaveCount` et non un `count()` comparé après coup : les
+/// premières réessaient jusqu'au délai imparti, la seconde photographie le DOM
+/// une fois et produit un test instable au premier rendu différé.
+async function verifierEtatSession(page: Page, connecte: boolean) {
+  const enTete = page.getByRole("banner");
+
+  await expect(
+    enTete.getByRole("button", { name: "Se déconnecter" }),
+  ).toHaveCount(connecte ? 1 : 0);
+  await expect(enTete.getByRole("link", { name: "Connexion" })).toHaveCount(
+    connecte ? 0 : 1,
+  );
+}
 
 /// Ajout de l'agent testeur. `logout-button.tsx:8-13` affirme que le
 /// `<form action={…}>` « part en POST que React ait hydraté ou non », et en fait
