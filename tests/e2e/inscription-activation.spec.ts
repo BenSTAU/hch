@@ -41,13 +41,36 @@ function hash(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+/// Le repère d'alerte de la PAGE, et non celui du framework.
+///
+/// Next injecte dans chaque document un annonceur de route
+/// `<div role="alert" aria-live="assertive" id="__next-route-announcer__">`, vide
+/// mais bien présent : `page.getByRole("alert")` en résout donc toujours **deux**
+/// et le mode strict échoue, quel que soit le contenu. Il vit hors de `<main>`,
+/// d'où le cadrage.
+///
+/// Constaté en rejouant la barrière, pas en relisant le fichier : le second
+/// élément ne vient pas de notre balisage. Les tests unitaires sous RTL ne le
+/// voient pas non plus — ils rendent le composant, pas le document Next.
+function alerte(page: import("@playwright/test").Page) {
+  return page.getByRole("main").getByRole("alert");
+}
+
 async function inscrire(
   page: import("@playwright/test").Page,
   email: string,
 ): Promise<void> {
   await page.goto("/inscription");
   await page.getByLabel("Prénom").fill("Camille");
-  await page.getByLabel("Nom").fill("Durand");
+  // `exact` obligatoire : `getByLabel` compare en SOUS-CHAÎNE insensible à la
+  // casse, et « nom » est contenu dans « Prénom ». Sans lui, deux champs
+  // matchent et le mode strict de Playwright échoue — 9 tests sur 19 en CI sur
+  // la barrière de la PR #17. Le champ « Mot de passe » portait déjà la même
+  // précaution, pour la même raison face à « Confirmer le mot de passe ».
+  //
+  // Le piège est silencieux tant que le formulaire n'a qu'un seul libellé
+  // englobant : tout champ ajouté ici doit être vérifié contre ses voisins.
+  await page.getByLabel("Nom", { exact: true }).fill("Durand");
   await page.getByLabel("Adresse email").fill(email);
   await page.getByLabel("Mot de passe", { exact: true }).fill(MOT_DE_PASSE);
   await page.getByLabel("Confirmer le mot de passe").fill(MOT_DE_PASSE);
@@ -133,7 +156,7 @@ test.describe("inscription", () => {
 
     // Le message est celui des quatre causes de refus, à l'identique : le
     // distinguer rouvrirait l'énumération que T-J0-04 a fermée.
-    await expect(page.getByRole("alert")).toContainText(
+    await expect(alerte(page)).toContainText(
       /Identifiants invalides ou compte non activé/i,
     );
   });
@@ -234,7 +257,7 @@ test.describe("activation", () => {
     await page.goto(`/activation?token=${token}`);
     await page.getByRole("button", { name: "Activer mon compte" }).click();
 
-    await expect(page.getByRole("alert")).toContainText(/déjà activé/i);
+    await expect(alerte(page)).toContainText(/déjà activé/i);
   });
 
   test("un jeton expiré propose un renvoi", async ({ page }) => {
@@ -246,7 +269,7 @@ test.describe("activation", () => {
     await page.goto(`/activation?token=${token}`);
     await page.getByRole("button", { name: "Activer mon compte" }).click();
 
-    await expect(page.getByRole("alert")).toContainText(/expiré/i);
+    await expect(alerte(page)).toContainText(/expiré/i);
     await expect(page.getByRole("button", { name: /Renvoyer/i })).toBeVisible();
   });
 
@@ -256,7 +279,7 @@ test.describe("activation", () => {
     );
     await page.getByRole("button", { name: "Activer mon compte" }).click();
 
-    await expect(page.getByRole("alert")).toContainText(/invalide/i);
+    await expect(alerte(page)).toContainText(/invalide/i);
     // Pas de formulaire de renvoi ici : il inviterait à essayer des adresses.
     await expect(page.getByRole("button", { name: /Renvoyer/i })).toHaveCount(
       0,
