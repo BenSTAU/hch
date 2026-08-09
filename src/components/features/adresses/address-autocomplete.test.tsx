@@ -18,11 +18,13 @@ import { AddressAutocomplete } from "./address-autocomplete";
 
 function poser(onSelectionner = vi.fn()) {
   const utilisateur = userEvent.setup();
-  render(<AddressAutocomplete onSelectionner={onSelectionner} />);
+  const { container } = render(
+    <AddressAutocomplete onSelectionner={onSelectionner} />,
+  );
   const champ = screen.getByRole("combobox", {
     name: /adresse d'intervention/i,
   });
-  return { utilisateur, champ, onSelectionner };
+  return { utilisateur, champ, container, onSelectionner };
 }
 
 describe("AddressAutocomplete", () => {
@@ -141,13 +143,23 @@ describe("AddressAutocomplete", () => {
   });
 
   it("ne présente aucune violation axe, liste ouverte", async () => {
-    const { utilisateur, champ } = poser();
+    // L'audit porte sur le container du composant qu'on vient d'ouvrir. Un
+    // second `render()` produirait un composant neuf, liste fermée, sans
+    // aucune option dans l'arbre — l'audit serait vert sans rien auditer de ce
+    // que ce test promet : les options, `aria-activedescendant`,
+    // `aria-selected`.
+    const { utilisateur, champ, container } = poser();
     await utilisateur.type(champ, "12 rue de la bicyclette");
     await screen.findByRole("option");
 
-    const { container } = render(
-      <AddressAutocomplete onSelectionner={vi.fn()} />,
-    );
+    // Garde anti-régression : elle atteste que l'arbre soumis à axe contient
+    // bien les options. Sans elle, le test redeviendrait vert en n'auditant
+    // rien le jour où le container cesse de les porter — le défaut d'origine
+    // ne se voyait pas autrement.
+    expect(
+      container.querySelectorAll('[role="option"]').length,
+    ).toBeGreaterThan(0);
+
     expect(await axe(container)).toHaveNoViolations();
   });
 
