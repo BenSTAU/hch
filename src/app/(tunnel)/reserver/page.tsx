@@ -3,6 +3,7 @@ import { NuqsAdapter } from "nuqs/adapters/next/app";
 
 import { getOptionalUser } from "@/lib/auth/dal";
 import { listForfaitsPublics } from "@/lib/db/queries/forfaits";
+import { listProduitsVendables } from "@/lib/db/queries/produits";
 
 import { QueryProvider } from "./_components/query-provider";
 import { TunnelReservation } from "./_components/tunnel-reservation";
@@ -29,8 +30,13 @@ export default async function ReserverPage() {
   // Indépendantes, donc en parallèle et jamais en cascade.
   // `listForfaitsPublics` est enveloppée dans `cache()`, le layout l'a déjà
   // appelée dans ce rendu.
-  const [forfaits, utilisateur] = await Promise.all([
+  const [forfaits, produits, utilisateur] = await Promise.all([
     listForfaitsPublics(),
+    // Le catalogue additionnel est lu ICI et non à l'étape panier : le
+    // récapitulatif est rendu par un composant client, qui ne peut pas
+    // interroger la base (Constitution §2.6 - c'est un seul acte, donc un seul
+    // chargement).
+    listProduitsVendables(),
     // Renseigne sans rediriger : le tunnel ne doit pas exiger de session.
     getOptionalUser(),
   ]);
@@ -40,6 +46,7 @@ export default async function ReserverPage() {
       <QueryProvider>
         <TunnelReservation
           forfaits={forfaits}
+          produits={produits}
           estConnecte={utilisateur !== null}
         />
       </QueryProvider>

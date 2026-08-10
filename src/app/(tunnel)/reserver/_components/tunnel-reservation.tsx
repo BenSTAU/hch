@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { verifierAdresse } from "@/lib/actions/adresses/verifier-adresse";
 import { reserver } from "@/lib/actions/interventions/reserver";
 import type { ForfaitPublic } from "@/lib/db/queries/forfaits";
+import type { LignePanier, ProduitVendable } from "@/lib/db/queries/produits";
 import { formatPrixEuros } from "@/lib/format";
 import type { SuggestionAdresse } from "@/lib/geo/ban";
 import { cn } from "@/lib/utils";
@@ -26,7 +27,11 @@ import { EtapeForfait } from "./etape-forfait";
 import type { PhotoDeposee } from "./etape-photos";
 import { CONTENEUR, ETAPES, TITRES, type Etape } from "./etapes";
 import { Recapitulatif } from "./recapitulatif";
-import { BOUTON_BARRE, TunnelBarreAction } from "./tunnel-barre-action";
+import {
+  BOUTON_BARRE,
+  LibelleBarre,
+  TunnelBarreAction,
+} from "./tunnel-barre-action";
 import { TunnelStepper } from "./tunnel-stepper";
 
 /// Tunnel de réservation - écrans **C2 à C5**.
@@ -82,20 +87,30 @@ type EtatConserve = {
   zoneId: number | null;
   creneau: CreneauRetenu | null;
   photos: PhotoDeposee[];
+  /// Identifiants et quantités seulement. Les prix se rejoignent à l'affichage
+  /// depuis le catalogue rendu par le serveur, et se figent en base à la vente.
+  panier: LignePanier[];
 };
+
+/// Fonction et non constante partagée : deux tunnels successifs dans le même
+/// onglet ne doivent pas se passer le même tableau.
+function etatVide(): EtatConserve {
+  return {
+    forfaitId: null,
+    adresse: null,
+    zoneId: null,
+    creneau: null,
+    photos: [],
+    panier: [],
+  };
+}
 
 /// Lu à l'initialisation et non dans un effet : un effet qui appelle `setState`
 /// déclenche un rendu en cascade, que le compilateur React refuse.
 ///
 /// Rend l'état vide côté serveur - `sessionStorage` n'y existe pas.
 function lireEtatConserve(): EtatConserve {
-  const vide: EtatConserve = {
-    forfaitId: null,
-    adresse: null,
-    zoneId: null,
-    creneau: null,
-    photos: [],
-  };
+  const vide = etatVide();
   if (typeof window === "undefined") return vide;
 
   try {
@@ -126,9 +141,11 @@ function lireEtatConserve(): EtatConserve {
 
 export function TunnelReservation({
   forfaits,
+  produits,
   estConnecte,
 }: {
   forfaits: ForfaitPublic[];
+  produits: ProduitVendable[];
   estConnecte: boolean;
 }) {
   const [etape, setEtape] = useQueryState(
@@ -150,6 +167,7 @@ export function TunnelReservation({
     conserve.creneau,
   );
   const [photos, setPhotos] = useState<PhotoDeposee[]>(conserve.photos);
+  const [panier, setPanier] = useState<LignePanier[]>(conserve.panier);
 
   /// L'URL fait foi quand elle porte un forfait - c'est elle qui rend le
   /// parcours partageable, et c'est par elle que la landing pré-sélectionne.
@@ -201,17 +219,29 @@ export function TunnelReservation({
       : null;
 
   // Écriture seule : aucun `setState`, donc aucun rendu en cascade.
+  //
+  // ⚠️ **Un tunnel validé n'a plus rien à reprendre**, et c'est ce même chemin
+  // d'écriture qui l'inscrit - pas un gestionnaire de remise à zéro posé
+  // ailleurs. Un gestionnaire s'oublie, une déduction non (mécanique de la note
+  // (3) de PR #30). C'est un oubli de ce genre qui laissait les photos d'une
+  // réservation validée revenir dans la suivante : une photo prise au domicile
+  // d'un client ne doit pas pouvoir se rattacher à une intervention qu'elle ne
+  // concerne pas.
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       window.sessionStorage.setItem(
         CLE_REPRISE,
-        JSON.stringify({ forfaitId, adresse, zoneId, creneau, photos }),
+        JSON.stringify(
+          confirmation
+            ? etatVide()
+            : { forfaitId, adresse, zoneId, creneau, photos, panier },
+        ),
       );
     } catch {
       // Stockage refusé : la reprise ne fonctionnera pas, le tunnel si.
     }
-  }, [forfaitId, adresse, zoneId, creneau, photos]);
+  }, [confirmation, forfaitId, adresse, zoneId, creneau, photos, panier]);
 
   // Tant qu'on n'est pas monté, on rend une attente - jamais un contenu qui
   // dépendrait de l'état conservé. Le serveur et l'hydratation produisent alors
@@ -302,6 +332,7 @@ export function TunnelReservation({
         adresse,
         debut: creneauValide,
         photos: photos.map((photo) => photo.url),
+        panier,
       });
 
       if (resultat?.validationErrors) {
@@ -458,6 +489,9 @@ export function TunnelReservation({
             creneau={creneauValide}
             photos={photos}
             onChangementPhotos={setPhotos}
+            produits={produits}
+            panier={panier}
+            onChangementPanier={setPanier}
             estConnecte={estConnecte}
             enCours={enCours}
             onValider={valider}
@@ -475,7 +509,7 @@ export function TunnelReservation({
             <Button asChild variant="secondary" className={BOUTON_BARRE}>
               <Link href="/">
                 <ArrowLeft aria-hidden="true" className="size-4" />
-                Retour à l&apos;accueil
+                <LibelleBarre court="Accueil" long="Retour à l'accueil" />
               </Link>
             </Button>
           ) : (
@@ -488,9 +522,11 @@ export function TunnelReservation({
               }}
             >
               <ArrowLeft aria-hidden="true" className="size-4" />
-              {etapeAffichee === "adresse"
-                ? "Retour aux forfaits"
-                : "Modifier l'adresse"}
+              {etapeAffichee === "adresse" ? (
+                <LibelleBarre court="Forfaits" long="Retour aux forfaits" />
+              ) : (
+                <LibelleBarre court="Adresse" long="Modifier l'adresse" />
+              )}
             </Button>
           )}
 
@@ -512,11 +548,19 @@ export function TunnelReservation({
               );
             }}
           >
-            {etapeAffichee === "forfait"
-              ? "Continuer"
-              : etapeAffichee === "adresse"
-                ? "Continuer vers les créneaux"
-                : "Continuer vers le récapitulatif"}
+            {etapeAffichee === "forfait" ? (
+              "Continuer"
+            ) : etapeAffichee === "adresse" ? (
+              <LibelleBarre
+                court="Créneaux"
+                long="Continuer vers les créneaux"
+              />
+            ) : (
+              <LibelleBarre
+                court="Récapitulatif"
+                long="Continuer vers le récapitulatif"
+              />
+            )}
             <ArrowRight aria-hidden="true" className="size-4" />
           </Button>
         </TunnelBarreAction>

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ADRESSE, EnveloppeTunnel, FORFAITS } from "@/test/tunnel";
+import { ADRESSE, EnveloppeTunnel, FORFAITS, PRODUITS } from "@/test/tunnel";
 
 const verifierAdresse = vi.fn();
 const reserver = vi.fn();
@@ -48,7 +48,11 @@ function poser(searchParams = "", estConnecte = false) {
   const utilisateur = userEvent.setup();
   const { container } = render(
     <EnveloppeTunnel searchParams={searchParams}>
-      <TunnelReservation forfaits={FORFAITS} estConnecte={estConnecte} />
+      <TunnelReservation
+        forfaits={FORFAITS}
+        produits={PRODUITS}
+        estConnecte={estConnecte}
+      />
     </EnveloppeTunnel>,
   );
   return { container, utilisateur };
@@ -250,15 +254,23 @@ describe("TunnelReservation - fin de parcours", () => {
       zoneId: 1,
       creneau: { debut: CRENEAU, serviceId: 1, zoneId: 1 },
       photos: [PHOTO],
+      panier: [{ productId: 2, quantity: 1 }],
     });
 
     const premiere = render(
       <EnveloppeTunnel searchParams="?etape=recapitulatif&forfait=1">
-        <TunnelReservation forfaits={FORFAITS} estConnecte />
+        <TunnelReservation
+          forfaits={FORFAITS}
+          produits={PRODUITS}
+          estConnecte
+        />
       </EnveloppeTunnel>,
     );
 
     expect(await screen.findByText(PHOTO.nom)).toBeInTheDocument();
+    // Le panier fait partie du même état conservé : il repart avec.
+    expect(screen.getByText("Ajouté")).toBeInTheDocument();
+
     await utilisateur.click(
       screen.getByRole("button", { name: /valider ma réservation/i }),
     );
@@ -271,7 +283,11 @@ describe("TunnelReservation - fin de parcours", () => {
     premiere.unmount();
     render(
       <EnveloppeTunnel searchParams="?etape=recapitulatif&forfait=1">
-        <TunnelReservation forfaits={FORFAITS} estConnecte />
+        <TunnelReservation
+          forfaits={FORFAITS}
+          produits={PRODUITS}
+          estConnecte
+        />
       </EnveloppeTunnel>,
     );
 
@@ -279,6 +295,7 @@ describe("TunnelReservation - fin de parcours", () => {
       await screen.findByRole("heading", { name: /reprenons votre/i }),
     ).toBeInTheDocument();
     expect(screen.queryByText(PHOTO.nom)).toBeNull();
+    expect(screen.queryByText("Ajouté")).toBeNull();
   });
 });
 
