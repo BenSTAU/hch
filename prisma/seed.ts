@@ -223,6 +223,68 @@ const APP_SETTINGS = [
     valueType: "string",
     description: "Numéro SIRET, mentionné sur les factures",
   },
+
+  // Horaires d'ouverture — les sept jours, un par clé.
+  //
+  // C'est le terme gauche de `planning(tech) × durée(forfait) − créneaux
+  // occupés` (Constitution §2.1), qu'aucun artefact ne définissait avant
+  // l'arbitrage du 2026-08-09. Trois conséquences à connaître :
+  //
+  //   · format `HH:MM-HH:MM`, **valeur vide = fermé ce jour-là** ;
+  //   · heure LOCALE (Europe/Paris), convertie en UTC à la dérivation — la
+  //     base est en UTC (PLAN S2 T5) et l'entreprise opère en France ;
+  //   · **il n'existe pas d'horaire par technicien en v1.** « Planning
+  //     technicien » se lit : horaires de la société moins les créneaux déjà
+  //     pris par ce technicien. Une table `zone_business_hours` par zone a été
+  //     écartée — une seule zone, un seul technicien seedé, et elle exigerait
+  //     un CRUD d'administration que la V1 devrait porter.
+  //
+  // Les valeurs ci-dessous sont de la donnée de démonstration, modifiables par
+  // la CRUD `app_settings` livrée en T-J0-05.
+  {
+    key: "business_hours.monday",
+    value: "08:00-18:00",
+    valueType: "string",
+    description: "Horaires d'intervention du lundi — vide si fermé",
+  },
+  {
+    key: "business_hours.tuesday",
+    value: "08:00-18:00",
+    valueType: "string",
+    description: "Horaires d'intervention du mardi — vide si fermé",
+  },
+  {
+    key: "business_hours.wednesday",
+    value: "08:00-18:00",
+    valueType: "string",
+    description: "Horaires d'intervention du mercredi — vide si fermé",
+  },
+  {
+    key: "business_hours.thursday",
+    value: "08:00-18:00",
+    valueType: "string",
+    description: "Horaires d'intervention du jeudi — vide si fermé",
+  },
+  {
+    key: "business_hours.friday",
+    value: "08:00-18:00",
+    valueType: "string",
+    description: "Horaires d'intervention du vendredi — vide si fermé",
+  },
+  {
+    key: "business_hours.saturday",
+    value: "09:00-13:00",
+    valueType: "string",
+    description: "Horaires d'intervention du samedi — vide si fermé",
+  },
+  {
+    key: "business_hours.sunday",
+    // Fermé. La chaîne vide est la valeur, pas une clé manquante : une clé
+    // absente ne se modifie pas depuis l'écran d'administration.
+    value: "",
+    valueType: "string",
+    description: "Horaires d'intervention du dimanche — vide si fermé",
+  },
 ] as const;
 
 async function main() {

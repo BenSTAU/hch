@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Eye, EyeOff } from "lucide-react";
 import { useActionState, useEffect, useRef, useState } from "react";
 
@@ -8,6 +7,7 @@ import {
   signupFormAction,
   type SignupFormState,
 } from "@/lib/actions/auth/signup";
+import { GdprNotice } from "@/components/features/auth/gdpr-notice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -289,26 +289,10 @@ export function SignupForm() {
         {isPending ? "Création…" : "Créer mon compte"}
       </Button>
 
-      {/* Mention RGPD au point de collecte — article 13, prescrite mot pour mot
-          par PLAN S4 §4.3.
-
-          Elle REMPLACE la case « J'accepte les CGV » de la maquette C6, qui
-          n'apparaît dans aucun critère d'acceptation de `US-COMPTE-CREER` : une
-          case de consentement obligatoire est une exigence fonctionnelle, et
-          elle ne s'invente pas au portage. Divergence déclarée dans le body de
-          PR. */}
-      <p className="text-xs text-muted-foreground">
-        Vos données personnelles sont collectées pour créer et gérer votre
-        compte HomeCycl&apos;Home. Vous disposez de droits d&apos;accès, de
-        rectification et d&apos;effacement — voir la{" "}
-        <Link
-          href="/politique-confidentialite"
-          className="underline underline-offset-4"
-        >
-          politique de confidentialité
-        </Link>
-        .
-      </p>
+      {/* Mention RGPD au point de collecte — article 13, PLAN S4 §4.3. Le
+          rationale complet, dont le remplacement de la case « J'accepte les
+          CGV », vit dans le composant. */}
+      <GdprNotice finalite="créer et gérer votre compte HomeCycl'Home" />
     </form>
   );
 }

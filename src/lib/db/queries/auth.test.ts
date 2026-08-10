@@ -200,11 +200,26 @@ describe("createLocalAccount", () => {
         email: "camille@example.test",
         firstname: "Camille",
         lastname: "Durand",
+        // `null` et non l'absence de clé : le téléphone est facultatif, et
+        // c'est `null` qui laisse la colonne vide. Une chaîne vide ferait
+        // échouer le CHECK `users_phone_e164_format` de la migration 001.
+        phone: null,
         roles: ["ROLE_CLIENT"],
         isActive: false,
       },
       select: { id: true },
     });
+  });
+
+  it("écrit le téléphone quand le parcours en fournit un", async () => {
+    // Seul le bloc « Vos coordonnées » du récapitulatif (C5) le collecte ;
+    // `/inscription` ne le demande pas et n'a pas changé.
+    await createLocalAccount({ ...NOUVEAU, phone: "+33612345678" });
+
+    const [args] = userCreate.mock.calls.at(-1) as [
+      { data: { phone: string | null } },
+    ];
+    expect(args.data.phone).toBe("+33612345678");
   });
 
   it("attache le provider local porteur du hash", async () => {

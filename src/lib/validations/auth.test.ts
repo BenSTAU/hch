@@ -11,6 +11,7 @@ import {
   SIGNUP_ACKNOWLEDGED_MESSAGE,
   activationSchema,
   loginSchema,
+  normaliserTelephoneFr,
   resendActivationSchema,
   signupSchema,
 } from "./auth";
@@ -389,5 +390,72 @@ describe("activationSchema", () => {
     expect(
       activationSchema.safeParse({ token: "a".repeat(5000) }).success,
     ).toBe(false);
+  });
+});
+
+describe("normaliserTelephoneFr", () => {
+  it("passe un numéro national en E.164", () => {
+    // La maquette C5 propose `06 12 34 56 78`. Le CHECK SQL de `users.phone`
+    // n'accepte que l'E.164 : sans normalisation, la saisie de la maquette
+    // ferait échouer l'insertion.
+    expect(normaliserTelephoneFr("06 12 34 56 78")).toBe("+33612345678");
+    expect(normaliserTelephoneFr("06.12.34.56.78")).toBe("+33612345678");
+    expect(normaliserTelephoneFr("(06) 12-34-56-78")).toBe("+33612345678");
+  });
+
+  it("laisse un E.164 déjà correct intact", () => {
+    expect(normaliserTelephoneFr("+33612345678")).toBe("+33612345678");
+    expect(normaliserTelephoneFr("+33 6 12 34 56 78")).toBe("+33612345678");
+  });
+
+  it("traduit le préfixe international composé", () => {
+    expect(normaliserTelephoneFr("0033612345678")).toBe("+33612345678");
+  });
+
+  it("rend undefined sur une saisie vide — le champ est facultatif", () => {
+    // `""` en base ferait échouer le CHECK ; NULL le traverse.
+    expect(normaliserTelephoneFr("")).toBeUndefined();
+    expect(normaliserTelephoneFr("   ".trim())).toBeUndefined();
+  });
+
+  it("ne maquille pas ce qu'il ne reconnaît pas", () => {
+    // Rendu tel quel, donc refusé par le `refine` E.164 en aval. Inventer un
+    // indicatif sur une saisie douteuse produirait un numéro qui appartient à
+    // quelqu'un d'autre.
+    expect(normaliserTelephoneFr("12345")).toBe("12345");
+    expect(normaliserTelephoneFr("0612345")).toBe("0612345");
+  });
+});
+
+describe("signupSchema — téléphone", () => {
+  const BASE = {
+    firstname: "Camille",
+    lastname: "Durand",
+    email: "camille@example.test",
+    password: "un-mot-de-passe-long",
+    passwordConfirmation: "un-mot-de-passe-long",
+  };
+
+  it("reste facultatif — `/inscription` ne le demande pas", () => {
+    expect(signupSchema.safeParse(BASE).success).toBe(true);
+  });
+
+  it("accepte et normalise la saisie de la maquette C5", () => {
+    const resultat = signupSchema.safeParse({
+      ...BASE,
+      phone: "06 12 34 56 78",
+    });
+
+    expect(resultat.success).toBe(true);
+    if (!resultat.success) return;
+    expect(resultat.data.phone).toBe("+33612345678");
+  });
+
+  it("refuse un numéro que le CHECK SQL rejetterait", () => {
+    for (const phone of ["12345", "abc", "+0612345678"]) {
+      expect(signupSchema.safeParse({ ...BASE, phone }).success, phone).toBe(
+        false,
+      );
+    }
   });
 });

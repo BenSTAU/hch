@@ -62,3 +62,13 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# Photos deposees dans le tunnel de reservation (T-V3-08).
+#
+# Ce sont des donnees de CLIENTS, et ce depot bascule public avant le
+# 18 aout 2026. Un `git add -A` sans cette ligne les y embarquerait
+# definitivement — la reecriture d histoire ne retire pas ce qui a ete cloné.
+#
+# Le dossier lui-meme est un bind mount en production (`/opt/hch-<env>/uploads`,
+# PLAN S3 §2) : il n a jamais rien a faire dans Git.
+/uploads

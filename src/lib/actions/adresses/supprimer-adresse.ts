@@ -10,10 +10,12 @@ import { supprimerAdresseSchema } from "@/lib/validations/adresses";
 /// intervention passée doit rester lisible, et casser la clé étrangère est
 /// précisément ce que la Constitution §4.1 interdit.
 ///
-/// La seconde moitié de la règle — **refus** quand une intervention *active* la
-/// référence — est reportée à T-V3-08, qui crée la table `interventions`.
+/// **Refus** quand une intervention encore active la référence : la seconde
+/// moitié de la règle, livrée avec la table `interventions` (migration 008).
 
 const MESSAGE_INTROUVABLE = "Cette adresse n'existe plus.";
+const MESSAGE_INTERVENTION_ACTIVE =
+  "Cette adresse est celle d'une intervention à venir — annulez-la d'abord.";
 
 export const supprimerAdresse = authActionClient
   .inputSchema(supprimerAdresseSchema)
@@ -24,7 +26,12 @@ export const supprimerAdresse = authActionClient
     const resultat = await desactiverAdresse({ adresseId, userId: user.id });
 
     if (!resultat.ok) {
-      return { error: MESSAGE_INTROUVABLE };
+      return {
+        error:
+          resultat.reason === "intervention_active"
+            ? MESSAGE_INTERVENTION_ACTIVE
+            : MESSAGE_INTROUVABLE,
+      };
     }
 
     return { adresseId };
