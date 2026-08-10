@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 const ETAT_INITIAL: LoginFormState = {};
 
 /// `next` vient du rendu serveur, déjà filtré par `safeNextPath` dans
-/// `page.tsx`. Il est renvoyé tel quel à l'action, qui le refiltre — le
+/// `page.tsx`. Il est renvoyé tel quel à l'action, qui le refiltre - le
 /// formulaire n'est pas une frontière de sécurité, il est manipulable.
 export function LoginForm({ next }: { next?: string | undefined }) {
   const emailRef = useRef<HTMLInputElement>(null);
@@ -27,7 +27,7 @@ export function LoginForm({ next }: { next?: string | undefined }) {
   // tout le formulaire pour corriger.
   //
   // Dépendance sur `state` et non sur `state.error` : deux refus consécutifs
-  // portent le même message — c'est voulu, il est unique — et l'effet ne se
+  // portent le même message - c'est voulu, il est unique - et l'effet ne se
   // rejouerait pas. L'objet d'état, lui, est neuf à chaque soumission.
   useEffect(() => {
     if (state.error) emailRef.current?.focus();
@@ -37,7 +37,7 @@ export function LoginForm({ next }: { next?: string | undefined }) {
     // `action={formAction}` et non `onSubmit` : le navigateur poste alors le
     // formulaire même si React n'a pas encore hydraté (progressive
     // enhancement). Un `<form>` sans attribut `action` se soumet NATIVEMENT en
-    // GET pendant cette fenêtre, tous les champs en query string — mot de
+    // GET pendant cette fenêtre, tous les champs en query string - mot de
     // passe compris. Cf. `loginFormAction`.
     <form action={formAction} className="flex flex-col gap-4">
       {/* Seule voie pour `next` qui survive à l'absence de JavaScript : une
@@ -79,7 +79,7 @@ export function LoginForm({ next }: { next?: string | undefined }) {
               mobile, une faute de frappe invisible est le premier motif
               d'échec de connexion.
 
-              `type="button"` explicite — un `<button>` sans type vaut
+              `type="button"` explicite - un `<button>` sans type vaut
               `submit`, et révéler son mot de passe enverrait le formulaire.
               Sans JavaScript il ne fait rien, ce qui est le bon défaut : le
               champ reste masqué. */}
@@ -101,14 +101,14 @@ export function LoginForm({ next }: { next?: string | undefined }) {
       </div>
 
       {/* La maquette pose « Se souvenir de moi » et « Mot de passe oublié ? »
-          côte à côte, écrasés l'un contre l'autre — divergence recensée dans
+          côte à côte, écrasés l'un contre l'autre - divergence recensée dans
           [[maquettage]] §Notes portage §C6. La case n'est pas portée : aucun
           critère d'acceptation ne la prescrit et ADR-005 v2 fixe la session à
           7 jours fermes, elle ne commanderait donc rien.
 
           Le lien, lui, est exigé nommément par US-COMPTE-CONNECTER
           §Accessibilité AA (WCAG 2.4.6) et il est l'unique entrée du parcours
-          de réinitialisation. La page arrive avec T-V3-05 — d'ici là le lien
+          de réinitialisation. La page arrive avec T-V3-05 - d'ici là le lien
           mène à un 404, même précédent que la mention RGPD de T-V3-02. */}
       <div className="flex justify-end">
         <Link
@@ -121,15 +121,15 @@ export function LoginForm({ next }: { next?: string | undefined }) {
 
       {/* « formulaire bloqué en front ET serveur » (§Cas d'erreur). Le serveur
           refuse dans tous les cas ; ceci évite de laisser marteler un bouton
-          qui ne peut plus rien produire pendant un quart d'heure. */}
+          qui ne peut plus rien produire pendant les 10 minutes du verrou. */}
       <Button type="submit" disabled={isPending || state.blocked === true}>
         {isPending ? "Connexion…" : "Se connecter"}
       </Button>
 
-      {/* Sortie de l'écran bloqué — constat E5 de l'agent testeur : le bouton
+      {/* Sortie de l'écran bloqué, constat E5 de l'agent testeur : le bouton
           désactivé était le SEUL déclencheur d'un nouvel état, si bien que le
-          message « réessayez dans quelques minutes » n'avait aucun geste
-          possible derrière lui.
+          message qui invite à réessayer n'avait aucun geste possible derrière
+          lui.
 
           Une balise `<a>` et non `<Link>` : la navigation client de Next ne
           remonte pas ce composant vers la même route, l'état d'action

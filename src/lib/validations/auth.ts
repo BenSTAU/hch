@@ -1,28 +1,34 @@
 import { z } from "zod";
 
-/// Message **volontairement identique** pour les quatre causes de refus —
+/// Message **volontairement identique** pour les quatre causes de refus -
 /// email inconnu, mot de passe faux, compte désactivé, compte jamais activé.
 /// Toute variation rouvrirait l'énumération des comptes (Constitution §4.2,
 /// SPEC §6.1, US-COMPTE-CONNECTER §Cas d'erreur).
 export const LOGIN_REFUSED_MESSAGE =
   "Identifiants invalides ou compte non activé — vérifiez votre email d'activation si vous venez de créer un compte";
 
-/// `US-COMPTE-CONNECTER` §Cas d'erreur, mot pour mot. **Pas de délai chiffré**
-/// dedans : une échéance à la seconde dirait quand la première des cinq
-/// tentatives a eu lieu, donc l'activité d'un tiers sur cette adresse.
+/// `US-COMPTE-CONNECTER` §Cas d'erreur. La durée annoncée est la **constante**
+/// du verrou, pas le délai restant : elle est identique pour tout le monde et
+/// ne date aucune tentative. Une échéance à la seconde, elle, dirait quand le
+/// 5e échec a eu lieu, donc l'activité d'un tiers sur cette adresse.
+///
+/// Le chiffre est là parce que le blocage est **ferme** depuis l'amendement du
+/// 2026-08-09 (SPEC §298-309) : sous l'ancienne fenêtre glissante, aucune durée
+/// n'était vraie, le verrou pouvant être tenu indéfiniment. Écart de forme
+/// assumé avec la lettre de la SPEC, qui garde « quelques minutes ».
 ///
 /// Ce message est distinct du refus générique, et ce n'est pas une fuite : le
 /// compteur vit dans `rate_limits`, table sans clé étrangère qui compte pour
 /// toute chaîne tentée. Il apparaît donc à l'identique sur une adresse qui n'a
 /// aucun compte (PLAN S4 §11.2).
 export const LOGIN_RATE_LIMITED_MESSAGE =
-  "Trop de tentatives — réessayez dans quelques minutes";
+  "Trop de tentatives - réessayez dans 10 minutes";
 
 export const loginSchema = z.object({
   // `users.email` est une VARCHAR sous index unique ordinaire, donc comparée
   // octet par octet par Postgres, et le seed écrit en minuscules : sans
   // `.toLowerCase()`, « Admin@HomeCyclHome.fr » ne trouve aucun compte.
-  // Couvre la lecture seule — cf. TASKS T-J0-04 §Notes write-back PR #5 (5).
+  // Couvre la lecture seule - cf. TASKS T-J0-04 §Notes write-back PR #5 (5).
   email: z
     .string()
     .min(1, "Renseignez votre adresse email")
@@ -42,10 +48,10 @@ export const loginSchema = z.object({
 export type LoginInput = z.infer<typeof loginSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────
-// Inscription et activation — `US-COMPTE-CREER`, `US-COMPTE-ACTIVER`
+// Inscription et activation - `US-COMPTE-CREER`, `US-COMPTE-ACTIVER`
 // ─────────────────────────────────────────────────────────────────────────
 
-/// Message **volontairement unique** pour les trois issues de l'inscription —
+/// Message **volontairement unique** pour les trois issues de l'inscription -
 /// email libre, compte existant non activé, compte existant déjà activé
 /// (US-COMPTE-CREER §Cas d'erreur, Constitution §4.2).
 export const SIGNUP_ACKNOWLEDGED_MESSAGE =
@@ -55,11 +61,11 @@ export const SIGNUP_ACKNOWLEDGED_MESSAGE =
 // décision : l'arbitrage du 2026-08-08 (constat B2 de l'agent testeur T-V3-02)
 // donne la Constitution §4.2 gagnante contre l'échec bruyant côté utilisateur
 // d'ADR-017. Un tel message ne pourrait naître que sur un chemin ayant TENTÉ un
-// envoi, donc jamais sur « compte déjà activé » — il classerait les adresses.
+// envoi, donc jamais sur « compte déjà activé » - il classerait les adresses.
 // Le bruit d'ADR-017 vit désormais dans les logs (`src/lib/email/dispatch.ts`),
 // et le recours côté client est le renvoi d'activation.
 
-/// 12 caractères — `US-COMPTE-CREER` §Contexte, aligné sur ADR-005 v2.
+/// 12 caractères - `US-COMPTE-CREER` §Contexte, aligné sur ADR-005 v2.
 const PASSWORD_MIN_LENGTH = 12;
 
 /// bcrypt tronque **silencieusement** au-delà de 72 octets. Sans cette borne,
@@ -79,13 +85,13 @@ function tientDansBcrypt(valeur: string): boolean {
 }
 
 /// Largeurs alignées sur les colonnes (`prisma/schema.prisma:52-54`). Sans
-/// bornes ici, le refus viendrait de Postgres — donc après le hachage bcrypt et
+/// bornes ici, le refus viendrait de Postgres - donc après le hachage bcrypt et
 /// pendant l'insertion, en 500 au lieu d'un message de formulaire.
 /// Passe un numéro français en E.164, seule forme que le CHECK de
 /// `users.phone` accepte. `06 12 34 56 78` et `+33 6 12 34 56 78` désignent le
 /// même abonné ; les refuser sur la forme serait un obstacle sans objet.
 ///
-/// Rend `undefined` sur une chaîne vide — le champ est facultatif, et écrire
+/// Rend `undefined` sur une chaîne vide - le champ est facultatif, et écrire
 /// `""` en base ferait échouer le CHECK au lieu de laisser NULL.
 export function normaliserTelephoneFr(valeur: string): string | undefined {
   const compact = valeur.replace(/[\s.\-()]/g, "");
@@ -124,7 +130,7 @@ export const signupSchema = z
     ///
     /// Normalisé en E.164 avant validation : `users.phone` porte un CHECK SQL
     /// strict posé en migration 001, et la maquette C5 propose `06 12 34 56 78`
-    /// — un numéro national, que ce CHECK refuserait tel quel.
+    /// - un numéro national, que ce CHECK refuserait tel quel.
     phone: z
       .string()
       .trim()
