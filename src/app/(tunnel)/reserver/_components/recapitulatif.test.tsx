@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import { describe, expect, it, vi } from "vitest";
 
-import { ADRESSE, FORFAITS } from "@/test/tunnel";
+import { ADRESSE, FORFAITS, PRODUITS } from "@/test/tunnel";
 
 vi.mock("@/lib/actions/auth/signup", () => ({
   signupFormAction: vi.fn(),
@@ -22,7 +22,11 @@ const FORFAIT = FORFAITS[2] as (typeof FORFAITS)[number];
 /// du runner.
 const CRENEAU = new Date(2027, 4, 10, 9, 0).toISOString();
 
-function poser(estConnecte: boolean, enCours = false) {
+function poser(
+  estConnecte: boolean,
+  enCours = false,
+  panier: { productId: number; quantity: number }[] = [],
+) {
   const onValider = vi.fn();
   const { container } = render(
     <Recapitulatif
@@ -31,6 +35,9 @@ function poser(estConnecte: boolean, enCours = false) {
       creneau={CRENEAU}
       photos={[]}
       onChangementPhotos={vi.fn()}
+      produits={PRODUITS}
+      panier={panier}
+      onChangementPanier={vi.fn()}
       estConnecte={estConnecte}
       enCours={enCours}
       onValider={onValider}
@@ -65,6 +72,48 @@ describe("Recapitulatif - ce que le visiteur relit", () => {
 
     expect(screen.getByText("Total")).toBeInTheDocument();
     expect(screen.queryByText(/estimé/i)).toBeNull();
+  });
+});
+
+describe("Recapitulatif - le panier entre dans le total", () => {
+  it("ajoute une ligne par produit et somme le tout", () => {
+    // Constitution §2.6 : même panier, même paiement, même facture. La vente
+    // additionnelle n'a pas de total séparé.
+    poser(true, false, [
+      { productId: 2, quantity: 1 },
+      { productId: 1, quantity: 2 },
+    ]);
+
+    // 85,00 forfait + 39,90 antivol + 25,80 (2 × 12,90)
+    expect(screen.getByText(/150,70/)).toBeInTheDocument();
+    expect(screen.getByText("Chambre à air 700×35 x 2")).toBeInTheDocument();
+  });
+
+  it("n'affiche pas de multiplicateur pour une unité", () => {
+    poser(true, false, [{ productId: 2, quantity: 1 }]);
+
+    // Le libellé paraît deux fois - sur la carte du catalogue et sur la ligne
+    // de prix - d'où l'assertion par l'absence du « x 1 », qui n'a aucune
+    // chance d'apparaître ailleurs.
+    expect(screen.queryByText(/antivol en u x/i)).toBeNull();
+    expect(screen.getByText(/124,90/)).toBeInTheDocument();
+  });
+
+  it("laisse le total au forfait seul quand le panier est vide", () => {
+    // Le cas nominal : la très grande majorité des réservations n'a aucun
+    // produit, et le total ne doit pas changer d'un centime pour autant.
+    poser(true);
+
+    expect(screen.getAllByText(/85,00/).length).toBeGreaterThan(0);
+  });
+
+  it("ignore une ligne dont le produit a disparu du catalogue", () => {
+    // Le panier vit en `sessionStorage` et peut survivre à une dépublication.
+    // Une ligne sans produit ne doit ni casser l'écran ni entrer dans le total :
+    // la validation la refusera, nommément.
+    poser(true, false, [{ productId: 9999, quantity: 1 }]);
+
+    expect(screen.getAllByText(/85,00/).length).toBeGreaterThan(0);
   });
 });
 
@@ -170,12 +219,25 @@ describe("Recapitulatif - divergences de portage", () => {
     expect(screen.queryByText(/marc l/i)).toBeNull();
   });
 
-  it("ne montre aucun bloc produits", () => {
-    // `c5:170-244` appartient à T-V3-09. Un bloc « bientôt disponible » sur un
-    // écran de validation est une promesse, pas une maquette.
-    poser(true);
+  it("montre le bloc produits, y compris sans compte", () => {
+    // ⚠️ **Oracle inversé par T-V3-09.** Ce test attendait l'ABSENCE du bloc
+    // `c5:170-244`, ce qui était juste tant que le panier n'était pas livré :
+    // une dalle « bientôt disponible » sur un écran de validation est une
+    // promesse. Le bloc arrive maintenant avec son propriétaire, et l'absence
+    // n'est plus la propriété à tenir.
+    //
+    // Ce qui la remplace est la moitié qui ne va PAS de soi :
+    // `US-INTERVENTION-PRODUIT-AJOUTER-TUNNEL` s'ouvre sur « authentifié ou
+    // non ». Seule la validation exige une session (Constitution §3.2), pas la
+    // composition du panier.
+    poser(false);
 
-    expect(screen.queryByText(/produits additionnels/i)).toBeNull();
+    expect(
+      screen.getByRole("heading", { name: /produits additionnels/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /ajouter.*antivol en u/i }),
+    ).toBeInTheDocument();
   });
 });
 

@@ -1,5 +1,6 @@
 "use server";
 
+import { messageEchecStock } from "@/lib/actions/produits/messages";
 import {
   affecterCreneaux,
   affecterPremierLibre,
@@ -19,12 +20,12 @@ import { trouverZoneCouvrante } from "@/lib/geo/postgis";
 import { authActionClient } from "@/lib/safe-action";
 import { reserverSchema } from "@/lib/validations/interventions";
 
-/// Validation d'une réservation — **le cœur du produit**.
+/// Validation d'une réservation - **le cœur du produit**.
 ///
 /// **La garde d'authentification vit ICI**, dans la Server Action, et non dans
 /// le matcher de `src/proxy.ts` : `/reserver` reste publique, le tunnel
 /// s'explore sans compte. C'est la validation seule qui exige un compte créé,
-/// activé et connecté (Constitution §3.2, alignée le 2026-08-09 — restauration
+/// activé et connecté (Constitution §3.2, alignée le 2026-08-09 - restauration
 /// de la décision B6 Q2 du 2026-07-06).
 ///
 /// Mettre la garde dans le proxy fermerait tout le tunnel ; la mettre dans
@@ -35,8 +36,8 @@ import { reserverSchema } from "@/lib/validations/interventions";
 /// humaine** (Constitution §1.2) : pas de file de leads, pas de rappel.
 
 const MESSAGE_INDISPONIBLE =
-  "Service de géolocalisation temporairement indisponible — réessayez.";
-const MESSAGE_INTROUVABLE = "Adresse introuvable — vérifiez les informations.";
+  "Service de géolocalisation temporairement indisponible - réessayez.";
+const MESSAGE_INTROUVABLE = "Adresse introuvable - vérifiez les informations.";
 const MESSAGE_HORS_ZONE = "Aucun service disponible à cette adresse.";
 const MESSAGE_FORFAIT_INCONNU = "Ce forfait n'est plus proposé.";
 const MESSAGE_CRENEAU_PRIS =
@@ -100,7 +101,7 @@ export const reserver = authActionClient
 
     // La grille est recalculée côté serveur, et le créneau soumis doit s'y
     // trouver. Sans cette vérification, un appel direct à l'action réserverait
-    // un dimanche à 3 h du matin — la Server Action est un endpoint POST
+    // un dimanche à 3 h du matin - la Server Action est un endpoint POST
     // public, l'écran ne protège rien.
     const disponibles = affecterCreneaux(
       deriverCreneaux({
@@ -145,11 +146,27 @@ export const reserver = authActionClient
       appointmentAt: creneau.debut,
       clientId: user.id,
       photos: parsedInput.photos,
+      panier: parsedInput.panier,
     });
+
+    // Un produit du panier est parti pendant la composition. Composer un panier
+    // ne RETIENT rien : aucune source ne promet le contraire, et un stock tenu
+    // pendant une visite abandonnée est un stock invendable.
+    //
+    // Le panier n'est pas corrigé dans le dos du client - il lit ce qui manque
+    // et décide. Note (3) de PR #30 : ne jamais imputer au client un état que
+    // le tunnel a produit seul.
+    if (!resultat.ok && resultat.reason !== "creneau_pris") {
+      return {
+        ok: false as const,
+        message: messageEchecStock(resultat),
+        creneauPerdu: false,
+      };
+    }
 
     // La course perdue face à la contrainte d'exclusion : deux clients ont
     // validé le même créneau à quelques millisecondes d'écart. La base a
-    // arbitré, le tunnel a une réponse à donner — et la grille rafraîchie
+    // arbitré, le tunnel a une réponse à donner - et la grille rafraîchie
     // montre ce qui reste.
     if (!resultat.ok) {
       return {
@@ -173,7 +190,10 @@ export const reserver = authActionClient
           interventionId: resultat.interventionId,
           debut: creneau.debut,
           dureeMinutes: resultat.durationSnapshot,
-          prix: resultat.priceSnapshot,
+          // Le TOTAL, forfait plus produits : la DoD de l'email de confirmation
+          // veut le total figé, et il vaut le forfait seul tant que le panier
+          // est vide.
+          prix: resultat.total,
           adresse: adresse.label,
           forfait: resultat.forfaitLabel,
         }),
@@ -183,6 +203,6 @@ export const reserver = authActionClient
       ok: true as const,
       interventionId: resultat.interventionId,
       debut: creneau.debut.toISOString(),
-      prix: resultat.priceSnapshot,
+      prix: resultat.total,
     };
   });

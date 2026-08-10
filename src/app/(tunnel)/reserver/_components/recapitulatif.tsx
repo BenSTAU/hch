@@ -3,13 +3,20 @@
 import { ArrowRight, CalendarDays, Info, MapPin, Wrench } from "lucide-react";
 
 import type { ForfaitPublic } from "@/lib/db/queries/forfaits";
-import { formatDuree, formatPrixEuros } from "@/lib/format";
+import type { LignePanier, ProduitVendable } from "@/lib/db/queries/produits";
+import {
+  formatDuree,
+  formatPrixEuros,
+  multiplierEuros,
+  sommeEuros,
+} from "@/lib/format";
 import type { SuggestionAdresse } from "@/lib/geo/ban";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
 import { EtapeCoordonnees } from "./etape-coordonnees";
+import { EtapePanier } from "./etape-panier";
 import { EtapePhotos, type PhotoDeposee } from "./etape-photos";
 import { CONTENEUR } from "./etapes";
 
@@ -29,31 +36,33 @@ import { CONTENEUR } from "./etapes";
 ///
 /// ── Ce qui ne se porte pas
 ///
-///  1. **Le bloc « Produits additionnels »** (`c5:170-244`). Il appartient à
-///     T-V3-09, qui garde le panier. Aucune dalle vide n'est laissée en
-///     attente : un bloc « bientôt disponible » sur un écran de validation est
-///     une promesse, pas une maquette.
-///  2. **La case « J'accepte les CGV »** (`c5:340-348`). Page hors périmètre v1,
+///  1. **La case « J'accepte les CGV »** (`c5:340-348`). Page hors périmètre v1,
 ///     la mention RGPD de PLAN S4 §4.3 la remplace - même traitement que C6.
-///  3. **Les moyens de paiement énumérés** (`c5:363-364` : « Espèces, chèque,
+///  2. **Les moyens de paiement énumérés** (`c5:363-364` : « Espèces, chèque,
 ///     CB terminal mobile »). Aucune source : il n'existe ni table `payments`
 ///     ni ligne de SPEC qui les fixe en v1. La dalle garde sa place et dit ce
 ///     qui est établi - l'encaissement se fait sur le terrain
 ///     (Constitution §2.3).
-///  4. **« Dernière étape avant de confier votre vélo à nos experts »**
+///  3. **« Dernière étape avant de confier votre vélo à nos experts »**
 ///     (`c5:164`). Le client ne confie rien : le technicien se déplace
 ///     (Constitution §1.1). Réécrit.
-///  5. **« Vous pourrez créer un compte à l'issue de la réservation »**
+///  4. **« Vous pourrez créer un compte à l'issue de la réservation »**
 ///     (`c5:263`). Le renversement de Constitution §3.2 du 2026-08-09 inverse
 ///     la phrase : le compte activé **précède** la validation.
-///  6. **Le technicien nommé dans le récapitulatif** (`c5:301-310`) :
+///  5. **Le technicien nommé dans le récapitulatif** (`c5:301-310`) :
 ///     l'affectation est décidée par la réservation, pas montrée avant.
+///
+/// Le bloc « Produits additionnels » (`c5:170-244`) arrive avec T-V3-09 et vit
+/// dans `etape-panier.tsx`, qui porte ses propres divergences de portage.
 export function Recapitulatif({
   forfait,
   adresse,
   creneau,
   photos,
   onChangementPhotos,
+  produits,
+  panier,
+  onChangementPanier,
   estConnecte,
   enCours,
   onValider,
@@ -65,12 +74,38 @@ export function Recapitulatif({
   creneau: string;
   photos: PhotoDeposee[];
   onChangementPhotos: (photos: PhotoDeposee[]) => void;
+  produits: readonly ProduitVendable[];
+  panier: readonly LignePanier[];
+  onChangementPanier: (panier: LignePanier[]) => void;
   estConnecte: boolean;
   enCours: boolean;
   onValider: () => void;
   retour: string;
   idTitre: string;
 }) {
+  /// Le panier ne porte que des identifiants ; les libellés et les prix se
+  /// rejoignent ici, à partir du catalogue rendu par le serveur. Un panier qui
+  /// transporterait ses prix laisserait l'écran décider de ce qui sera facturé.
+  const lignes = panier.flatMap((ligne) => {
+    const produit = produits.find((p) => p.id === ligne.productId);
+    if (!produit) return [];
+    return [
+      {
+        id: produit.id,
+        label: produit.label,
+        quantity: ligne.quantity,
+        montant: multiplierEuros(produit.price, ligne.quantity),
+      },
+    ];
+  });
+
+  // Affichage seulement. Le total qui engage est recalculé côté serveur, à
+  // partir des instantanés figés dans la transaction de validation.
+  const total = sommeEuros([
+    forfait.price,
+    ...lignes.map((ligne) => ligne.montant),
+  ]);
+
   return (
     <div className={cn(CONTENEUR, "py-12")}>
       <div className="mb-10">
@@ -87,6 +122,18 @@ export function Recapitulatif({
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         <div className="flex flex-col gap-8 lg:col-span-8">
+          {/* Avant les photos, comme la maquette, et **visible sans compte** :
+              `US-INTERVENTION-PRODUIT-AJOUTER-TUNNEL` s'ouvre sur « authentifié
+              ou non ». C'est la validation qui exige une session, pas la
+              composition du panier (Constitution §3.2). */}
+          <section className="rounded-xl border border-border bg-card p-6">
+            <EtapePanier
+              produits={produits}
+              panier={panier}
+              onChangement={onChangementPanier}
+            />
+          </section>
+
           {estConnecte ? (
             <section className="rounded-xl border border-border bg-card p-6">
               <EtapePhotos photos={photos} onChangement={onChangementPhotos} />
@@ -130,6 +177,23 @@ export function Recapitulatif({
                     {formatPrixEuros(forfait.price)}
                   </span>
                 </div>
+                {/* Une ligne par produit du panier. Constitution §2.6 : même
+                    panier, même paiement, même facture - la vente additionnelle
+                    n'a pas de total séparé. */}
+                {lignes.map((ligne) => (
+                  <div
+                    key={ligne.id}
+                    className="mb-2 flex items-center justify-between gap-2 text-sm"
+                  >
+                    <span className="min-w-0 truncate">
+                      {ligne.label}
+                      {ligne.quantity > 1 ? ` x ${String(ligne.quantity)}` : ""}
+                    </span>
+                    <span className="font-semibold">
+                      {formatPrixEuros(ligne.montant)}
+                    </span>
+                  </div>
+                ))}
                 <div className="mb-4 flex items-center justify-between text-sm text-primary-fixed">
                   <span>Déplacement</span>
                   <span className="font-semibold">Inclus</span>
@@ -142,7 +206,7 @@ export function Recapitulatif({
                     Total
                   </span>
                   <span className="font-heading text-[2rem] leading-[1.2] font-bold tracking-[-0.03em] text-tertiary-fixed">
-                    {formatPrixEuros(forfait.price)}
+                    {formatPrixEuros(total)}
                   </span>
                 </div>
               </div>

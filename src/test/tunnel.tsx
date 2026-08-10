@@ -78,6 +78,37 @@ export const FORFAITS = [
   },
 ];
 
+/// Les trois produits du seed de T-V3-01, dans l'ordre que rend
+/// `listProduitsVendables` (alphabétique). Les identifiants sont ceux de
+/// l'insertion, qui n'est pas le même ordre - un jeu où les deux coïncideraient
+/// masquerait une confusion entre index et identifiant.
+///
+/// `description` est `null` partout : le seed n'en pose aucune, et un jeu qui
+/// en inventerait rendrait vert un rendu que le catalogue réel n'a pas.
+export const PRODUITS = [
+  {
+    id: 2,
+    label: "Antivol en U",
+    description: null,
+    price: "39.90",
+    stock: 15,
+  },
+  {
+    id: 1,
+    label: "Chambre à air 700×35",
+    description: null,
+    price: "12.90",
+    stock: 40,
+  },
+  {
+    id: 3,
+    label: "Paire de patins de frein",
+    description: null,
+    price: "9.90",
+    stock: 60,
+  },
+];
+
 /// Adresse de démonstration, alignée sur `src/mocks/handlers.ts` : la même
 /// donnée sert le mock réseau et les props des tests, pour qu'un changement de
 /// fixture ne laisse pas deux vérités.

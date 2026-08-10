@@ -3,6 +3,7 @@ import { z } from "zod";
 import { MAX_PHOTOS } from "@/lib/photos/stockage";
 
 import { adresseSelectionneeSchema } from "./adresses";
+import { panierSchema } from "./produits";
 
 /// Schémas du domaine `interventions`.
 
@@ -19,7 +20,7 @@ const instantSchema = z
 /// `zoneId` vient du client, et c'est assumé : une grille de créneaux n'est pas
 /// une donnée sensible, et la rafraîchir toutes les 30 secondes en re-géocodant
 /// l'adresse ferait un appel réseau sortant par cycle et par visiteur. Ce qui
-/// doit être infalsifiable, c'est la **réservation** — et `reserverSchema`
+/// doit être infalsifiable, c'est la **réservation** - et `reserverSchema`
 /// ci-dessous repart du libellé, pas d'un identifiant de zone.
 export const listerCreneauxSchema = z.object({
   serviceId: z.number().int().positive(),
@@ -35,7 +36,7 @@ export const listerCreneauxSchema = z.object({
 ///
 /// Aucun champ d'identité : le client vient de la SESSION. La validation exige
 /// un compte créé, activé et connecté (Constitution §3.2, alignée le
-/// 2026-08-09) — il n'y a plus d'email de visiteur à transporter.
+/// 2026-08-09) - il n'y a plus d'email de visiteur à transporter.
 export const reserverSchema = z.object({
   serviceId: z.number().int().positive(),
   adresse: adresseSelectionneeSchema,
@@ -53,6 +54,10 @@ export const reserverSchema = z.object({
     )
     .max(MAX_PHOTOS, "Cinq photos au maximum.")
     .default([]),
+  /// Panier composé pendant le tunnel (T=0). Il ne porte que des identifiants
+  /// et des quantités : les prix sont lus en base au moment de la vente, dans
+  /// la transaction de la réservation (Constitution §4.1 et §2.6).
+  panier: panierSchema,
 });
 
 export type ReserverInput = z.infer<typeof reserverSchema>;

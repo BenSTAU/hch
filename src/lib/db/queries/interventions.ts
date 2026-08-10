@@ -4,15 +4,20 @@ import { ROLE_TECH } from "@/lib/auth/permissions";
 import type { TechnicienCharge } from "@/lib/creneaux/derivation";
 import { db } from "@/lib/db/client";
 import { creerAdresse, resoudreCommune } from "@/lib/db/queries/adresses";
+import {
+  vendreProduits,
+  type EchecStock,
+  type LignePanier,
+} from "@/lib/db/queries/produits";
 import type { PointWgs84 } from "@/lib/geo/postgis";
 
-/// Accès aux interventions — helpers métier, pas Server Actions.
+/// Accès aux interventions - helpers métier, pas Server Actions.
 ///
 /// Aucun `revalidatePath`, aucun `redirect` : ils jettent hors contexte Next et
 /// rendraient ces fonctions intestables en isolation.
 
 /// Statuts qui occupent un créneau. Les mêmes que le filtre de la contrainte
-/// `no_double_booking` (migration 010) — et ce n'est pas une coïncidence à
+/// `no_double_booking` (migration 010) - et ce n'est pas une coïncidence à
 /// conserver par vigilance : si les deux listes divergeaient, la grille
 /// proposerait des créneaux que la base refuserait, ou en masquerait de libres.
 export const STATUTS_OCCUPANTS = ["PLANNED", "IN_PROGRESS"] as const;
@@ -80,20 +85,40 @@ export type CreationIntervention =
       ok: true;
       interventionId: number;
       /// Renvoyés pour l'email de confirmation, qui ne doit pas relire la base
-      /// ni recalculer un prix — ce sont les valeurs **figées**, seules à faire
+      /// ni recalculer un prix - ce sont les valeurs **figées**, seules à faire
       /// foi (Constitution §4.1).
       priceSnapshot: string;
       durationSnapshot: number;
+      /// Forfait **plus** les produits vendus. `price_snapshot` porte le forfait
+      /// seul, le total se calcule (`US-INTERVENTION-PRODUIT-AJOUTER-TUNNEL` :
+      /// « total = `price_snapshot` forfait + Σ `unit_price_snapshot` × qté »).
+      total: string;
       /// Libellé du forfait, que la DoD veut dans l'email de confirmation.
       forfaitLabel: string;
     }
-  | { ok: false; reason: "creneau_pris" };
+  | { ok: false; reason: "creneau_pris" }
+  /// Refus de vente. `EchecStock` porte déjà son propre discriminant, on ne lui
+  /// en surajoute pas un second : `reason` reste la seule question à poser.
+  | ({ ok: false } & EchecStock);
+
+/// Sentinelle d'annulation de la transaction de réservation.
+///
+/// Un refus de vente ne peut pas remonter par une valeur de retour : le
+/// callback de `$transaction` qui rend une valeur **commite**. L'intervention
+/// serait créée et le panier perdu, ce qui est exactement l'état que le double
+/// filet cherche à rendre impossible.
+class VenteRefusee extends Error {
+  constructor(readonly echec: EchecStock) {
+    super(echec.reason);
+    this.name = "VenteRefusee";
+  }
+}
 
 /// Nom de la contrainte d'exclusion de la migration 010.
 ///
 /// La détection se fait sur ce nom et non sur un code d'erreur Prisma : Prisma
 /// mappe les violations d'unicité sur `P2002`, mais **pas** les violations
-/// d'exclusion, qui remontent en erreur brute. Le nom, lui, est stable — il est
+/// d'exclusion, qui remontent en erreur brute. Le nom, lui, est stable - il est
 /// écrit dans la migration.
 const CONTRAINTE_DOUBLE_RESERVATION = "no_double_booking";
 
@@ -117,12 +142,17 @@ export async function reserverIntervention(params: {
   /// sont déjà sur le disque, dépouillés de leur EXIF ; ce sont les LIGNES qui
   /// naissent ici.
   photos: readonly string[];
+  /// Panier composé pendant le tunnel. Vendu **dans cette transaction** : le
+  /// stock décrémenté et l'intervention créée partagent le même sort, sinon une
+  /// course perdue sur le créneau laisserait du stock consommé pour un
+  /// rendez-vous qui n'existe pas.
+  panier: readonly LignePanier[];
 }): Promise<CreationIntervention> {
   try {
     return await db.$transaction(async (tx) => {
       // L'adresse naît DANS la transaction de la réservation. Si la contrainte
       // anti-double-réservation rejette l'intervention, elle disparaît avec
-      // elle — sinon chaque course perdue laisserait une adresse orpheline.
+      // elle - sinon chaque course perdue laisserait une adresse orpheline.
       const cityId = await resoudreCommune(
         { postcode: params.adresse.postcode, city: params.adresse.city },
         tx,
@@ -178,7 +208,7 @@ export async function reserverIntervention(params: {
 
       // Après l'intervention, et dans la même transaction : `intervention_id`
       // est NOT NULL, l'ordre inverse est impossible. Une validation qui échoue
-      // ne laisse donc aucune ligne `photos` orpheline — seuls les fichiers
+      // ne laisse donc aucune ligne `photos` orpheline - seuls les fichiers
       // restent sur le disque, ce qui est sans conséquence et sans référence.
       if (params.photos.length > 0) {
         await tx.photo.createMany({
@@ -193,18 +223,35 @@ export async function reserverIntervention(params: {
         });
       }
 
+      // Après l'intervention pour la même raison que les photos :
+      // `intervention_products.intervention_id` est la moitié de la clé
+      // primaire. Le refus de vente sort par un throw, seul moyen d'annuler la
+      // transaction plutôt que de la commiter amputée de son panier.
+      const vente = await vendreProduits(tx, {
+        interventionId: intervention.id,
+        panier: params.panier,
+      });
+      if (!vente.ok) throw new VenteRefusee(vente);
+
       return {
         ok: true as const,
         interventionId: intervention.id,
         priceSnapshot: forfait.price.toFixed(2),
         durationSnapshot: forfait.duration,
+        total: vente.total.plus(forfait.price).toFixed(2),
         forfaitLabel: forfait.label,
       };
     });
   } catch (error) {
+    // Refus métier levé par la vente. Le client peut le corriger seul, en
+    // retirant la ligne ou en baissant sa quantité.
+    if (error instanceof VenteRefusee) {
+      return { ok: false, ...error.echec };
+    }
+
     // La course a été perdue : un autre client a pris le créneau entre
     // l'affichage de la grille et cette insertion. C'est un refus métier, pas
-    // une panne — le laisser remonter afficherait « une erreur est survenue »
+    // une panne - le laisser remonter afficherait « une erreur est survenue »
     // là où le tunnel a une réponse à donner.
     if (String(error).includes(CONTRAINTE_DOUBLE_RESERVATION)) {
       return { ok: false, reason: "creneau_pris" };

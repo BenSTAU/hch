@@ -3,13 +3,13 @@
 // Deux fonctions pures, et un piège qui ne se voit qu'ici.
 //
 // `Intl.NumberFormat('fr-FR')` ne sépare PAS avec une espace ordinaire : U+00A0
-// avant le symbole €, U+202F entre les milliers — et le couple dépend de la
+// avant le symbole €, U+202F entre les milliers - et le couple dépend de la
 // version d'ICU embarquée dans le runtime, qui n'est pas la même chose que la
 // version de Node. Un attendu écrit caractère par caractère passe ici et casse
 // sur une montée de version sans qu'aucun comportement n'ait changé.
 //
 // D'où la forme des assertions : `\s` couvre les deux, et un test dédié vérifie
-// ce qui compte vraiment — que ce n'est jamais une espace sécable, sur laquelle
+// ce qui compte vraiment - que ce n'est jamais une espace sécable, sur laquelle
 // une card étroite du responsive mobile couperait la ligne.
 //
 // La durée, elle, reste en minutes au-delà de l'heure. C'est une décision, pas
@@ -17,7 +17,12 @@
 // et c'est l'unité dont le moteur de créneaux dérive la grille.
 import { describe, expect, it } from "vitest";
 
-import { formatDuree, formatPrixEuros } from "./format";
+import {
+  formatDuree,
+  formatPrixEuros,
+  multiplierEuros,
+  sommeEuros,
+} from "./format";
 
 describe("formatPrixEuros", () => {
   it("rend un DECIMAL(10,2) en euros à la française", () => {
@@ -42,7 +47,7 @@ describe("formatPrixEuros", () => {
 
   it("rend zéro sans le confondre avec une absence de prix", () => {
     // Constitution §5.1 : « un forfait sans prix affiché n'existe pas côté
-    // client ». Un prix de 0 € EST un prix — c'est `null` qui n'en est pas un,
+    // client ». Un prix de 0 € EST un prix - c'est `null` qui n'en est pas un,
     // et la colonne est NOT NULL.
     expect(formatPrixEuros("0.00")).toMatch(/^0,00\s€$/u);
   });
@@ -63,5 +68,39 @@ describe("formatDuree", () => {
 
   it("ne sépare jamais le nombre de l'unité par une espace sécable", () => {
     expect(formatDuree(60)).not.toContain(" min");
+  });
+});
+
+describe("multiplierEuros", () => {
+  it("ne laisse pas le flottant binaire manger un centime", () => {
+    // `Number("12.90") * 3` vaut 38.699999999999996. L'écart est invisible sur
+    // une ligne et cesse de l'être dès qu'on additionne le panier.
+    expect(multiplierEuros("12.90", 3)).toBe("38.70");
+  });
+
+  it("rend zéro pour une quantité nulle", () => {
+    expect(multiplierEuros("39.90", 0)).toBe("0.00");
+  });
+
+  it("garde deux décimales sur un montant rond", () => {
+    // La chaîne repart vers `formatPrixEuros`, qui attend un décimal, et vers
+    // les comparaisons de tests. « 40 » et « 40.00 » ne se relisent pas pareil.
+    expect(multiplierEuros("20.00", 2)).toBe("40.00");
+  });
+});
+
+describe("sommeEuros", () => {
+  it("additionne forfait et lignes de panier sans dérive", () => {
+    expect(sommeEuros(["85.00", "38.70", "9.90"])).toBe("133.60");
+  });
+
+  it("rend zéro sur une liste vide", () => {
+    // Le cas nominal du tunnel : la très grande majorité des réservations n'a
+    // aucun produit.
+    expect(sommeEuros([])).toBe("0.00");
+  });
+
+  it("accumule les centimes isolés sans les perdre", () => {
+    expect(sommeEuros(["0.10", "0.20", "0.30"])).toBe("0.60");
   });
 });

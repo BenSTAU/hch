@@ -1,11 +1,11 @@
 // @vitest-environment node
 //
-// Server Action de validation d'une réservation — le cœur du produit, et la
+// Server Action de validation d'une réservation - le cœur du produit, et la
 // seule surface de T-V3-08 qui n'avait AUCUN test avant ce fichier.
 //
 // Rappel d'ADR-006 v2, porté par `src/lib/safe-action.ts:8-11` : **une Server
 // Action exportée est un endpoint POST public**. Tout ce qui est testé ici est
-// donc appelé sans passer par les quatre écrans du tunnel — c'est exactement ce
+// donc appelé sans passer par les quatre écrans du tunnel - c'est exactement ce
 // que l'écran ne peut pas prouver, et ce que `tests/e2e/gp-02-*.spec.ts`
 // n'atteint pas (il s'arrête après l'autocomplétion, DoD oblige).
 //
@@ -16,7 +16,7 @@
 //
 // Ce qui reste mocké est ce qui exige un PostgreSQL : PostGIS, les deux helpers
 // de `db/queries`, la lecture des horaires. La dérivation de la grille, elle,
-// est RÉELLE — c'est elle l'oracle du « ce créneau n'existe pas ».
+// est RÉELLE - c'est elle l'oracle du « ce créneau n'existe pas ».
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -70,7 +70,7 @@ vi.mock("@/lib/email/dispatch", () => ({
 const { reserver } = await import("./reserver");
 const { BAN_SEARCH_URL } = await import("@/lib/geo/ban");
 
-/// Lundi 13 juillet 2026, 07 h 00 à Lyon — avant l'ouverture, donc la journée
+/// Lundi 13 juillet 2026, 07 h 00 à Lyon - avant l'ouverture, donc la journée
 /// entière est encore offerte et aucune assertion ne dépend de l'heure réelle.
 const MAINTENANT = new Date("2026-07-13T05:00:00Z");
 
@@ -94,7 +94,7 @@ const CLIENT = {
   roles: ["ROLE_CLIENT"],
 };
 
-/// Adresse renvoyée par la BAN — place Bellecour, comme toutes les fixtures.
+/// Adresse renvoyée par la BAN - place Bellecour, comme toutes les fixtures.
 const ADRESSE_BAN = {
   label: "12 Rue de la Bicyclette 69003 Lyon",
   name: "12 Rue de la Bicyclette",
@@ -105,7 +105,7 @@ const ADRESSE_BAN = {
   lat: 45.7578,
 };
 
-/// Charge utile du client. Ses `lon`/`lat` sont ceux que l'écran a affichés —
+/// Charge utile du client. Ses `lon`/`lat` sont ceux que l'écran a affichés -
 /// ils arrivent, ils ne décident de rien.
 function chargeUtile(
   debut: string,
@@ -154,6 +154,9 @@ beforeEach(() => {
     interventionId: 42,
     priceSnapshot: "85.00",
     durationSnapshot: 60,
+    // Panier vide : le total vaut le forfait. `price_snapshot` porte le forfait
+    // SEUL, le total porte forfait + produits (T-V3-09).
+    total: "85.00",
   });
 });
 
@@ -170,7 +173,7 @@ function banNominale() {
   banRepond([entiteBan({ ...ADRESSE_BAN, type: "housenumber" })]);
 }
 
-describe("reserver — la garde de session", () => {
+describe("reserver - la garde de session", () => {
   it("n'atteint jamais le corps de l'action sans session", async () => {
     // `authActionClient` place `getCurrentUser` en MIDDLEWARE, donc AVANT le
     // parsing Zod : un appelant anonyme ne doit même pas apprendre la forme du
@@ -192,11 +195,11 @@ describe("reserver — la garde de session", () => {
   });
 });
 
-describe("reserver — l'adresse ne se croit pas sur parole", () => {
+describe("reserver - l'adresse ne se croit pas sur parole", () => {
   it("écarte les lon/lat de la charge utile au profit du re-géocodage", async () => {
     // DoD T-V3-08 : « un couple lon/lat forgé DANS une zone servie, soumis pour
     // une adresse qui n'y est pas, est refusé ». La propriété était livrée
-    // depuis T-V3-06 et n'était exercée par aucun test — c'est la ligne 350 de
+    // depuis T-V3-06 et n'était exercée par aucun test - c'est la ligne 350 de
     // la tâche.
     banNominale();
 
@@ -309,7 +312,7 @@ describe("reserver — l'adresse ne se croit pas sur parole", () => {
   });
 });
 
-describe("reserver — le forfait", () => {
+describe("reserver - le forfait", () => {
   it("refuse un forfait retiré du catalogue", async () => {
     banNominale();
     serviceFindFirst.mockResolvedValue(null);
@@ -353,7 +356,7 @@ describe("reserver — le forfait", () => {
   });
 });
 
-describe("reserver — le créneau soumis doit exister dans la grille recalculée", () => {
+describe("reserver - le créneau soumis doit exister dans la grille recalculée", () => {
   beforeEach(() => {
     banNominale();
   });
@@ -430,7 +433,7 @@ describe("reserver — le créneau soumis doit exister dans la grille recalculé
 
   it("bascule sur le second technicien quand le premier est pris", async () => {
     // Règle écrite de T-V3-08 : premier LIBRE par ordre d'identifiant. Non
-    // démontrable en démonstration — le seed n'a qu'un technicien.
+    // démontrable en démonstration - le seed n'a qu'un technicien.
     listerTechniciensCharges.mockResolvedValue([
       {
         id: "tech-1",
@@ -453,7 +456,7 @@ describe("reserver — le créneau soumis doit exister dans la grille recalculé
   });
 });
 
-describe("reserver — ce qui vient de la session ne vient jamais de la charge utile", () => {
+describe("reserver - ce qui vient de la session ne vient jamais de la charge utile", () => {
   it("ignore un clientId posté par l'appelant", async () => {
     banNominale();
 
@@ -485,7 +488,7 @@ describe("reserver — ce qui vient de la session ne vient jamais de la charge u
   });
 });
 
-describe("reserver — la course perdue et l'email", () => {
+describe("reserver - la course perdue et l'email", () => {
   beforeEach(() => {
     banNominale();
   });
@@ -514,6 +517,7 @@ describe("reserver — la course perdue et l'email", () => {
       interventionId: 4242,
       priceSnapshot: "85.00",
       durationSnapshot: 60,
+      total: "85.00",
     });
 
     const resultat = await reserver(chargeUtile(CRENEAU_VALIDE));
@@ -533,6 +537,50 @@ describe("reserver — la course perdue et l'email", () => {
     );
   });
 
+  it("confirme le TOTAL, produits compris, et non le seul forfait", async () => {
+    // Le gabarit de l'email veut le « total figé », et `price_snapshot` porte
+    // le forfait seul : envoyer ce dernier annoncerait au client une somme
+    // inférieure à celle que le technicien encaissera sur place.
+    reserverIntervention.mockResolvedValue({
+      ok: true,
+      interventionId: 4243,
+      priceSnapshot: "85.00",
+      durationSnapshot: 60,
+      total: "97.90",
+    });
+
+    const resultat = await reserver(chargeUtile(CRENEAU_VALIDE));
+
+    expect(resultat?.data).toMatchObject({ ok: true, prix: "97.90" });
+    expect(sendReservationEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ prix: "97.90" }),
+    );
+  });
+
+  it("nomme le produit manquant quand le stock est parti pendant la visite", async () => {
+    // Composer un panier ne RETIENT rien. Le refus doit être rattrapable sans
+    // support : le client lit ce qui manque et corrige lui-même.
+    reserverIntervention.mockResolvedValue({
+      ok: false,
+      reason: "stock_insuffisant",
+      label: "Antivol en U",
+      disponible: 2,
+    });
+
+    const resultat = await reserver(chargeUtile(CRENEAU_VALIDE));
+
+    expect(resultat?.data?.ok).toBe(false);
+    if (resultat?.data?.ok === false) {
+      expect(resultat.data.message).toBe(
+        "Stock insuffisant, quantité maximale : 2.",
+      );
+      // Le créneau, lui, n'a pas bougé : renvoyer à la grille ferait refaire un
+      // pas déjà acquis, et imputerait à un tiers un refus qui vient du panier.
+      expect(resultat.data.creneauPerdu).toBe(false);
+    }
+    expect(sendReservationEmail).not.toHaveBeenCalled();
+  });
+
   it("envoie l'email HORS du chemin de réponse", async () => {
     // Le sort de l'aller-retour SMTP ne doit ni retarder la confirmation, ni
     // annuler une réservation que la base a acceptée (`dispatch.ts:5-27`).
@@ -545,7 +593,7 @@ describe("reserver — la course perdue et l'email", () => {
   });
 });
 
-describe("reserver — les photos", () => {
+describe("reserver - les photos", () => {
   beforeEach(() => {
     banNominale();
   });
@@ -564,7 +612,7 @@ describe("reserver — les photos", () => {
   });
 
   it("refuse la sixième photo avant d'atteindre la base", async () => {
-    // Le quota des cinq n'est PAS tenu par le Route Handler d'upload —
+    // Le quota des cinq n'est PAS tenu par le Route Handler d'upload -
     // l'intervention n'existe pas encore à ce moment-là. C'est ici qu'il mord.
     const six = Array.from(
       { length: 6 },

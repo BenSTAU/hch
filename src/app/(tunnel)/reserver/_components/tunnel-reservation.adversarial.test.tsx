@@ -2,7 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ADRESSE, EnveloppeTunnel, FORFAITS } from "@/test/tunnel";
+import { ADRESSE, EnveloppeTunnel, FORFAITS, PRODUITS } from "@/test/tunnel";
 
 const verifierAdresse = vi.fn();
 const reserver = vi.fn();
@@ -53,7 +53,11 @@ function poser(searchParams = "", estConnecte = true) {
   const utilisateur = userEvent.setup();
   render(
     <EnveloppeTunnel searchParams={searchParams}>
-      <TunnelReservation forfaits={FORFAITS} estConnecte={estConnecte} />
+      <TunnelReservation
+        forfaits={FORFAITS}
+        produits={PRODUITS}
+        estConnecte={estConnecte}
+      />
     </EnveloppeTunnel>,
   );
   return { utilisateur };

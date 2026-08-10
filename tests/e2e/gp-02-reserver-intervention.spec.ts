@@ -238,6 +238,10 @@ test("un client activé traverse le tunnel et réserve", async ({ page }) => {
 
     const avant = await db.intervention.count();
     const photosAvant = await db.photo.count();
+    const produit = await db.product.findFirstOrThrow({
+      where: { isActive: true, stock: { gt: 0 } },
+      orderBy: [{ label: "asc" }, { id: "asc" }],
+    });
     const { email } = await creerClientActive(page, db, "gp02");
     await seConnecterClient(page, email);
 
@@ -266,7 +270,17 @@ test("un client activé traverse le tunnel et réserve", async ({ page }) => {
       .getByRole("button", { name: /continuer vers le récapitulatif/i })
       .click();
 
-    // 4. Photo préparatoire, déposée pour de vrai.
+    // 4. Produit additionnel. Constitution §2.6 : service et vente forment un
+    // acte commercial unique, le panier appartient donc au golden path et non à
+    // un scénario à part.
+    await page
+      .getByRole("button", {
+        name: new RegExp(`ajouter.*${produit.label}`, "i"),
+      })
+      .click();
+    await expect(page.getByText("Ajouté")).toBeVisible();
+
+    // 5. Photo préparatoire, déposée pour de vrai.
     //
     // C'est la seule preuve que la chaîne complète tient : `<input type=file>`
     // → `POST /api/upload-intervention-photo` → strip EXIF par `sharp` → chemin
@@ -276,7 +290,7 @@ test("un client activé traverse le tunnel et réserve", async ({ page }) => {
     await page.setInputFiles('input[type="file"]', "tests/fixtures/velo.png");
     await expect(page.getByAltText(/aperçu de velo\.png/i)).toBeVisible();
 
-    // 5. Validation
+    // 6. Validation
     await page.getByRole("button", { name: /valider ma réservation/i }).click();
 
     await expect(
@@ -287,6 +301,44 @@ test("un client activé traverse le tunnel et réserve", async ({ page }) => {
     // la photo réellement rattachée.
     expect(await db.intervention.count()).toBe(avant + 1);
     expect(await db.photo.count()).toBe(photosAvant + 1);
+
+    // Le panier a été vendu DANS la transaction de validation : la ligne
+    // existe, elle porte le prix du catalogue au moment de la vente
+    // (Constitution §4.1), et le stock a bougé d'exactement une unité.
+    const client = await db.user.findFirstOrThrow({ where: { email } });
+    const intervention = await db.intervention.findFirstOrThrow({
+      where: { clientId: client.id },
+      select: { id: true, priceSnapshot: true, serviceId: true },
+    });
+    const ligne = await db.interventionProduct.findUniqueOrThrow({
+      where: {
+        interventionId_productId: {
+          interventionId: intervention.id,
+          productId: produit.id,
+        },
+      },
+    });
+    expect(ligne.quantity).toBe(1);
+    expect(ligne.unitPriceSnapshot.toFixed(2)).toBe(produit.price.toFixed(2));
+
+    const apres = await db.product.findUniqueOrThrow({
+      where: { id: produit.id },
+      select: { stock: true },
+    });
+    expect(apres.stock).toBe(produit.stock - 1);
+
+    // `price_snapshot` porte le FORFAIT SEUL, produit exclu. Le total se
+    // recalcule (« total = price_snapshot forfait + Σ unit_price_snapshot ×
+    // qté »), et c'est ce qui permet au T+n de modifier la commande sans jamais
+    // réécrire un instantané. Le dictionnaire §interventions champ 7 dit
+    // « prix TOTAL figé » et se trompe - écart signalé pour write-back.
+    const forfait = await db.service.findUniqueOrThrow({
+      where: { id: intervention.serviceId },
+      select: { price: true },
+    });
+    expect(intervention.priceSnapshot.toFixed(2)).toBe(
+      forfait.price.toFixed(2),
+    );
   } finally {
     await db.$disconnect();
   }

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ADRESSE, EnveloppeTunnel, FORFAITS } from "@/test/tunnel";
+import { ADRESSE, EnveloppeTunnel, FORFAITS, PRODUITS } from "@/test/tunnel";
 
 const verifierAdresse = vi.fn();
 const reserver = vi.fn();
@@ -28,11 +28,31 @@ const { TunnelReservation } = await import("./tunnel-reservation");
 
 const CRENEAU = new Date(2027, 4, 10, 9, 0).toISOString();
 
+/// Une photo déjà déposée, sous la forme que rend l'endpoint d'upload.
+/// `apercu` vide : l'URL d'objet ne survit pas au document qui l'a créée, et
+/// c'est le nom du fichier qui s'affiche alors dans la vignette.
+const PHOTO = {
+  url: "uploads/11111111-1111-4111-8111-111111111111.webp",
+  apercu: "",
+  nom: "roue-avant.jpg",
+};
+
+/// La clé de conservation est reprise en dur, et c'est assumé : c'est la
+/// frontière que ce test exerce. Un helper exporté depuis le composant pour
+/// l'occasion la rendrait vraie par construction.
+function conserverTunnel(etat: unknown) {
+  window.sessionStorage.setItem("hch:tunnel", JSON.stringify(etat));
+}
+
 function poser(searchParams = "", estConnecte = false) {
   const utilisateur = userEvent.setup();
   const { container } = render(
     <EnveloppeTunnel searchParams={searchParams}>
-      <TunnelReservation forfaits={FORFAITS} estConnecte={estConnecte} />
+      <TunnelReservation
+        forfaits={FORFAITS}
+        produits={PRODUITS}
+        estConnecte={estConnecte}
+      />
     </EnveloppeTunnel>,
   );
   return { container, utilisateur };
@@ -214,6 +234,181 @@ describe("TunnelReservation - validation", () => {
     expect(
       screen.getByRole("heading", { name: /choisissez votre créneau/i }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("TunnelReservation - fin de parcours", () => {
+  it("repart d'un tunnel vide après une réservation validée", async () => {
+    // Constat de Benjamin à la passe visuelle du 2026-08-10 : les photos
+    // déposées survivaient à la validation et revenaient dans la réservation
+    // suivante. Versant RGPD - une photo prise au domicile d'un client ne doit
+    // pas pouvoir se rattacher à une intervention qu'elle ne concerne pas.
+    //
+    // L'état est semé directement dans le stockage plutôt que composé au
+    // clavier : c'est la FRONTIÈRE de conservation qu'on veut exercer, et la
+    // composer à l'écran testerait quatre étapes déjà couvertes ailleurs.
+    const utilisateur = userEvent.setup();
+    conserverTunnel({
+      forfaitId: 1,
+      adresse: ADRESSE,
+      zoneId: 1,
+      creneau: { debut: CRENEAU, serviceId: 1, zoneId: 1 },
+      photos: [PHOTO],
+      panier: [{ productId: 2, quantity: 1 }],
+    });
+
+    const premiere = render(
+      <EnveloppeTunnel searchParams="?etape=recapitulatif&forfait=1">
+        <TunnelReservation
+          forfaits={FORFAITS}
+          produits={PRODUITS}
+          estConnecte
+        />
+      </EnveloppeTunnel>,
+    );
+
+    expect(await screen.findByText(PHOTO.nom)).toBeInTheDocument();
+    // Le panier fait partie du même état conservé : il repart avec.
+    expect(screen.getByText("Ajouté")).toBeInTheDocument();
+
+    await utilisateur.click(
+      screen.getByRole("button", { name: /valider ma réservation/i }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: /est planifiée/i }),
+    ).toBeInTheDocument();
+
+    // Second passage dans le même onglet : la réservation est faite, il ne
+    // reste rien à reprendre.
+    premiere.unmount();
+    render(
+      <EnveloppeTunnel searchParams="?etape=recapitulatif&forfait=1">
+        <TunnelReservation
+          forfaits={FORFAITS}
+          produits={PRODUITS}
+          estConnecte
+        />
+      </EnveloppeTunnel>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: /reprenons votre/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(PHOTO.nom)).toBeNull();
+    expect(screen.queryByText("Ajouté")).toBeNull();
+  });
+
+  it("ne laisse RIEN dans le stockage après une réservation validée", async () => {
+    // ⚠️ Ajouté par l'agent testeur, 2026-08-10. Le test ci-dessus lit l'écran :
+    // il ne distingue pas une remise à zéro complète d'une remise à zéro du
+    // seul créneau, puisque l'écran de reprise paraît dès qu'UN prérequis
+    // manque. Ce qui est exigé par la DoD est plus fort - « un nouveau tunnel
+    // part vide, photos et panier compris » -, et le versant RGPD porte
+    // précisément sur ce qui reste ÉCRIT, pas sur ce qui s'affiche.
+    const utilisateur = userEvent.setup();
+    conserverTunnel({
+      forfaitId: 1,
+      adresse: ADRESSE,
+      zoneId: 1,
+      creneau: { debut: CRENEAU, serviceId: 1, zoneId: 1 },
+      photos: [PHOTO],
+      panier: [{ productId: 2, quantity: 1 }],
+    });
+
+    render(
+      <EnveloppeTunnel searchParams="?etape=recapitulatif&forfait=1">
+        <TunnelReservation
+          forfaits={FORFAITS}
+          produits={PRODUITS}
+          estConnecte
+        />
+      </EnveloppeTunnel>,
+    );
+
+    await utilisateur.click(
+      await screen.findByRole("button", { name: /valider ma réservation/i }),
+    );
+    await screen.findByRole("heading", { name: /est planifiée/i });
+
+    await waitFor(() => {
+      expect(
+        JSON.parse(window.sessionStorage.getItem("hch:tunnel") ?? "null"),
+      ).toEqual({
+        forfaitId: null,
+        adresse: null,
+        zoneId: null,
+        creneau: null,
+        photos: [],
+        panier: [],
+      });
+    });
+  });
+});
+
+describe("TunnelReservation - le panier pendant l'aller-retour d'activation", () => {
+  // ⚠️ Ajouté par l'agent testeur, 2026-08-10. `US-INTERVENTION-PRODUIT-AJOUTER
+  // -TUNNEL` : « le panier survit à l'aller-retour d'activation de compte ».
+  // La suite livrée éprouve la LECTURE de l'état conservé - un panier semé dans
+  // `sessionStorage` reparaît à l'écran - mais jamais son ÉCRITURE : retirer
+  // `panier` de l'objet sérialisé (`tunnel-reservation.tsx:238`) laissait toute
+  // la suite verte, le panier vivant alors en mémoire pour le temps du test.
+  it("écrit dans le stockage un panier composé à l'écran", async () => {
+    const utilisateur = userEvent.setup();
+    conserverTunnel({
+      forfaitId: 1,
+      adresse: ADRESSE,
+      zoneId: 1,
+      creneau: { debut: CRENEAU, serviceId: 1, zoneId: 1 },
+      photos: [],
+      panier: [],
+    });
+
+    const premiere = render(
+      <EnveloppeTunnel searchParams="?etape=recapitulatif&forfait=1">
+        <TunnelReservation
+          forfaits={FORFAITS}
+          produits={PRODUITS}
+          estConnecte
+        />
+      </EnveloppeTunnel>,
+    );
+
+    await utilisateur.click(
+      await screen.findByRole("button", { name: /ajouter.*antivol en u/i }),
+    );
+    await utilisateur.click(
+      screen.getByRole("button", { name: /ajouter une unité de antivol/i }),
+    );
+
+    await waitFor(() => {
+      expect(
+        (
+          JSON.parse(window.sessionStorage.getItem("hch:tunnel") ?? "{}") as {
+            panier?: unknown;
+          }
+        ).panier,
+      ).toEqual([{ productId: 2, quantity: 2 }]);
+    });
+
+    // Le départ vers l'inscription, puis le retour sur `RETOUR_TUNNEL` : même
+    // onglet, même stockage, composant démonté entre les deux.
+    premiere.unmount();
+    render(
+      <EnveloppeTunnel searchParams="?etape=recapitulatif">
+        <TunnelReservation
+          forfaits={FORFAITS}
+          produits={PRODUITS}
+          estConnecte
+        />
+      </EnveloppeTunnel>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: /finalisez votre/i }),
+    ).toBeInTheDocument();
+    // Deux unités, et la ligne de prix qui va avec : 85,00 + 2 x 39,90.
+    expect(screen.getByText("Antivol en U x 2")).toBeInTheDocument();
+    expect(screen.getByText(/164,80/)).toBeInTheDocument();
   });
 });
 
