@@ -16,6 +16,34 @@ import { z } from "zod";
 /// comme sortante, même si elle répond encore aujourd'hui.
 export const BAN_SEARCH_URL = "https://data.geopf.fr/geocodage/search/";
 
+/// Surcharge de l'URL de base, **pour la barrière E2E seulement**.
+///
+/// Motif : `verifierAdresse` et `reserver` re-géocodent **côté serveur**, et
+/// cet appel sortant part du processus Next - `page.route()` de Playwright, qui
+/// intercepte au niveau du contexte navigateur, ne le voit pas. Sans point
+/// d'injection, `GP-02` ne pouvait pas dépasser l'autocomplétion sans taper la
+/// vraie BAN depuis la CI, ce que la DoD interdit.
+///
+/// L'alternative évaluée était `instrumentation.ts` montant MSW côté Node.
+/// Écartée : la barrière tourne contre **l'image de production**
+/// (`docker-compose.test.yml`, profil `e2e`), donc MSW aurait voyagé jusqu'en
+/// staging et en production. C'est l'objection exacte qui avait fait rejeter le
+/// worker MSW navigateur en T-V3-08. Une variable non renseignée, elle, est
+/// inerte : le code de repli est l'URL réelle.
+///
+/// ⚠️ Divergence assumée contre la DoD 265 de T-V3-06, « aucune variable
+/// d'environnement pour ce flux » - qui parlait d'une CLÉ Google, pas d'un
+/// point d'injection de test. Arbitré par Benjamin le 2026-08-10.
+///
+/// Lue à l'appel et jamais au chargement du module : `src/lib/env.ts` en fait
+/// une règle, et ce module est importé par un Client Component - côté
+/// navigateur `process.env` ne porte que les clés `NEXT_PUBLIC_`, la surcharge
+/// y vaut donc toujours `undefined` et l'autocomplétion tape la vraie BAN,
+/// qu'un `page.route()` intercepte très bien.
+function urlRecherche(): string {
+  return process.env["HCH_BAN_BASE_URL"] ?? BAN_SEARCH_URL;
+}
+
 /// Cinq suggestions : au-delà, la liste déroulante dépasse le pli sur mobile et
 /// le choix devient plus coûteux que la saisie.
 const LIMITE_SUGGESTIONS = 5;
@@ -79,6 +107,22 @@ export type SuggestionAdresse = {
 export type ResultatBan<T> =
   { ok: true; data: T } | { ok: false; reason: "indisponible" | "introuvable" };
 
+/// Une entrée de la liste de suggestions.
+///
+/// **Deux natures, et une seule réserve.** Une entité `housenumber` est une
+/// adresse : elle porte un point, elle peut être retenue. Une rue, une place ou
+/// une commune n'en est pas une - le technicien se déplace à un point de
+/// livraison, pas sur une surface (Constitution §2.2, T-V3-06 §DoD). Elle est
+/// tout de même proposée, comme **piste de raffinement** : la choisir relance
+/// la recherche sur son libellé pour que l'utilisateur ajoute son numéro.
+///
+/// C'est l'arbitrage du 2026-08-10 : taper « place Bellecour » ne rendait
+/// aucune suggestion, ce qui se lit comme une panne. Le filtre n'est pas
+/// relâché pour autant - il se déplace de l'affichage vers la sélection.
+export type SuggestionBan =
+  | { precise: true; adresse: SuggestionAdresse }
+  | { precise: false; label: string };
+
 type BanFeature = z.infer<typeof banFeatureSchema>;
 
 function versSuggestion(feature: BanFeature): SuggestionAdresse | null {
@@ -101,11 +145,18 @@ function versSuggestion(feature: BanFeature): SuggestionAdresse | null {
   };
 }
 
+function versSuggestionBan(feature: BanFeature): SuggestionBan {
+  const adresse = versSuggestion(feature);
+  return adresse
+    ? { precise: true, adresse }
+    : { precise: false, label: feature.properties.label };
+}
+
 async function interrogerBan(
   parametres: Record<string, string>,
   signal?: AbortSignal,
-): Promise<ResultatBan<SuggestionAdresse[]>> {
-  const url = new URL(BAN_SEARCH_URL);
+): Promise<ResultatBan<BanFeature[]>> {
+  const url = new URL(urlRecherche());
   for (const [cle, valeur] of Object.entries(parametres)) {
     url.searchParams.set(cle, valeur);
   }
@@ -141,13 +192,7 @@ async function interrogerBan(
   const parsee = banResponseSchema.safeParse(brut);
   if (!parsee.success) return { ok: false, reason: "indisponible" };
 
-  const suggestions = parsee.data.features
-    .map(versSuggestion)
-    .filter(
-      (suggestion): suggestion is SuggestionAdresse => suggestion !== null,
-    );
-
-  return { ok: true, data: suggestions };
+  return { ok: true, data: parsee.data.features };
 }
 
 /// Autocomplétion — appelée **depuis le navigateur** à chaque frappe utile.
@@ -158,8 +203,8 @@ async function interrogerBan(
 export async function rechercherSuggestions(
   requete: string,
   options: { signal?: AbortSignal } = {},
-): Promise<ResultatBan<SuggestionAdresse[]>> {
-  return interrogerBan(
+): Promise<ResultatBan<SuggestionBan[]>> {
+  const resultat = await interrogerBan(
     {
       q: requete,
       autocomplete: "1",
@@ -167,6 +212,10 @@ export async function rechercherSuggestions(
     },
     options.signal,
   );
+
+  if (!resultat.ok) return resultat;
+
+  return { ok: true, data: resultat.data.map(versSuggestionBan) };
 }
 
 /// Géocodage de contrôle — appelé **depuis le serveur** à la soumission.
@@ -190,7 +239,14 @@ export async function geocoderAdresse(
 
   if (!resultat.ok) return resultat;
 
-  const premiere = resultat.data[0];
+  // Le filtre `housenumber` est **rejoué sur la réponse**, et pas seulement
+  // demandé à l'API : le filtrage serveur de la BAN n'est pas contractuel. Ce
+  // rejeu est ce qui rend impossible de faire valider une rue en la faisant
+  // passer par la liste de raffinement.
+  const premiere = resultat.data
+    .map(versSuggestion)
+    .find((suggestion): suggestion is SuggestionAdresse => suggestion !== null);
+
   if (!premiere) return { ok: false, reason: "introuvable" };
 
   return { ok: true, data: premiere };

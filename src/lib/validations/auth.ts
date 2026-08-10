@@ -140,6 +140,12 @@ export const signupSchema = z
         "Téléphone invalide — exemple : 06 12 34 56 78",
       )
       .optional(),
+    /// Destination de retour après activation, posée par le tunnel de
+    /// réservation (C5). **Non validée ici**, même motif qu'à la connexion :
+    /// le schéma dit que c'est du texte, `safeNextPath` dit si c'est une
+    /// destination. La rejeter ferait échouer une inscription par ailleurs
+    /// valide.
+    next: z.string().optional(),
   })
   // `path` explicite : sans lui l'erreur flotte au niveau du formulaire, et
   // aucun champ ne peut la porter par `aria-describedby` (WCAG 3.3.1 AA).
@@ -159,6 +165,10 @@ export const activationSchema = z.object({
     .min(1, "Lien invalide")
     .max(64, "Lien invalide")
     .regex(/^[A-Za-z0-9_-]+$/, "Lien invalide"),
+  /// Destination de retour, voyagée depuis l'inscription au travers du lien
+  /// d'email. Même traitement que partout ailleurs : `safeNextPath` arbitre,
+  /// pas le schéma, sinon un `next` malformé casserait une activation valide.
+  next: z.string().optional(),
 });
 
 export const resendActivationSchema = z.object({

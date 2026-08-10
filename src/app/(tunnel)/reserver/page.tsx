@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 
 import { getOptionalUser } from "@/lib/auth/dal";
@@ -6,7 +7,16 @@ import { listForfaitsPublics } from "@/lib/db/queries/forfaits";
 import { QueryProvider } from "./_components/query-provider";
 import { TunnelReservation } from "./_components/tunnel-reservation";
 
-/// Tunnel de réservation — `US-INTERVENTION-RESERVER`, écrans C2 à C5.
+export const metadata: Metadata = {
+  title: "Réserver une intervention",
+  description:
+    "Choisissez votre forfait, votre adresse et votre créneau. Le technicien se déplace, vous réglez sur place.",
+};
+
+/// Tunnel de réservation - `US-INTERVENTION-RESERVER`, écrans C2 à C5.
+///
+/// Vit sous le groupe `(tunnel)` et non `(marketing)` : les quatre maquettes
+/// remplacent l'en-tête du site par la barre d'étapes, cf. `(tunnel)/layout.tsx`.
 ///
 /// **Route publique**, et c'est structurel : elle vit à la racine et non sous
 /// `/client/`, dont `src/proxy.ts` redirigerait un visiteur anonyme vers

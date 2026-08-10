@@ -122,6 +122,31 @@ describe("activateAccount — cas nominal", () => {
     expect(redirect).toHaveBeenCalledWith(APRES_ACTIVATION);
   });
 
+  it("ramène au tunnel quand l'inscription en venait", async () => {
+    // `US-COMPTE-ACTIVER`, DoD réaffectée de T-V3-02 le 2026-08-10 : le
+    // visiteur qui compose une réservation puis crée son compte doit revenir
+    // là où il était. Activer ne connecte pas - la destination est donc passée
+    // à la page de connexion, qui sait déjà y rediriger ensuite.
+    findEmailVerificationToken.mockResolvedValue(jetonEnBase());
+
+    await activer({ token: JETON, next: "/reserver?etape=recapitulatif" });
+
+    expect(redirect).toHaveBeenCalledWith(
+      `${APRES_ACTIVATION}&next=${encodeURIComponent("/reserver?etape=recapitulatif")}`,
+    );
+  });
+
+  it("jette une destination qui sort du site", async () => {
+    // Le lien vit dans une boîte aux lettres : il survit à la session et se
+    // transfère. Sans cette garde il deviendrait un tremplin de hameçonnage,
+    // avec l'autorité du domaine dans l'URL cliquée.
+    findEmailVerificationToken.mockResolvedValue(jetonEnBase());
+
+    await activer({ token: JETON, next: "//phishing.example/compte" });
+
+    expect(redirect).toHaveBeenCalledWith(APRES_ACTIVATION);
+  });
+
   it("n'ouvre AUCUNE session au passage", async () => {
     // Activer n'est pas se connecter. La SPEC renvoie explicitement vers le
     // formulaire de connexion : un lien d'email qui ouvrirait une session

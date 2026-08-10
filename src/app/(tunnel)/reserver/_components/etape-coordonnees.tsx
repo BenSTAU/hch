@@ -22,9 +22,18 @@ import {
 /// unique, donc un client déjà inscrit qui n'aurait que « Créer mon compte »
 /// se heurterait à un refus sans issue.
 ///
-/// La case « J'accepte les CGV » de la maquette **n'est pas portée** — elle
+/// La case « J'accepte les CGV » de la maquette **n'est pas portée** : elle
 /// suppose une page hors périmètre v1. La mention RGPD la remplace, même
 /// traitement que C6.
+///
+/// ── Géométrie portée (`c5:259-284`)
+///
+///   · dalle du bento de gauche, titre `headline-sm` et sous-titre `body-sm` ;
+///   · formulaire en `grid md:grid-cols-2`, gouttières `gap-x-4 gap-y-6`.
+///
+/// La maquette écrit « Vous pourrez créer un compte à l'issue de la
+/// réservation » (`c5:263`). Le renversement de Constitution §3.2 du
+/// 2026-08-09 inverse la phrase : le compte activé précède la validation.
 
 const ETAT_INITIAL: SignupFormState = {};
 
@@ -36,10 +45,9 @@ export function EtapeCoordonnees({ retour }: { retour: string }) {
   // email ». Ce composant n'a donc pas d'état de réussite à rendre : il ne voit
   // que les refus.
   //
-  // ⚠️ Le retour au tunnel ne traverse PAS l'activation : le lien part par
-  // email et s'ouvre souvent sur un autre appareil, où l'état conservé côté
-  // navigateur n'existe pas. `retour` sert à la seconde branche — la connexion
-  // d'un client déjà inscrit, qui reste dans le même onglet.
+  // `retour` sert aux DEUX branches depuis le 2026-08-10 : la connexion d'un
+  // client déjà inscrit, qui reste dans le même onglet, et l'inscription, dont
+  // la destination voyage maintenant dans le lien d'activation.
   const [state, formAction, isPending] = useActionState(
     signupFormAction,
     ETAT_INITIAL,
@@ -48,15 +56,31 @@ export function EtapeCoordonnees({ retour }: { retour: string }) {
   const erreurs = state.fieldErrors ?? {};
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-semibold">Vos coordonnées</h2>
-        <p className="text-sm text-muted-foreground">
-          Un compte est nécessaire pour confirmer la réservation.
+        <h2 className="font-heading text-xl font-bold tracking-[-0.01em]">
+          Vos coordonnées
+        </h2>
+        <p className="text-sm leading-[1.5] text-muted-foreground">
+          La validation demande un compte activé. Créez-le ici : votre sélection
+          reste en place, et vous revenez au récapitulatif.
         </p>
       </div>
 
-      <form action={formAction} className="flex flex-col gap-4">
+      <form action={formAction} className="flex flex-col gap-6">
+        {/* La destination de retour voyage jusque dans le lien d'activation,
+            puis jusqu'à la page de connexion. C'est ce qui referme la DoD
+            « l'activation ramène au tunnel » d'`US-COMPTE-ACTIVER`, orpheline
+            depuis T-V3-02.
+            ⚠️ Ce qui revient est l'INTENTION, pas la sélection : le lien
+            s'ouvre souvent sur un autre appareil, où `sessionStorage` n'existe
+            pas. Le tunnel affiche alors son écran de reprise, qui dit la
+            limite au lieu de rendre une page blanche.
+            Champ caché plutôt que paramètre d'URL : c'est la seule voie qui
+            survive à l'absence de JavaScript. `safeNextPath` arbitre côté
+            action, comme à la connexion. */}
+        <input type="hidden" name="next" value={retour} />
+
         <p
           role="alert"
           className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive empty:hidden"
@@ -64,7 +88,7 @@ export function EtapeCoordonnees({ retour }: { retour: string }) {
           {state.error ?? ""}
         </p>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-x-4 gap-y-6 md:grid-cols-2">
           <div className="flex flex-col gap-2">
             <Label htmlFor="c5-firstname">Prénom</Label>
             <Input
@@ -124,7 +148,7 @@ export function EtapeCoordonnees({ retour }: { retour: string }) {
             aria-invalid={erreurs.phone ? true : undefined}
           />
           <p id="c5-phone-hint" className="text-sm text-muted-foreground">
-            Facultatif — le technicien s&apos;en sert pour vous prévenir de son
+            Facultatif. Le technicien s&apos;en sert pour vous prévenir de son
             arrivée.
           </p>
           <p className="text-sm text-destructive empty:hidden">
@@ -132,7 +156,7 @@ export function EtapeCoordonnees({ retour }: { retour: string }) {
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-x-4 gap-y-6 md:grid-cols-2">
           <div className="flex flex-col gap-2">
             <Label htmlFor="c5-password">Mot de passe</Label>
             <Input
@@ -166,7 +190,11 @@ export function EtapeCoordonnees({ retour }: { retour: string }) {
           </div>
         </div>
 
-        <Button type="submit" disabled={isPending} className="rounded-xl">
+        <Button
+          type="submit"
+          disabled={isPending}
+          className="h-auto w-full rounded-xl px-6 py-3 text-sm font-semibold tracking-[0.05em]"
+        >
           {isPending ? "Création…" : "Créer mon compte"}
         </Button>
 

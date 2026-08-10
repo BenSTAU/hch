@@ -16,9 +16,19 @@ const SUJET = "Activez votre compte HomeCycl'Home";
 /// littéralement `GET /auth/verify?token=<hash>` (module-1-utilisateurs.md:211) ;
 /// CLAUDE.md §Folder structure impose les routes en français. Écart signalé dans
 /// le body de PR, pas absorbé.
-export function activationUrl(token: string): string {
+/// `next` est la destination de retour, posée par le tunnel de réservation.
+/// Elle voyage **dans le lien**, pas dans un état côté navigateur : le lien
+/// s'ouvre souvent sur un autre appareil que celui où le tunnel a été composé.
+/// Ce qui voyage est l'INTENTION de revenir au tunnel, jamais la sélection
+/// elle-même - celle-là vit en `sessionStorage` et ne traverse pas les
+/// appareils, ce que le tunnel dit à l'écran plutôt que de le masquer.
+///
+/// Le paramètre est déjà passé par `safeNextPath` à l'inscription : ce qui
+/// entre ici est un chemin interne, jamais une URL absolue.
+export function activationUrl(token: string, next?: string): string {
   const base = serverEnv().appUrl.replace(/\/+$/, "");
-  return `${base}/activation?token=${encodeURIComponent(token)}`;
+  const suffixe = next ? `&next=${encodeURIComponent(next)}` : "";
+  return `${base}/activation?token=${encodeURIComponent(token)}${suffixe}`;
 }
 
 /// `firstname` vient d'un formulaire public. Les clients de messagerie modernes
@@ -37,8 +47,9 @@ export async function sendActivationEmail(params: {
   to: string;
   firstname: string;
   token: string;
+  next?: string;
 }): Promise<void> {
-  const lien = activationUrl(params.token);
+  const lien = activationUrl(params.token, params.next);
 
   // Le texte brut n'est pas décoratif : c'est ce que logge le transport no-op, et
   // c'est le repli des clients de messagerie qui refusent le HTML.

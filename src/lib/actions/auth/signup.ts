@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 
+import { safeNextPath } from "@/lib/auth/next-path";
 import { hashPassword } from "@/lib/auth/password";
 import {
   generateVerificationToken,
@@ -40,6 +41,12 @@ export const signup = actionClient
   .action(async ({ parsedInput }) => {
     const { firstname, lastname, email, password, phone } = parsedInput;
 
+    // Destination de retour, arbitrée AVANT de partir dans un email : ce qui
+    // n'est pas un chemin interne ne voyage pas. Même garde qu'à la connexion,
+    // et elle compte davantage ici - le lien part vers une boîte aux lettres,
+    // donc il survit à la session et se transfère.
+    const retour = safeNextPath(parsedInput.next) ?? undefined;
+
     // AVANT toute lecture en base, et sur TOUS les chemins. Le hachage coûte
     // ~21 ms ; un chemin qui l'éviterait répondrait en 0,03 ms et l'existence
     // du compte se lirait au chronomètre. C'est l'écart de 1 300× à 16 000×
@@ -71,7 +78,7 @@ export const signup = actionClient
         });
 
         dispatchEmail(`activation ${email}`, () =>
-          sendActivationEmail({ to: email, firstname, token }),
+          sendActivationEmail({ to: email, firstname, token, next: retour }),
         );
       } catch (error) {
         // Toute autre erreur remonte : une panne de base ne doit pas se déguiser
@@ -106,6 +113,7 @@ export const signup = actionClient
             to: email,
             firstname: compte.firstname,
             token,
+            next: retour,
           }),
         );
       }
@@ -174,6 +182,10 @@ export async function signupFormAction(
     // ne pas envoyer la clé du tout évite de faire dépendre ce contrat d'un
     // détail de normalisation.
     ...(champ("phone") === "" ? {} : { phone: champ("phone") }),
+    // Champ caché posé par le bloc « Vos coordonnées » de C5, absent de
+    // `/inscription`. Il transite par le formulaire, seule voie qui survive à
+    // l'absence de JavaScript.
+    ...(champ("next") === "" ? {} : { next: champ("next") }),
   });
 
   // En cas de succès, `signup` a déjà lancé la redirection par throw : ce point

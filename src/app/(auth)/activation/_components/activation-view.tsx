@@ -75,9 +75,13 @@ const ETATS: Record<
 
 export function ActivationView({
   token,
+  next,
   demandeRenvoi = false,
 }: {
   token?: string | undefined;
+  /// Destination de retour, venue du lien d'email. Transite par un champ
+  /// caché, seule voie qui survive à l'absence de JavaScript.
+  next?: string | undefined;
   /// Arrivée depuis le formulaire de connexion (`/activation?renvoi=1`),
   /// ajoutée en T-V3-03. `US-COMPTE-CONNECTER` §Cas d'erreur veut un point
   /// d'entrée au renvoi sous le formulaire ; sans cet état, la seule façon
@@ -177,6 +181,9 @@ export function ActivationView({
                       JavaScript : une prop de composant ne traverse pas une
                       soumission native. */}
                   <input type="hidden" name="token" value={token} />
+                  {next === undefined ? null : (
+                    <input type="hidden" name="next" value={next} />
+                  )}
                   <Button
                     type="submit"
                     disabled={activationEnCours}

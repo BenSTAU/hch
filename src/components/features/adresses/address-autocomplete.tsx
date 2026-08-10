@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { rechercherSuggestions, type SuggestionAdresse } from "@/lib/geo/ban";
+import {
+  rechercherSuggestions,
+  type SuggestionAdresse,
+  type SuggestionBan,
+} from "@/lib/geo/ban";
 import { cn } from "@/lib/utils";
 
 /// Saisie d'adresse assistée par la BAN.
@@ -17,6 +21,15 @@ import { cn } from "@/lib/utils";
 /// La carte de la maquette C3 **n'est pas portée** : ADR-015 v2 l'a retirée du
 /// parcours client, la liste de suggestions suffit à choisir son adresse et son
 /// retrait sort toute clé Google du tunnel.
+///
+/// **Deux natures d'entrées dans la liste** (arbitrage du 2026-08-10). Une
+/// adresse précise se retient. Une rue, une place ou une commune ne se retient
+/// pas - elle **relance la recherche** sur son libellé, pour que l'utilisateur
+/// ajoute son numéro. Motif : « place Bellecour » ne rendait aucune suggestion,
+/// ce qu'un visiteur lit comme une panne du champ, alors que le refus est
+/// délibéré. Le filtre `housenumber` de T-V3-06 n'est pas relâché, il se
+/// déplace de l'affichage vers la sélection, et le serveur le rejoue de toute
+/// façon au géocodage de contrôle.
 ///
 /// Le motif ARIA est celui du combobox 1.2 (`aria-expanded`,
 /// `aria-activedescendant`, `role="listbox"`). Il est écrit à la main parce que
@@ -41,7 +54,7 @@ type EtatRecherche = "inactif" | "chargement" | "resultats" | "vide" | "erreur";
 type ResultatRecherche = {
   requete: string;
   etat: EtatRecherche;
-  suggestions: SuggestionAdresse[];
+  suggestions: SuggestionBan[];
 };
 
 type AddressAutocompleteProps = {
@@ -71,12 +84,16 @@ export function AddressAutocomplete({
   const [libelleChoisi, setLibelleChoisi] = useState(defaultValue);
   const [ferme, setFerme] = useState(false);
   const [indexActif, setIndexActif] = useState(-1);
+  /// Voie retenue comme piste de raffinement. Sert à deux choses et à rien
+  /// d'autre : replacer le curseur devant la voie, et dire quoi taper.
+  const [piste, setPiste] = useState<string | null>(null);
   const [resultat, setResultat] = useState<ResultatRecherche>({
     requete: "",
     etat: "inactif",
     suggestions: [],
   });
 
+  const champRef = useRef<HTMLInputElement>(null);
   const idChamp = useId();
   const idListe = useId();
   const idStatut = useId();
@@ -136,13 +153,44 @@ export function AddressAutocomplete({
     };
   }, [requete, recherchable]);
 
-  function choisir(suggestion: SuggestionAdresse) {
-    setSaisie(suggestion.label);
-    setLibelleChoisi(suggestion.label);
+  function choisir(suggestion: SuggestionBan) {
+    if (!suggestion.precise) {
+      // Piste de raffinement : on repart en recherche sur ce libellé au lieu de
+      // retenir quoi que ce soit.
+      //
+      // Le numéro s'écrit DEVANT la voie, et c'est ce qui décide de la suite :
+      // vérifié au navigateur contre la vraie BAN, interroger « Place Bellecour
+      // 69002 Lyon » ne rend que la voie, quand « 12 Place Bellecour… » rend
+      // l'adresse. Le curseur est donc replacé au début, et l'aide dit quoi
+      // taper - sans ça la piste est un cul-de-sac élégant.
+      setSaisie(suggestion.label);
+      setLibelleChoisi("");
+      setFerme(false);
+      setIndexActif(-1);
+      setPiste(suggestion.label);
+      onReinitialiser?.();
+      return;
+    }
+
+    setPiste(null);
+
+    setSaisie(suggestion.adresse.label);
+    setLibelleChoisi(suggestion.adresse.label);
     setFerme(true);
     setIndexActif(-1);
-    onSelectionner(suggestion);
+    onSelectionner(suggestion.adresse);
   }
+
+  // Action impérative sur le DOM, pas une synchronisation d'état : on remet le
+  // curseur là où l'utilisateur doit écrire. Aucun `setState` ici, donc aucun
+  // rendu en cascade.
+  useEffect(() => {
+    if (piste === null) return;
+    const champ = champRef.current;
+    if (!champ) return;
+    champ.focus();
+    champ.setSelectionRange(0, 0);
+  }, [piste]);
 
   function auClavier(evenement: React.KeyboardEvent<HTMLInputElement>) {
     if (evenement.key === "Escape") {
@@ -183,6 +231,7 @@ export function AddressAutocomplete({
       <Label htmlFor={idChamp}>{label}</Label>
 
       <Input
+        ref={champRef}
         id={idChamp}
         type="text"
         role="combobox"
@@ -200,6 +249,8 @@ export function AddressAutocomplete({
           // Reprendre la saisie invalide le choix précédent : sans ça, un
           // libellé modifié à la main resterait associé au point d'avant.
           if (libelleChoisi !== "") setLibelleChoisi("");
+          // L'aide au numéro disparaît dès que la saisie reprend : elle a servi.
+          if (piste !== null) setPiste(null);
           onReinitialiser?.();
         }}
         onKeyDown={auClavier}
@@ -221,11 +272,15 @@ export function AddressAutocomplete({
       >
         {etat === "chargement" && "Recherche d'adresses…"}
         {etat === "resultats" &&
-          `${String(suggestions.length)} adresse${suggestions.length > 1 ? "s" : ""} proposée${suggestions.length > 1 ? "s" : ""}.`}
+          piste !== null &&
+          `Ajoutez le numéro devant la voie, par exemple « 1 ${piste} ».`}
+        {etat === "resultats" &&
+          piste === null &&
+          `${String(suggestions.length)} proposition${suggestions.length > 1 ? "s" : ""}. Seule une adresse numérotée peut être retenue.`}
         {etat === "vide" &&
-          "Aucune adresse trouvée — précisez le numéro et la voie."}
+          "Aucune adresse trouvée, précisez le numéro et la voie."}
         {etat === "erreur" &&
-          "Service de géolocalisation temporairement indisponible — réessayez."}
+          "Service de géolocalisation temporairement indisponible, réessayez."}
       </p>
 
       {/* Le conteneur reste dans le DOM même fermé : `aria-controls` doit
@@ -242,29 +297,51 @@ export function AddressAutocomplete({
           ouvert ? "block" : "hidden",
         )}
       >
-        {(ouvert ? suggestions : []).map((suggestion, index) => (
-          <li
-            key={`${suggestion.label}-${String(suggestion.lon)}-${String(suggestion.lat)}`}
-            id={`${idListe}-option-${String(index)}`}
-            role="option"
-            aria-selected={index === indexActif}
-            className={cn(
-              "cursor-pointer px-3 py-2 text-sm",
-              index === indexActif && "bg-accent text-accent-foreground",
-            )}
-            // `onMouseDown` et non `onClick` : le `blur` du champ précède le
-            // clic et refermerait la liste avant que l'option soit choisie.
-            onMouseDown={(evenement) => {
-              evenement.preventDefault();
-              choisir(suggestion);
-            }}
-            onMouseEnter={() => {
-              setIndexActif(index);
-            }}
-          >
-            {suggestion.label}
-          </li>
-        ))}
+        {(ouvert ? suggestions : []).map((suggestion, index) => {
+          const libelle = suggestion.precise
+            ? suggestion.adresse.label
+            : suggestion.label;
+
+          return (
+            <li
+              key={
+                suggestion.precise
+                  ? `${libelle}-${String(suggestion.adresse.lon)}-${String(suggestion.adresse.lat)}`
+                  : `voie-${libelle}`
+              }
+              id={`${idListe}-option-${String(index)}`}
+              role="option"
+              aria-selected={index === indexActif}
+              className={cn(
+                "flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm",
+                index === indexActif && "bg-accent text-accent-foreground",
+              )}
+              // `onMouseDown` et non `onClick` : le `blur` du champ précède le
+              // clic et refermerait la liste avant que l'option soit choisie.
+              onMouseDown={(evenement) => {
+                evenement.preventDefault();
+                choisir(suggestion);
+              }}
+              onMouseEnter={() => {
+                setIndexActif(index);
+              }}
+            >
+              <span
+                className={cn(!suggestion.precise && "text-muted-foreground")}
+              >
+                {libelle}
+              </span>
+              {/* Dans le libellé de l'option, et non à côté : c'est ce que le
+                  lecteur d'écran annonce, et c'est là que se joue la
+                  différence entre une adresse et une piste. */}
+              {suggestion.precise ? null : (
+                <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-xs font-semibold tracking-[0.05em] text-muted-foreground">
+                  Préciser le numéro
+                </span>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

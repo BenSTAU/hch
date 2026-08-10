@@ -7,15 +7,28 @@ import { server } from "@/mocks/node";
 import { BAN_SEARCH_URL, geocoderAdresse, rechercherSuggestions } from "./ban";
 
 describe("rechercherSuggestions", () => {
-  it("ne retient que les adresses précises et écarte les voies", async () => {
+  // ⚠️ **Deux oracles réécrits le 2026-08-10**, règle du test rouge cas 3.
+  // Ils affirmaient que les voies étaient ÉCARTÉES de la liste. L'arbitrage de
+  // Benjamin les y remet, comme pistes de raffinement non retenables : taper
+  // « place Bellecour » ne rendait rien, ce qu'un visiteur lit comme une panne.
+  // La propriété qui compte - une voie ne devient jamais une adresse
+  // d'intervention - est portée par le test suivant et par `geocoderAdresse`.
+  it("propose les voies comme pistes, sans les marquer précises", async () => {
     // Le handler par défaut renvoie une entité `housenumber` et une `street`.
     const resultat = await rechercherSuggestions("12 rue de la bicyclette");
 
     expect(resultat.ok).toBe(true);
     if (!resultat.ok) return;
 
-    expect(resultat.data).toHaveLength(1);
-    expect(resultat.data[0]?.label).toBe(ADRESSE_DEMO.label);
+    expect(resultat.data).toHaveLength(2);
+    expect(resultat.data[0]).toEqual({
+      precise: true,
+      adresse: expect.objectContaining({ label: ADRESSE_DEMO.label }),
+    });
+    expect(resultat.data[1]).toEqual({
+      precise: false,
+      label: "Rue de la Bicyclette 69003 Lyon",
+    });
   });
 
   it("lit les coordonnées GeoJSON dans l'ordre longitude puis latitude", async () => {
@@ -24,11 +37,15 @@ describe("rechercherSuggestions", () => {
     expect(resultat.ok).toBe(true);
     if (!resultat.ok) return;
 
+    const premiere = resultat.data[0];
+    expect(premiere?.precise).toBe(true);
+    if (!premiere?.precise) return;
+
     // L'inversion lon/lat ne lève jamais : elle place l'adresse ailleurs. Sans
     // cette assertion, une permutation passerait toute la suite au vert et se
     // découvrirait au premier refus « hors zone » inexplicable.
-    expect(resultat.data[0]?.lon).toBe(ADRESSE_DEMO.lon);
-    expect(resultat.data[0]?.lat).toBe(ADRESSE_DEMO.lat);
+    expect(premiere.adresse.lon).toBe(ADRESSE_DEMO.lon);
+    expect(premiere.adresse.lat).toBe(ADRESSE_DEMO.lat);
   });
 
   it("transmet la requête et borne les suggestions à cinq", async () => {

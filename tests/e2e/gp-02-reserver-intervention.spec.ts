@@ -1,7 +1,9 @@
 import { PrismaClient } from "@prisma/client";
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
 import { ADRESSE_DEMO, entiteBan } from "../../src/mocks/handlers";
+import { creerClientActive, seConnecterClient } from "../support/compte-client";
 
 /// `GP-02 reserver-intervention` — golden path d'ADR-014 §5.
 ///
@@ -24,6 +26,19 @@ import { ADRESSE_DEMO, entiteBan } from "../../src/mocks/handlers";
 /// appel sortant émis par le processus Next, que `page.route` n'intercepte pas.
 /// Aller plus loin ferait taper la vraie BAN depuis la CI, ce que la DoD
 /// interdit explicitement. Voir le champ Divergences de la PR.
+
+/// Retient un forfait sur l'écran C2.
+///
+/// Le clic porte sur la DALLE, pas sur le bouton radio : celui-ci est
+/// visuellement masqué (`sr-only`, 1 px), et la dalle qui lui sert d'étiquette
+/// intercepte les événements de pointeur - Playwright refuse alors de cliquer
+/// une cible couverte, et il a raison, c'est bien la dalle que l'utilisateur
+/// vise. La sélection se vérifie ensuite sur `aria-checked`, qui est la
+/// propriété qui compte.
+async function choisirForfait(page: Page, nom: RegExp): Promise<void> {
+  await page.locator("label", { hasText: nom }).click();
+  await expect(page.getByRole("radio", { name: nom })).toBeChecked();
+}
 
 const URL_BAN = "https://data.geopf.fr/geocodage/search/**";
 
@@ -61,13 +76,24 @@ test("le tunnel est accessible sans session — la réservation précède l'insc
 
   expect(reponse?.status()).toBe(200);
   await expect(page).toHaveURL(/\/reserver/);
+  // ⚠️ Oracle réécrit le 2026-08-10, règle du test rouge cas 3 : le titre
+  // fonctionnel « Choisir une prestation » posé par T-V3-08 n'était d'aucune
+  // maquette. C'est celui de C2 (`c2:147`) qui s'affiche depuis le portage.
   await expect(
-    page.getByRole("heading", { name: /choisir une prestation/i }),
+    page.getByRole("heading", { name: /quel forfait vous convient/i }),
   ).toBeVisible();
 
-  // L'en-tête propose toujours de se connecter : personne n'a été connecté au
-  // passage.
-  await expect(page.getByRole("link", { name: /connexion/i })).toBeVisible();
+  // ⚠️ Oracle réécrit le 2026-08-10, règle du test rouge cas 3. Il regardait le
+  // lien « Connexion » de l'en-tête du site : le tunnel a désormais sa PROPRE
+  // coquille (groupe `(tunnel)`), sans nav publique, comme les quatre maquettes.
+  // La propriété visée ne change pas - aucune session n'a été ouverte au
+  // passage - et l'oracle qui la porte ne dépend plus de la coquille.
+  await expect(
+    page.getByRole("button", { name: /se déconnecter/i }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: /quitter la réservation/i }),
+  ).toBeVisible();
 });
 
 test("un forfait choisi depuis la landing arrive pré-sélectionné", async ({
@@ -78,8 +104,11 @@ test("un forfait choisi depuis la landing arrive pré-sélectionné", async ({
   // se câble, et ici qu'il se prouve.
   await page.goto("/reserver");
 
-  const premier = page.getByRole("button", { name: /^choisir /i }).first();
-  await premier.click();
+  // ⚠️ Oracle réécrit : les cartes de C2 ne sont plus des boutons « Choisir X »
+  // mais un GROUPE DE BOUTONS RADIO - choix exclusif parmi n, puis « Continuer »
+  // dans la barre basse, comme la maquette. Le pas ne change plus au clic.
+  await choisirForfait(page, /Diagnostic express/);
+  await page.getByRole("button", { name: /^continuer$/i }).click();
 
   // L'étape ET le forfait vivent dans l'URL : le parcours est partageable et
   // survit à un rechargement.
@@ -98,17 +127,21 @@ test("l'autocomplétion ne propose que des adresses précises", async ({
   await mockerBan(page);
   await page.goto("/reserver");
 
-  await page
-    .getByRole("button", { name: /^choisir /i })
-    .first()
-    .click();
+  await choisirForfait(page, /Diagnostic express/);
+  await page.getByRole("button", { name: /^continuer$/i }).click();
 
   const champ = page.getByRole("combobox", { name: /adresse/i });
   await champ.fill("12 rue de la bicyclette");
 
+  // ⚠️ Oracle réécrit le 2026-08-10 : la voie est désormais PROPOSÉE, comme
+  // piste de raffinement, parce que « place Bellecour » ne rendait rien et
+  // qu'un champ muet se lit comme une panne. Elle n'est toujours pas
+  // retenable, et c'est ça que le test doit dire.
   const options = page.getByRole("option");
-  await expect(options).toHaveCount(1);
+  await expect(options).toHaveCount(2);
   await expect(options.first()).toHaveText(ADRESSE_DEMO.label);
+  await expect(options.first()).not.toContainText(/préciser le numéro/i);
+  await expect(options.nth(1)).toContainText(/préciser le numéro/i);
 });
 
 test("une panne du service d'adressage se dit, elle ne se déguise pas", async ({
@@ -121,10 +154,8 @@ test("une panne du service d'adressage se dit, elle ne se déguise pas", async (
   });
 
   await page.goto("/reserver");
-  await page
-    .getByRole("button", { name: /^choisir /i })
-    .first()
-    .click();
+  await choisirForfait(page, /Diagnostic express/);
+  await page.getByRole("button", { name: /^continuer$/i }).click();
 
   await page.getByRole("combobox", { name: /adresse/i }).fill("12 rue de la");
 
@@ -194,4 +225,91 @@ test("le récapitulatif propose de créer un compte au lieu de valider", async (
   await expect(
     page.getByRole("button", { name: /valider ma réservation/i }),
   ).toHaveCount(0);
+});
+
+test("un client activé traverse le tunnel et réserve", async ({ page }) => {
+  // `GP-02` d'ADR-014 §5, dans sa forme complète. Le critère de fin de phase
+  // V3 l'écrit ainsi depuis le renversement de Constitution §3.2 : le compte
+  // activé PRÉCÈDE la validation, la traversée passe donc par inscription,
+  // activation en base et connexion.
+  const db = new PrismaClient();
+  try {
+    await mockerBan(page);
+
+    const avant = await db.intervention.count();
+    const photosAvant = await db.photo.count();
+    const { email } = await creerClientActive(page, db, "gp02");
+    await seConnecterClient(page, email);
+
+    await page.goto("/reserver");
+
+    // 1. Forfait
+    await choisirForfait(page, /Révision complète/);
+    await page.getByRole("button", { name: /^continuer$/i }).click();
+
+    // 2. Adresse
+    await page
+      .getByRole("combobox", { name: /adresse/i })
+      .fill("12 rue de la bicyclette");
+    await page.getByRole("option").first().click();
+    await expect(page.getByText(/adresse dans notre zone/i)).toBeVisible();
+    await page
+      .getByRole("button", { name: /continuer vers les créneaux/i })
+      .click();
+
+    // 3. Créneau. Le premier proposé suffit : ce que le test éprouve est la
+    // traversée, pas la dérivation, qui a ses propres tests.
+    const premierCreneau = page.getByRole("button", { name: /^\d{2}:\d{2}$/ });
+    await expect(premierCreneau.first()).toBeVisible();
+    await premierCreneau.first().click();
+    await page
+      .getByRole("button", { name: /continuer vers le récapitulatif/i })
+      .click();
+
+    // 4. Photo préparatoire, déposée pour de vrai.
+    //
+    // C'est la seule preuve que la chaîne complète tient : `<input type=file>`
+    // → `POST /api/upload-intervention-photo` → strip EXIF par `sharp` → chemin
+    // rendu → ligne `photos` écrite DANS la transaction de validation, après
+    // création de l'intervention (`photos.intervention_id` est NOT NULL).
+    // Le build passe sans rien prouver de tout ça.
+    await page.setInputFiles('input[type="file"]', "tests/fixtures/velo.png");
+    await expect(page.getByAltText(/aperçu de velo\.png/i)).toBeVisible();
+
+    // 5. Validation
+    await page.getByRole("button", { name: /valider ma réservation/i }).click();
+
+    await expect(
+      page.getByRole("heading", { name: /votre intervention est planifiée/i }),
+    ).toBeVisible();
+
+    // Les invariants qui comptent : une intervention de plus, et une seule, et
+    // la photo réellement rattachée.
+    expect(await db.intervention.count()).toBe(avant + 1);
+    expect(await db.photo.count()).toBe(photosAvant + 1);
+  } finally {
+    await db.$disconnect();
+  }
+});
+
+test("le tunnel ne présente aucune violation d'accessibilité", async ({
+  page,
+}) => {
+  // `@axe-core/playwright` complète `jest-axe` : il tourne dans un vrai
+  // navigateur, donc il voit les contrastes que jsdom ne calcule pas.
+  // ⚠️ Il ne couvre ni WCAG 1.4.11 ni 2.4.7 - un vert ici ne referme pas
+  // l'écart de bordure relevé en T-V3-02.
+  await mockerBan(page);
+  await page.goto("/reserver");
+
+  for (const largeur of [1440, 375]) {
+    await page.setViewportSize({ width: largeur, height: 900 });
+    const resultats = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag21a"])
+      .analyze();
+
+    expect(resultats.violations, `violations en ${String(largeur)} px`).toEqual(
+      [],
+    );
+  }
 });
