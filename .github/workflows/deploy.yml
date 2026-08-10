@@ -219,6 +219,13 @@ jobs:
 
             export IMAGE_TAG=${{ github.sha }}
 
+            # Dossier hôte du bind mount ./uploads:/app/uploads. Idempotent, et posé
+            # AVANT tout docker compose : un bind dont la cible manque est créé par le
+            # démon en root:root, et le runtime tourne sous UID 1001 (USER nextjs).
+            # L'UID en dur, pas un nom : l'hôte et le conteneur ne partagent pas leur
+            # base d'utilisateurs. Que deployer porte 1001 est une coïncidence commode.
+            mkdir -p uploads && chown 1001:1001 uploads
+
             # `--env-file .env.prod` sur TOUTES les invocations : `env_file:`
             # injecte dans le conteneur mais ne substitue pas les `${VAR}` du
             # compose. Sans le drapeau, `container_name` vaut la chaîne vide et
@@ -360,6 +367,13 @@ jobs:
             printf '%s' "$PREVIOUS_TAG" > .previous-tag
 
             export IMAGE_TAG=${{ github.sha }}
+
+            # Dossier hôte du bind mount ./uploads:/app/uploads. Idempotent, et posé
+            # AVANT tout docker compose : un bind dont la cible manque est créé par le
+            # démon en root:root, et le runtime tourne sous UID 1001 (USER nextjs).
+            # L'UID en dur, pas un nom : l'hôte et le conteneur ne partagent pas leur
+            # base d'utilisateurs. Que deployer porte 1001 est une coïncidence commode.
+            mkdir -p uploads && chown 1001:1001 uploads
 
             docker compose --env-file .env.prod -f docker-compose.prod.yml pull hch-app
 
