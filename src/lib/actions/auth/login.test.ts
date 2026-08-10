@@ -2,7 +2,7 @@
 //
 // Server Action de connexion. C'est le seul point où les trois couches se
 // rencontrent : validation Zod, authentification, pose de session. Rappel
-// d'ADR-006 v2 repris dans `src/lib/safe-action.ts` — **une Server Action
+// d'ADR-006 v2 repris dans `src/lib/safe-action.ts` - **une Server Action
 // exportée est un endpoint POST public**, donc appelable avec n'importe quelle
 // charge utile, y compris celles qu'aucun formulaire n'enverrait.
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,7 +20,7 @@ vi.mock("@/lib/auth/session", () => ({
 }));
 
 // `redirect()` de Next fonctionne par throw, et next-safe-action ne relance une
-// interruption de framework que si elle porte un `digest` de la bonne forme —
+// interruption de framework que si elle porte un `digest` de la bonne forme -
 // sans quoi elle est absorbée en `serverError`. Le mock reproduit les deux
 // moitiés du contrat : il enregistre la destination ET lève avec un digest
 // conforme. Un mock qui se contenterait d'enregistrer laisserait passer un code
@@ -34,7 +34,7 @@ vi.mock("next/navigation", () => ({
   redirect: (url: string) => redirect(url),
 }));
 
-// Le module de quota reste RÉEL pour ses constantes et sa fonction de clé — ce
+// Le module de quota reste RÉEL pour ses constantes et sa fonction de clé - ce
 // sont elles que l'orchestration doit employer, et les dupliquer ici ferait un
 // second oracle. Seules ses trois fonctions d'accès sont remplacées, et le
 // client Prisma qu'il importe est neutralisé pour que rien ne parte vers le
@@ -44,12 +44,12 @@ vi.mock("@/lib/db/client", () => ({ db: {} }));
 // Le quota vit dans son propre module (`src/lib/rate-limit.ts`, PLAN S4 §11) et
 // il est testé là-bas. Ici, ce qui compte est l'ORCHESTRATION : quand il est
 // lu, quand il est alimenté, et ce que l'action fait de son verdict.
-const peekRateLimit = vi.fn();
+const peekLoginLockout = vi.fn();
 const recordRateLimitAttempt = vi.fn();
 const clearRateLimit = vi.fn();
 vi.mock("@/lib/rate-limit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/rate-limit")>()),
-  peekRateLimit: (...args: unknown[]) => peekRateLimit(...args),
+  peekLoginLockout: (...args: unknown[]) => peekLoginLockout(...args),
   recordRateLimitAttempt: (...args: unknown[]) =>
     recordRateLimitAttempt(...args),
   clearRateLimit: (...args: unknown[]) => clearRateLimit(...args),
@@ -64,7 +64,7 @@ const CREDENTIALS = {
   password: "bon-mot-de-passe",
 };
 
-/// Destination de l'ADMINISTRATEUR depuis T-V3-03 — c'était celle de tout le
+/// Destination de l'ADMINISTRATEUR depuis T-V3-03 - c'était celle de tout le
 /// monde depuis T-J0-05, ce qui déposait un client fraîchement activé sur le
 /// 403 de `requireAdmin()`. Les identifiants de ce fichier portent un compte
 /// `ROLE_ADMIN`, la destination par rôle est couverte plus bas.
@@ -74,10 +74,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   // Quota disponible par défaut : les tests qui ne parlent pas du plafond ne
   // doivent pas dépendre de son état.
-  peekRateLimit.mockResolvedValue({ allowed: true });
+  peekLoginLockout.mockResolvedValue({ allowed: true });
 });
 
-describe("login — refus", () => {
+describe("login - refus", () => {
   it("renvoie le message générique et ne pose aucune session", async () => {
     authenticateWithPassword.mockResolvedValue({ ok: false });
 
@@ -114,7 +114,7 @@ describe("login — refus", () => {
   });
 });
 
-describe("login — succès", () => {
+describe("login - succès", () => {
   it("pose la session avec l'identifiant et les rôles issus de la base", async () => {
     authenticateWithPassword.mockResolvedValue({
       ok: true,
@@ -141,7 +141,7 @@ describe("login — succès", () => {
   });
 });
 
-describe("login — entrées hostiles", () => {
+describe("login - entrées hostiles", () => {
   it("refuse une charge utile sans email ni mot de passe sans toucher à la base", async () => {
     const result = await login({ email: "", password: "" });
 
@@ -188,7 +188,7 @@ describe("login — entrées hostiles", () => {
     );
   });
 
-  it("ignore les champs surnuméraires — les rôles ne se soumettent pas", async () => {
+  it("ignore les champs surnuméraires - les rôles ne se soumettent pas", async () => {
     // Élévation de privilège par affectation de masse : on POSTe des rôles
     // avec les identifiants. Le schéma les écarte, et la session est posée
     // avec les rôles LUS EN BASE.
@@ -328,14 +328,21 @@ describe("destination post-connexion", () => {
   });
 });
 
-describe("login — plafond d'échecs", () => {
-  // 5 échecs / 15 min par email, fenêtre glissante (SPEC §285-287, PLAN S4
-  // §11.1). Reporté de T-J0-04 : le leurre bcrypt ferme la fuite
-  // d'INFORMATION, pas celle de DÉBIT — sans plafond, un attaquant garde le
-  // droit d'essayer sans fin.
+describe("login - plafond d'échecs", () => {
+  // 5 échecs par email, puis 10 minutes de blocage FERME (SPEC §298-300 amendée
+  // le 2026-08-09, PLAN S4 §11.1). Reporté de T-J0-04 : le leurre bcrypt ferme
+  // la fuite d'INFORMATION, pas celle de DÉBIT, et sans plafond un attaquant
+  // garde le droit d'essayer sans fin.
+  //
+  // Les assertions de durée de ce bloc lisaient 15 min tant que la fenêtre
+  // glissait. Leur oracle vient de la SPEC, et la SPEC a été amendée : c'est
+  // l'exception écrite de la règle du test rouge, tracée dans la PR.
 
   it("refuse la 6ᵉ tentative sans même vérifier le mot de passe", async () => {
-    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 120_000 });
+    peekLoginLockout.mockResolvedValue({
+      allowed: false,
+      retryAfterMs: 120_000,
+    });
 
     const result = await login(CREDENTIALS);
 
@@ -347,7 +354,10 @@ describe("login — plafond d'échecs", () => {
   it("signale le blocage au formulaire, pour qu'il puisse fermer la porte", async () => {
     // « bloqué front ET serveur » (SPEC §287). Le serveur refuse ; le drapeau
     // est ce qui permet au formulaire de ne pas laisser marteler le bouton.
-    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 120_000 });
+    peekLoginLockout.mockResolvedValue({
+      allowed: false,
+      retryAfterMs: 120_000,
+    });
 
     const result = await login(CREDENTIALS);
 
@@ -359,17 +369,17 @@ describe("login — plafond d'échecs", () => {
 
     await login({ ...CREDENTIALS, email: "Admin@HomeCyclHome.FR" });
 
-    expect(peekRateLimit).toHaveBeenCalledWith(
+    expect(peekLoginLockout).toHaveBeenCalledWith(
       "login:admin@homecyclhome.fr",
       5,
-      15 * 60 * 1000,
+      10 * 60 * 1000,
     );
   });
 
   it("enregistre une tentative APRÈS un échec, pas avant", async () => {
     // Décompter à l'entrée ferait tomber le plafond sur les connexions
-    // réussies : cinq connexions légitimes dans le quart d'heure — un
-    // technicien qui change d'appareil — bloqueraient le compte.
+    // réussies : cinq connexions légitimes d'affilée, un technicien qui change
+    // d'appareil, et le compte se ferme.
     authenticateWithPassword.mockResolvedValue({ ok: false });
 
     await login(CREDENTIALS);
@@ -380,7 +390,10 @@ describe("login — plafond d'échecs", () => {
   });
 
   it("n'enregistre rien quand la tentative est déjà refusée par le plafond", async () => {
-    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 120_000 });
+    peekLoginLockout.mockResolvedValue({
+      allowed: false,
+      retryAfterMs: 120_000,
+    });
 
     await login(CREDENTIALS);
 
@@ -389,7 +402,8 @@ describe("login — plafond d'échecs", () => {
 
   it("purge le compteur après une connexion réussie", async () => {
     // Quatre erreurs de frappe suivies du bon mot de passe ne doivent pas
-    // laisser quatre tentatives armées pour le quart d'heure suivant.
+    // laisser quatre tentatives armées pour la suite. Le compteur ferme
+    // n'oublie plus au fil du temps : c'est le succès qui l'efface.
     authenticateWithPassword.mockResolvedValue({
       ok: true,
       user: { id: "user-1", roles: ["ROLE_CLIENT"] },
@@ -409,10 +423,10 @@ describe("login — plafond d'échecs", () => {
 
     await login({ email: "personne@example.test", password: "peu-importe" });
 
-    expect(peekRateLimit).toHaveBeenCalledWith(
+    expect(peekLoginLockout).toHaveBeenCalledWith(
       "login:personne@example.test",
       5,
-      15 * 60 * 1000,
+      10 * 60 * 1000,
     );
     expect(recordRateLimitAttempt).toHaveBeenCalledWith(
       "login:personne@example.test",
@@ -420,7 +434,10 @@ describe("login — plafond d'échecs", () => {
   });
 
   it("affiche le même blocage que le compte existe ou non", async () => {
-    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 120_000 });
+    peekLoginLockout.mockResolvedValue({
+      allowed: false,
+      retryAfterMs: 120_000,
+    });
 
     const connu = await login(CREDENTIALS);
     const inconnu = await login({
@@ -432,24 +449,27 @@ describe("login — plafond d'échecs", () => {
   });
 
   it("ne divulgue pas le délai restant dans le message", async () => {
-    // Le message de la SPEC est « réessayez dans quelques minutes ». Un délai
-    // à la seconde dirait quand la première des cinq tentatives a eu lieu,
-    // donc l'activité d'un tiers sur cette adresse.
-    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 421_000 });
+    // Le message porte la durée du verrou, une CONSTANTE identique pour tout le
+    // monde. Le délai restant, lui, ne doit pas traverser : à la seconde près,
+    // il daterait le 5e échec, donc l'activité d'un tiers sur cette adresse.
+    peekLoginLockout.mockResolvedValue({
+      allowed: false,
+      retryAfterMs: 421_000,
+    });
 
     const result = await login(CREDENTIALS);
 
     expect(JSON.stringify(result?.data)).not.toContain("421");
   });
 
-  // Ajouts de l'agent testeur — les trois cas par lesquels un plafond se
+  // Ajouts de l'agent testeur - les trois cas par lesquels un plafond se
   // contourne en pratique.
 
   it("ne se contourne pas en variant la casse de l'adresse", async () => {
     // Le compteur est porté par une CHAÎNE. Si la clé était construite sur la
     // saisie brute plutôt que sur `parsedInput`, `Admin@…`, `ADMIN@…` et
     // `admin@…` ouvriraient trois compteurs de cinq tentatives pour un seul
-    // compte — quinze essais au lieu de cinq, sans rien de plus qu'un clavier.
+    // compte - quinze essais au lieu de cinq, sans rien de plus qu'un clavier.
     //
     // Le test existant vérifie la LECTURE du quota sur la clé normalisée ;
     // celui-ci vérifie l'ÉCRITURE, qui est ce qui fait effectivement monter le
@@ -469,13 +489,16 @@ describe("login — plafond d'échecs", () => {
   });
 
   it("refuse même des identifiants VALIDES une fois le plafond atteint", async () => {
-    // « formulaire bloqué en front ET serveur » (SPEC §287) : le plafond est un
+    // « formulaire bloqué en front ET serveur » (SPEC §300) : le plafond est un
     // contrôle d'accès, pas un simple compteur d'erreurs. La conséquence est
-    // assumée et doit rester visible — cinq échecs sur une adresse ferment la
-    // connexion à son titulaire pendant le quart d'heure, y compris avec le bon
-    // mot de passe. C'est le coût d'un plafond par email, et c'est ce que la
-    // SPEC demande.
-    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 120_000 });
+    // assumée et doit rester visible : cinq échecs sur une adresse ferment la
+    // connexion à son titulaire, y compris avec le bon mot de passe. C'est le
+    // coût d'un plafond par email, et c'est ce que la SPEC demande. L'amendement
+    // du 2026-08-09 ne le supprime pas, il le BORNE à 10 minutes.
+    peekLoginLockout.mockResolvedValue({
+      allowed: false,
+      retryAfterMs: 120_000,
+    });
     authenticateWithPassword.mockResolvedValue({
       ok: true,
       user: { id: "user-1", roles: ["ROLE_ADMIN"] },
@@ -495,7 +518,10 @@ describe("login — plafond d'échecs", () => {
     // Sans cette garde, un lien `?next=…` transformerait l'écran de connexion
     // en redirecteur utilisable SANS aucun identifiant, simplement en saturant
     // d'abord le compteur d'une adresse quelconque.
-    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 120_000 });
+    peekLoginLockout.mockResolvedValue({
+      allowed: false,
+      retryAfterMs: 120_000,
+    });
 
     await login({ ...CREDENTIALS, next: "/admin/parametres" });
 
@@ -504,19 +530,19 @@ describe("login — plafond d'échecs", () => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
-// `loginFormAction` — l'adaptateur `useActionState`. Ajouts de l'agent testeur.
+// `loginFormAction` - l'adaptateur `useActionState`. Ajouts de l'agent testeur.
 //
 // Il était livré SANS AUCUN test direct : `login.test.ts` n'exerçait que
 // `login`, et `login-form.test.tsx` le REMPLACE par un mock. Or c'est lui que
 // `<form action={…}>` référence, donc lui qui est réellement exposé comme
-// endpoint POST public — `login` n'est atteint qu'à travers lui depuis un
+// endpoint POST public - `login` n'est atteint qu'à travers lui depuis un
 // navigateur.
 //
 // Trois responsabilités vivaient là sans oracle : la conversion `FormData` →
 // objet, l'omission de `next` vide, et la chaîne de priorité des trois canaux
 // d'erreur de next-safe-action.
 // ───────────────────────────────────────────────────────────────────────────
-describe("loginFormAction — adaptateur de formulaire", () => {
+describe("loginFormAction - adaptateur de formulaire", () => {
   function champs(valeurs: Record<string, string>): FormData {
     const formData = new FormData();
     for (const [nom, valeur] of Object.entries(valeurs)) {
@@ -556,7 +582,10 @@ describe("loginFormAction — adaptateur de formulaire", () => {
   });
 
   it("propage le drapeau de blocage jusqu'au formulaire", async () => {
-    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 120_000 });
+    peekLoginLockout.mockResolvedValue({
+      allowed: false,
+      retryAfterMs: 120_000,
+    });
 
     const state = await loginFormAction(
       {},
@@ -571,7 +600,7 @@ describe("loginFormAction — adaptateur de formulaire", () => {
 
   it("laisse la redirection traverser sur un succès", async () => {
     // `redirect()` fonctionne par throw. Un `try/catch` posé ici l'absorberait
-    // et la personne resterait sur le formulaire — connectée sans le savoir,
+    // et la personne resterait sur le formulaire - connectée sans le savoir,
     // avec un cookie déjà posé.
     authenticateWithPassword.mockResolvedValue({
       ok: true,
@@ -667,9 +696,12 @@ describe("loginFormAction — adaptateur de formulaire", () => {
   it("ne fait aucune confiance à l'état précédent qu'on lui passe", async () => {
     // `_prevState` vient de React en usage normal, mais l'action est un
     // endpoint POST public : un appelant direct en fournit ce qu'il veut. Un
-    // code qui s'y fierait — pour lever un blocage, par exemple — offrirait le
+    // code qui s'y fierait - pour lever un blocage, par exemple - offrirait le
     // contournement du plafond au premier `curl` venu.
-    peekRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 120_000 });
+    peekLoginLockout.mockResolvedValue({
+      allowed: false,
+      retryAfterMs: 120_000,
+    });
 
     const state = await loginFormAction(
       { blocked: false, error: "" },

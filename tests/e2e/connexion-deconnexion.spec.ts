@@ -8,7 +8,7 @@ import {
   emailUnique,
 } from "../support/compte-client";
 
-/// Connexion, cloisonnement et déconnexion du client — T-V3-03,
+/// Connexion, cloisonnement et déconnexion du client - T-V3-03,
 /// `US-COMPTE-CONNECTER` et `US-COMPTE-DECONNECTER`.
 ///
 /// Avec `inscription-activation.spec.ts`, ce fichier forme **`GP-01
@@ -18,7 +18,7 @@ import {
 /// un oracle lisible.
 ///
 /// Ce qui se prouve ici et nulle part ailleurs :
-///   · la destination post-connexion dépend du RÔLE — un client qui atterrit
+///   · la destination post-connexion dépend du RÔLE - un client qui atterrit
 ///     sur `/admin/parametres` voit un 403, c'est le parcours nominal de V3 qui
 ///     casse ;
 ///   · le plafond d'échecs existe pour une adresse INCONNUE, sans quoi « trop
@@ -87,7 +87,7 @@ test.describe("connexion du client", () => {
   test("respecte le `next` posé par le proxy", async ({ page }) => {
     // `src/proxy.ts` redirige un visiteur sans cookie vers
     // `/connexion?next=<chemin demandé>`. La destination initiale doit être
-    // rendue après authentification — sinon la personne se reconnecte et
+    // rendue après authentification - sinon la personne se reconnecte et
     // recommence sa navigation.
     const { email } = await creerClientActive(page, db, "next");
 
@@ -100,7 +100,7 @@ test.describe("connexion du client", () => {
       .fill(MOT_DE_PASSE_CLIENT);
     await page.getByRole("button", { name: "Se connecter" }).click();
 
-    // Le client est bien mené à la destination demandée — et c'est le 403 qui
+    // Le client est bien mené à la destination demandée - et c'est le 403 qui
     // l'y attend, pas la page. Le `next` n'est pas une autorisation.
     await expect(page).toHaveURL(/\/admin\/parametres$/);
     await expect(page.getByText(/403|interdit|refus/i).first()).toBeVisible();
@@ -125,7 +125,7 @@ test.describe("connexion du client", () => {
   /// Ce qui était couvert : le `href` du lien
   /// (`connexion-view.test.tsx:84`). Ce qui ne l'était pas : que la destination
   /// serve à quelque chose. Une page qui ignorerait `renvoi=1` afficherait
-  /// « Lien invalide » et aucun formulaire — le test du `href` resterait vert et
+  /// « Lien invalide » et aucun formulaire - le test du `href` resterait vert et
   /// la DoD serait fausse. Or c'est tout l'objet de cette entrée : avant elle,
   /// le formulaire de renvoi n'était atteignable qu'en cliquant un lien EXPIRÉ,
   /// donc en l'ayant encore sous la main, ce qu'on ne peut pas supposer de qui
@@ -153,7 +153,7 @@ test.describe("cloisonnement des rôles", () => {
     page,
   }) => {
     // PLAN S1 §7.1, deux niveaux : `src/proxy.ts` ne fait qu'un redirect
-    // OPTIMISTE sur présence du cookie — il laisse donc passer ce client. Le
+    // OPTIMISTE sur présence du cookie - il laisse donc passer ce client. Le
     // rempart réel est `requireAdmin()` dans la page, et c'est lui qu'on
     // éprouve ici. Un test qui n'apporterait pas de cookie ne prouverait que
     // le proxy.
@@ -193,7 +193,7 @@ test.describe("déconnexion", () => {
   }) => {
     // `US-COMPTE-DECONNECTER` : « toute nouvelle requête vers un endpoint
     // authentifié renvoie 401 (session absente) ». Ici la route protégée
-    // renvoie au formulaire de connexion — c'est le comportement du proxy, et
+    // renvoie au formulaire de connexion - c'est le comportement du proxy, et
     // c'est ce qui compte : sans cookie, on ne franchit plus la porte.
     const { email } = await creerClientActive(page, db, "revocation");
     await soumettre(page, email, MOT_DE_PASSE_CLIENT);
@@ -220,9 +220,12 @@ test.describe("déconnexion", () => {
 });
 
 test.describe("plafond d'échecs", () => {
-  /// 5 échecs / 15 min par email (SPEC §285-287, PLAN S4 §11.1). Chaque
-  /// soumission coûte un bcrypt : le scénario est volontairement le plus court
-  /// qui prouve la borne.
+  /// 5 échecs par email, puis 10 minutes de blocage ferme (SPEC §298-300
+  /// amendée le 2026-08-09, PLAN S4 §11.1). Chaque soumission coûte un bcrypt :
+  /// le scénario est volontairement le plus court qui prouve la borne. Ce que
+  /// l'amendement change n'est pas visible ici, il faudrait attendre dix
+  /// minutes ; c'est `src/lib/rate-limit.test.ts` qui le tient, à l'horloge
+  /// injectée.
   async function echouer(page: Page, email: string, fois: number) {
     for (let i = 0; i < fois; i += 1) {
       await soumettre(page, email, `mauvais-mot-de-passe-${i}`);
@@ -251,7 +254,7 @@ test.describe("plafond d'échecs", () => {
   }) => {
     // DoD T-V3-03, et c'est le cœur du choix d'une table sans clé étrangère
     // (PLAN S4 §11.2). Si le compteur n'existait que pour les comptes réels,
-    // « trop de tentatives » dirait qu'une adresse est inscrite — la fuite
+    // « trop de tentatives » dirait qu'une adresse est inscrite - la fuite
     // exactement refermée par le durcissement à temps constant de T-J0-04.
     const inconnu = emailUnique("fantome");
 
@@ -306,7 +309,7 @@ test.describe("plafond d'échecs", () => {
   });
 });
 
-test.describe("accueil et session — surface publique", () => {
+test.describe("accueil et session - surface publique", () => {
   /// Ajouts de l'agent testeur. L'accueil est devenu **dynamique** en T-V3-03 :
   /// il lit la session par `getOptionalUser`. C'est une page que la Constitution
   /// §5.1 veut ouverte à tous, et elle exécute désormais du code
@@ -315,7 +318,7 @@ test.describe("accueil et session — surface publique", () => {
   test("reste servi à un visiteur anonyme, sans en-tête connecté", async ({
     page,
   }) => {
-    /// ⚠️ **Oracle repris en T-V3-13** — règle du test rouge, cas 3
+    /// ⚠️ **Oracle repris en T-V3-13** - règle du test rouge, cas 3
     /// (dépendance à un détail d'implémentation invalidé par un changement
     /// légitime). Ce test assertait `getByRole("banner")).toHaveCount(0)` :
     /// à l'écriture, l'accueil ne montait un `<header>` QUE pour une session
@@ -323,7 +326,7 @@ test.describe("accueil et session — surface publique", () => {
     /// « pas d'en-tête connecté ».
     ///
     /// T-V3-13 pose une coquille publique : le `<header>` existe pour tout le
-    /// monde, y compris le visiteur anonyme, et il DOIT exister — c'est lui qui
+    /// monde, y compris le visiteur anonyme, et il DOIT exister - c'est lui qui
     /// porte la navigation et l'accès à la connexion. Le proxy est devenu faux
     /// sans que l'intention change.
     ///
@@ -350,7 +353,7 @@ test.describe("accueil et session — surface publique", () => {
     // Le pendant, côté page PUBLIQUE, du test de cookie forgé de
     // `admin-parametres.spec.ts`. Là-bas l'attendu est une redirection ; ici il
     // n'y a rien à protéger, donc l'attendu est un 200 anonyme. Une 500 fermerait
-    // la vitrine à quiconque traîne un cookie périmé — et le catalogue des
+    // la vitrine à quiconque traîne un cookie périmé - et le catalogue des
     // forfaits doit rester joignable sans authentification (Constitution §5.1).
     await context.addCookies([
       {
@@ -374,8 +377,8 @@ test.describe("accueil et session — surface publique", () => {
   }) => {
     // Révocation effective (`findUserById` filtre `isActive`,
     // src/lib/db/queries/auth.ts:255). Le JWT reste valide 7 jours : sans cette
-    // relecture, un compte fermé par un administrateur garderait son nom — et
-    // son bouton de déconnexion — dans l'en-tête d'une page publique.
+    // relecture, un compte fermé par un administrateur garderait son nom - et
+    // son bouton de déconnexion - dans l'en-tête d'une page publique.
     const { email, userId } = await creerClientActive(page, db, "revoque");
     await soumettre(page, email, MOT_DE_PASSE_CLIENT);
     await verifierEtatSession(page, true);
@@ -397,7 +400,7 @@ test.describe("accueil et session — surface publique", () => {
 /// Jusque-là, l'oracle des trois tests ci-dessus était `getByRole("banner")` :
 /// l'accueil ne montait un `<header>` QUE pour une session ouverte, l'absence de
 /// repère `banner` était donc un proxy fidèle. La coquille publique de T-V3-13
-/// pose cet en-tête pour tout le monde — et elle le doit, c'est lui qui porte la
+/// pose cet en-tête pour tout le monde - et elle le doit, c'est lui qui porte la
 /// navigation et l'accès à la connexion. Le proxy est devenu faux sans que
 /// l'intention change (règle du test rouge, cas 3).
 ///
@@ -422,7 +425,7 @@ async function verifierEtatSession(page: Page, connecte: boolean) {
 /// Ajout de l'agent testeur. `logout-button.tsx:8-13` affirme que le
 /// `<form action={…}>` « part en POST que React ait hydraté ou non », et en fait
 /// le motif de ne pas écrire un `onClick`. L'affirmation n'était vérifiée nulle
-/// part — or c'est exactement le défaut payé en T-J0-04 sur le formulaire de
+/// part - or c'est exactement le défaut payé en T-J0-04 sur le formulaire de
 /// connexion, et l'enjeu est plus lourd ici : une déconnexion décorative sur un
 /// poste partagé laisse la session ouverte à la personne suivante, qui croit
 /// que le bouton a fait son office.
@@ -466,20 +469,20 @@ test("la déconnexion ferme la session sans hydratation", async ({
 });
 
 test.describe("accessibilité outillée", () => {
-  /// `@axe-core/playwright` sur `GP-01` — DoD T-V3-03, reportée de T-V3-02.
+  /// `@axe-core/playwright` sur `GP-01` - DoD T-V3-03, reportée de T-V3-02.
   ///
   /// Ce que ce scan apporte par rapport à `jest-axe` : le **contraste de
   /// texte** (WCAG 1.4.3), qu'axe-core ne calcule pas en jsdom faute de moteur
-  /// de rendu — la règle y sort en `incomplete` et ne compte donc pas comme
+  /// de rendu - la règle y sort en `incomplete` et ne compte donc pas comme
   /// violation. C'est le seul critère AA que le passage au navigateur ajoute.
   ///
-  /// ⚠️ Ce qu'il n'apporte PAS, et qu'il ne faut pas lui faire dire — vérifié
+  /// ⚠️ Ce qu'il n'apporte PAS, et qu'il ne faut pas lui faire dire - vérifié
   /// règle par règle par l'agent testeur (E1) : **WCAG 1.4.11** (contraste
   /// non-textuel) et **WCAG 2.4.7** (focus visible) ne correspondent à aucune
   /// règle axe-core sous ces tags. La bordure d'input à 1,06:1 arbitrée en
   /// T-V3-02 (note write-back 4) n'est donc vue par aucun des audits de cette
   /// barrière. Ces tests verts ne referment pas cette note, ils ne la
-  /// regardent pas — c'est la déclaration RGAA de T-V3-12 qui l'assumera.
+  /// regardent pas - c'est la déclaration RGAA de T-V3-12 qui l'assumera.
   ///
   /// `wcag21a` / `wcag21aa` inclus : le RGAA 4.1 transpose WCAG **2.1**, et les
   /// seuls tags `wcag2*` laisseraient hors du champ `autocomplete-valid`, qui
@@ -511,8 +514,8 @@ test.describe("accessibilité outillée", () => {
   test("le formulaire en erreur ne présente aucune violation", async ({
     page,
   }) => {
-    // L'état d'erreur porte ses propres exigences AA — région live annoncée,
-    // focus déplacé, message associé — et c'est l'état que personne n'audite.
+    // L'état d'erreur porte ses propres exigences AA - région live annoncée,
+    // focus déplacé, message associé - et c'est l'état que personne n'audite.
     await soumettre(page, emailUnique("axe-erreur"), "mauvais-mot-de-passe");
     await expect(alerte(page)).not.toBeEmpty();
 
@@ -523,7 +526,7 @@ test.describe("accessibilité outillée", () => {
 
   /// Ajouts de l'agent testeur. Le parcours de T-V3-03 ne s'arrête pas au
   /// formulaire : il **atterrit** quelque part, et cet écran d'arrivée est une
-  /// surface neuve — l'accueil porteur d'`AppHeader`, avec son repère `banner`,
+  /// surface neuve - l'accueil porteur d'`AppHeader`, avec son repère `banner`,
   /// son lien de marque et son bouton de déconnexion. Aucun des deux états
   /// n'était audité, alors que la sortie de session est le dernier écran du
   /// golden path.

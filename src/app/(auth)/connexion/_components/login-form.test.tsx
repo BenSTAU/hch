@@ -1,4 +1,4 @@
-// Formulaire de connexion — ajouté par l'agent testeur.
+// Formulaire de connexion - ajouté par l'agent testeur.
 //
 // Le formulaire n'avait aucun test, alors qu'il porte les critères
 // d'accessibilité les plus contraignants du projet : la SPEC §6.3.2 place la
@@ -7,7 +7,7 @@
 //
 // Les tests ci-dessous vérifient à la main ce qu'un audit outillé vérifie.
 // `jest-axe` est posé depuis T-J0-09 et couvre cet écran en E2E, au navigateur
-// — le seul endroit où les contrastes se mesurent vraiment.
+// - le seul endroit où les contrastes se mesurent vraiment.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -27,7 +27,7 @@ const { LOGIN_REFUSED_MESSAGE, LOGIN_RATE_LIMITED_MESSAGE } =
   await import("@/lib/validations/auth");
 
 // Sans ça les appels s'accumulent d'un test à l'autre et toute assertion de
-// CARDINALITÉ devient fausse — défaut de ce fichier, corrigé après l'avoir
+// CARDINALITÉ devient fausse - défaut de ce fichier, corrigé après l'avoir
 // constaté (le test « touche Entrée » comptait 8 appels au lieu de 1).
 beforeEach(() => vi.clearAllMocks());
 
@@ -43,10 +43,10 @@ async function submit(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "Se connecter" }));
 }
 
-describe("LoginForm — structure accessible", () => {
+describe("LoginForm - structure accessible", () => {
   it("associe un label explicite à chaque champ", () => {
     // WCAG 3.3.2 (A), RGAA 11.1. `getByLabelText` échoue si l'association
-    // `<label for>` ↔ `id` est absente — c'est le test, pas un détour.
+    // `<label for>` ↔ `id` est absente - c'est le test, pas un détour.
     render(<LoginForm />);
 
     expect(screen.getByLabelText("Adresse email")).toHaveAttribute(
@@ -87,7 +87,7 @@ describe("LoginForm — structure accessible", () => {
     //
     // ⚠️ Oracle ÉLARGI en T-V3-03, pas affaibli. Le portage de l'écran C6 pose
     // deux commandes supplémentaires que le formulaire du jalon 0 n'avait
-    // pas — la bascule d'affichage du mot de passe et le lien « Mot de passe
+    // pas - la bascule d'affichage du mot de passe et le lien « Mot de passe
     // oublié ? », ce dernier exigé nommément par US-COMPTE-CONNECTER
     // §Accessibilité AA (WCAG 2.4.6). L'ancien oracle décrivait trois arrêts
     // et devenait faux ; celui-ci décrit les cinq, dans l'ordre du document.
@@ -132,7 +132,7 @@ describe("LoginForm — structure accessible", () => {
 
   it("ne porte pas de case « Se souvenir de moi »", () => {
     // La maquette C6 en pose une ; aucun critère d'acceptation ne la prescrit,
-    // et ADR-005 v2 fixe la session à 7 jours fermes — la case n'aurait donc
+    // et ADR-005 v2 fixe la session à 7 jours fermes - la case n'aurait donc
     // rien à commander. Arbitré le 2026-08-09, même raisonnement que la case
     // CGV non portée en T-V3-02.
     render(<LoginForm />);
@@ -142,7 +142,7 @@ describe("LoginForm — structure accessible", () => {
   });
 });
 
-describe("LoginForm — affichage du mot de passe", () => {
+describe("LoginForm - affichage du mot de passe", () => {
   // Commande de la maquette C6, conservée au portage : elle sert directement
   // la saisie sur mobile, où une faute de frappe invisible est le premier
   // motif d'échec de connexion.
@@ -186,7 +186,7 @@ describe("LoginForm — affichage du mot de passe", () => {
   });
 });
 
-describe("LoginForm — plafond d'échecs", () => {
+describe("LoginForm - plafond d'échecs", () => {
   // « formulaire bloqué en front ET serveur » (US-COMPTE-CONNECTER §Cas
   // d'erreur). Le serveur refuse dans tous les cas ; le blocage côté front
   // évite de laisser marteler un bouton qui ne peut plus rien produire.
@@ -243,10 +243,10 @@ describe("LoginForm — plafond d'échecs", () => {
   it("offre une sortie à l'écran bloqué", async () => {
     // Constat E5 de l'agent testeur : `blocked` ne retombe qu'à la réponse
     // suivante, et le seul déclencheur d'une réponse était le bouton que le
-    // plafond vient de désactiver. Le message dit « réessayez dans quelques
-    // minutes » sans qu'aucun geste sur cette page ne le permette.
+    // plafond vient de désactiver. Le message invite à réessayer sans qu'aucun
+    // geste sur cette page ne le permette.
     //
-    // Le lien recharge vraiment la page — pas une navigation client, qui ne
+    // Le lien recharge vraiment la page, pas une navigation client, qui ne
     // remonterait pas le composant et laisserait l'état d'action en place.
     loginFormAction.mockResolvedValue({
       error: LOGIN_RATE_LIMITED_MESSAGE,
@@ -302,7 +302,7 @@ describe("LoginForm — plafond d'échecs", () => {
   });
 });
 
-describe("LoginForm — refus", () => {
+describe("LoginForm - refus", () => {
   it("annonce le message générique dans une région `alert`", async () => {
     // WCAG 4.1.3 (AA) « Status Messages ». `role="alert"` porte un
     // `aria-live="assertive"` implicite : le lecteur d'écran annonce le
@@ -378,7 +378,7 @@ describe("LoginForm — refus", () => {
   });
 
   it("ne conserve pas le mot de passe saisi dans le DOM après un refus", async () => {
-    // Le champ garde sa valeur — comportement natif attendu, l'utilisateur
+    // Le champ garde sa valeur - comportement natif attendu, l'utilisateur
     // doit pouvoir corriger seulement l'email. On vérifie en revanche que la
     // valeur n'est pas recopiée ailleurs (attribut `value` sérialisé, message
     // d'erreur, champ caché).
@@ -395,14 +395,14 @@ describe("LoginForm — refus", () => {
   });
 });
 
-// Audit outillé des ÉTATS du formulaire — ajout de l'agent testeur.
+// Audit outillé des ÉTATS du formulaire - ajout de l'agent testeur.
 //
 // `connexion-view.test.tsx` couvre l'écran au repos ; ce qu'il ne peut pas
 // couvrir, c'est ce que le formulaire devient APRÈS une soumission, parce que
 // ces états ne naissent que d'un aller-retour avec l'action. Or ce sont eux qui
 // portent les critères AA propres à `US-COMPTE-CONNECTER` §Accessibilité :
 // région live annoncée, focus déplacé, commande désactivée.
-describe("LoginForm — audit jest-axe des états", () => {
+describe("LoginForm - audit jest-axe des états", () => {
   it("ne présente aucune violation au repos", async () => {
     const { container } = render(<LoginForm />);
 
@@ -424,7 +424,7 @@ describe("LoginForm — audit jest-axe des états", () => {
 
   it("ne présente aucune violation une fois le plafond atteint", async () => {
     // L'état le moins audité de tous : il n'apparaît qu'à la 6ᵉ soumission. Le
-    // bouton y est `disabled`, donc RETIRÉ de l'ordre de tabulation — et c'est
+    // bouton y est `disabled`, donc RETIRÉ de l'ordre de tabulation - et c'est
     // le moment où il faut vérifier que le message qui l'explique reste, lui,
     // annoncé et atteignable.
     loginFormAction.mockResolvedValue({
@@ -458,7 +458,7 @@ describe("LoginForm — audit jest-axe des états", () => {
   });
 });
 
-describe("LoginForm — soumission", () => {
+describe("LoginForm - soumission", () => {
   it("se soumet à la touche Entrée, sans passer par la souris", async () => {
     // WCAG 2.1.1 (A) : tout ce qui se fait à la souris doit se faire au
     // clavier. Le formulaire pose `action={formAction}` : c'est l'événement
