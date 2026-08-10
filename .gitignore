@@ -72,3 +72,7 @@ next-env.d.ts
 # Le dossier lui-meme est un bind mount en production (`/opt/hch-<env>/uploads`,
 # PLAN S3 §2) : il n a jamais rien a faire dans Git.
 /uploads
+
+# Meme motif pour la barriere E2E : `docker-compose.test.yml` y monte le depot
+# de photos du conteneur, et ce sont des fichiers ecrits par des tests.
+/uploads-test

@@ -125,6 +125,16 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # Dossier hôte du bind mount `./uploads-test:/app/uploads`, créé AVANT
+      # tout `docker compose` : un bind dont la cible n'existe pas est créé par
+      # Docker en root, et le runtime tourne sous UID 1001.
+      #
+      # Le `chown` est explicite à dessein. L'utilisateur `runner` des runners
+      # GitHub porte lui aussi l'UID 1001, donc ça marcherait par coïncidence
+      # sans lui. Une barrière qui tient par coïncidence n'est pas une barrière.
+      - name: Dossier de dépôt des photos, aux droits du runtime
+        run: mkdir -p uploads-test && sudo chown 1001:1001 uploads-test
+
       # Migrations et seed AVANT de lever l'application, et dans le même
       # conteneur éphémère — exactement la séquence des deux déploiements.
       # L'exercer ici, c'est la tester avant qu'elle ne touche un environnement.

@@ -48,3 +48,7 @@ docker-compose*.yml
 # Sans cette ligne, les photos de developpement sont cuites dans une couche
 # d image et partent en production.
 uploads
+
+# Depot de photos de la barriere E2E, meme motif : des fichiers ecrits par des
+# tests n ont rien a faire dans une couche d image.
+uploads-test

@@ -5,10 +5,14 @@
 # C'est le SEUL usage local de Docker sur ce projet : la base de développement
 # est distante et jointe par tunnel SSH (setup-poste-hch).
 #
-# Éphémère par construction — aucun volume, l'état part avec le conteneur.
-# `docker compose -f docker-compose.test.yml down` suffit à repartir propre,
-# et c'est ce qui garantit qu'elle n'introduit aucune divergence d'état avec
-# la base de dev.
+# Base éphémère par construction : aucun volume sur Postgres, l'état part avec
+# le conteneur. `docker compose -f docker-compose.test.yml down` suffit à
+# repartir propre, et c'est ce qui garantit qu'elle n'introduit aucune
+# divergence d'état avec la base de dev.
+#
+# ⚠️ Depuis T-V3-14, le service applicatif porte UN bind, `./uploads-test`, pour
+# monter le dépôt de photos comme le fait la production. Celui-là SURVIT au
+# `down` : c'est un dossier de l'hôte, gitignoré, à vider à la main si besoin.
 #
 # Même tag que dev, staging et production : une seule version de PostGIS sur
 # toute la chaîne, pour un cœur métier bâti sur ST_Covers et un index
@@ -94,6 +98,28 @@ services:
       # Variable ABSENTE des piles staging et production : non renseignée, le
       # code retombe sur l'URL réelle (`src/lib/geo/ban.ts`).
       HCH_BAN_BASE_URL: http://hch-ban-mock:8080/geocodage/search/
+    # La barrière doit monter le volume comme la production, sinon elle teste
+    # une configuration qui n'existe nulle part.
+    #
+    # `docker-compose.prod.yml:35` monte `./uploads:/app/uploads`. Ce fichier-ci
+    # ne montait rien : la barrière tournait donc contre l'IMAGE de production
+    # mais pas contre sa configuration de volumes. Or un bind mount MASQUE ce
+    # que l'image contient, droits compris - les droits du dossier hôte gagnent
+    # sur ceux du dossier cuit dans l'image. Sans ce montage, le `chown` posé au
+    # Dockerfile rendrait la CI verte sans rien prouver de la production.
+    #
+    # Le dossier hôte est créé par le workflow AVANT le `up`, avec un
+    # propriétaire explicite : ce sont ses droits à lui qui décident.
+    #
+    # ⚠️ **En local, rien ne le crée.** Sur un hôte Linux, `docker compose
+    # --profile e2e up` laisse le démon fabriquer `./uploads-test` en
+    # `root:root`, et l'upload y échoue en EACCES comme en CI. Avant de rejouer
+    # la barrière au PC maison, poser le dossier à la main :
+    #   mkdir -p uploads-test && sudo chown 1001:1001 uploads-test
+    # Sous Docker Desktop Windows le bind arrive en 0777 et ça passe sans, par
+    # accident du système de fichiers, pas par construction.
+    volumes:
+      - ./uploads-test:/app/uploads
     ports:
       - "127.0.0.1:3000:3000"
     healthcheck:
