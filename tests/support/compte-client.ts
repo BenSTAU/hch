@@ -71,3 +71,29 @@ export async function creerClientActive(
 
   return { email, userId: compte.id };
 }
+
+/// Connecte un client déjà activé.
+///
+/// Distinct de `seConnecter` du dossier voisin, qui attend `/admin/parametres` :
+/// un client n'a pas ce rôle et atterrit sur l'accueil
+/// (`AFTER_LOGIN_DEFAULT`, T-V3-03). Attendre la mauvaise URL ferait échouer le
+/// helper sur une connexion pourtant réussie.
+export async function seConnecterClient(
+  page: Page,
+  email: string,
+): Promise<void> {
+  await page.goto("/connexion");
+  await page.getByLabel("Adresse email").fill(email);
+  // `exact` : l'écran C6 porte une bascule « Afficher le mot de passe », dont
+  // le nom accessible contient le libellé du champ.
+  await page
+    .getByLabel("Mot de passe", { exact: true })
+    .fill(MOT_DE_PASSE_CLIENT);
+  await page.getByRole("button", { name: "Se connecter" }).click();
+
+  // L'en-tête propose de SE DÉCONNECTER : preuve de session la plus robuste,
+  // elle ne dépend d'aucune destination. Libellé exact de `LogoutButton`.
+  await expect(
+    page.getByRole("button", { name: /se déconnecter/i }),
+  ).toBeVisible();
+}

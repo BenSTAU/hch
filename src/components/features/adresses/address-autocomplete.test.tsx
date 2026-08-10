@@ -46,21 +46,30 @@ describe("AddressAutocomplete", () => {
     expect(appels).toBe(0);
   });
 
-  it("propose les adresses précises et écarte les voies", async () => {
+  // ⚠️ **Six oracles réécrits le 2026-08-10**, règle du test rouge cas 3. Ils
+  // affirmaient que les voies étaient absentes de la liste ; l'arbitrage de
+  // Benjamin les y remet comme pistes de raffinement, parce que « place
+  // Bellecour » ne rendait rien et qu'un champ muet se lit comme une panne. La
+  // propriété de fond ne bouge pas et reste testée : une voie ne devient jamais
+  // une adresse d'intervention. Les tests qui prenaient `findByRole("option")`
+  // au singulier échouaient d'ailleurs sur la CARDINALITÉ, pas sur le fond.
+  it("distingue l'adresse précise de la voie, qui n'est qu'une piste", async () => {
     const { utilisateur, champ } = poser();
     await utilisateur.type(champ, "12 rue de la bicyclette");
 
     const options = await screen.findAllByRole("option");
-    expect(options).toHaveLength(1);
+    expect(options).toHaveLength(2);
     expect(options[0]).toHaveTextContent(ADRESSE_DEMO.label);
+    expect(options[0]).not.toHaveTextContent(/préciser le numéro/i);
+    expect(options[1]).toHaveTextContent(/préciser le numéro/i);
   });
 
   it("remonte la suggestion choisie à la souris", async () => {
     const { utilisateur, champ, onSelectionner } = poser();
     await utilisateur.type(champ, "12 rue de la bicyclette");
 
-    const option = await screen.findByRole("option");
-    await utilisateur.click(option);
+    const [option] = await screen.findAllByRole("option");
+    await utilisateur.click(option as HTMLElement);
 
     expect(onSelectionner).toHaveBeenCalledTimes(1);
     expect(onSelectionner).toHaveBeenCalledWith(
@@ -79,11 +88,14 @@ describe("AddressAutocomplete", () => {
     // que le focus quitte le champ.
     const { utilisateur, champ, onSelectionner } = poser();
     await utilisateur.type(champ, "12 rue de la bicyclette");
-    await screen.findByRole("option");
+    await screen.findAllByRole("option");
 
     await utilisateur.keyboard("{ArrowDown}");
     expect(champ).toHaveAttribute("aria-activedescendant");
-    expect(screen.getByRole("option")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getAllByRole("option")[0]).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
 
     await utilisateur.keyboard("{Enter}");
     expect(onSelectionner).toHaveBeenCalledTimes(1);
@@ -92,7 +104,7 @@ describe("AddressAutocomplete", () => {
   it("ferme la liste sur Échap sans rien choisir", async () => {
     const { utilisateur, champ, onSelectionner } = poser();
     await utilisateur.type(champ, "12 rue de la bicyclette");
-    await screen.findByRole("option");
+    await screen.findAllByRole("option");
 
     await utilisateur.keyboard("{Escape}");
 
@@ -130,7 +142,8 @@ describe("AddressAutocomplete", () => {
   it("invalide le choix précédent dès que la saisie reprend", async () => {
     const { utilisateur, champ, onSelectionner } = poser();
     await utilisateur.type(champ, "12 rue de la bicyclette");
-    await utilisateur.click(await screen.findByRole("option"));
+    const [precise] = await screen.findAllByRole("option");
+    await utilisateur.click(precise as HTMLElement);
     expect(onSelectionner).toHaveBeenCalledTimes(1);
 
     // Modifier le libellé à la main après coup ne doit pas laisser l'adresse
@@ -150,7 +163,7 @@ describe("AddressAutocomplete", () => {
     // `aria-selected`.
     const { utilisateur, champ, container } = poser();
     await utilisateur.type(champ, "12 rue de la bicyclette");
-    await screen.findByRole("option");
+    await screen.findAllByRole("option");
 
     // Garde anti-régression : elle atteste que l'arbre soumis à axe contient
     // bien les options. Sans elle, le test redeviendrait vert en n'auditant
@@ -163,14 +176,19 @@ describe("AddressAutocomplete", () => {
     expect(await axe(container)).toHaveNoViolations();
   });
 
-  it("n'expose que des adresses précises même si la BAN en renvoie d'autres", async () => {
+  it("ne retient jamais une voie, même quand la BAN n'a que ça à proposer", async () => {
+    // C'est LE test de la propriété que l'arbitrage du 2026-08-10 ne relâche
+    // pas : la place s'affiche, elle se clique, et elle ne remonte rien. Sans
+    // lui, rien n'empêcherait une refacto de traiter les deux natures pareil,
+    // et une réservation partirait sur une surface au lieu d'un point
+    // (Constitution §2.2).
     server.use(
       http.get(BAN_SEARCH_URL, () =>
         reponseBan([
           entiteBan({
-            label: "Rue de la Bicyclette 69003 Lyon",
+            label: "Place Bellecour 69002 Lyon",
             type: "street",
-            lon: 4.832,
+            lon: 4.8322,
             lat: 45.7578,
           }),
           entiteBan({
@@ -183,10 +201,28 @@ describe("AddressAutocomplete", () => {
       ),
     );
 
-    const { utilisateur, champ } = poser();
-    await utilisateur.type(champ, "rue de la bicyclette");
+    const { utilisateur, champ, onSelectionner } = poser();
+    await utilisateur.type(champ, "place bellecour");
 
-    expect(await screen.findByText(/aucune adresse trouvée/i)).toBeVisible();
-    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+    const options = await screen.findAllByRole("option");
+    expect(options).toHaveLength(2);
+    for (const option of options) {
+      expect(option).toHaveTextContent(/préciser le numéro/i);
+    }
+
+    await utilisateur.click(options[0] as HTMLElement);
+
+    expect(onSelectionner).not.toHaveBeenCalled();
+
+    // La saisie repart sur le libellé de la voie, curseur AU DÉBUT, et l'aide
+    // dit où écrire le numéro. Vérifié contre la vraie BAN au navigateur :
+    // interroger la voie seule ne rend jamais ses numéros, c'est le numéro en
+    // tête qui les fait apparaître.
+    expect(champ).toHaveValue("Place Bellecour 69002 Lyon");
+    expect(champ).toHaveFocus();
+    expect((champ as HTMLInputElement).selectionStart).toBe(0);
+    expect(
+      await screen.findByText(/ajoutez le numéro devant la voie/i),
+    ).toBeVisible();
   });
 });

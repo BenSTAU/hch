@@ -1,0 +1,20 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [4.832, 45.7578] },
+      "properties": {
+        "label": "12 Rue de la Bicyclette 69003 Lyon",
+        "type": "housenumber",
+        "name": "12 Rue de la Bicyclette",
+        "postcode": "69003",
+        "city": "Lyon",
+        "citycode": "69383",
+        "score": 0.97,
+        "importance": 0.7
+      }
+    }
+  ],
+  "limit": 1
+}

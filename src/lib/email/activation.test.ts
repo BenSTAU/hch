@@ -49,6 +49,20 @@ describe("activationUrl", () => {
     expect(activationUrl("a b+c")).toContain("token=a%20b%2Bc");
   });
 
+  it("porte la destination de retour quand il y en a une", () => {
+    // C'est ce qui permet à l'activation de ramener au tunnel de réservation
+    // (`US-COMPTE-ACTIVER`). Le lien s'ouvre souvent sur un autre appareil :
+    // ce qui voyage est l'INTENTION de revenir, jamais la sélection, qui reste
+    // en `sessionStorage` et ne traverse pas les appareils.
+    expect(activationUrl(JETON, "/reserver?etape=recapitulatif")).toBe(
+      `https://hch.glanford.eu/activation?token=${JETON}&next=%2Freserver%3Fetape%3Drecapitulatif`,
+    );
+  });
+
+  it("n'ajoute rien quand aucune destination n'est demandée", () => {
+    expect(activationUrl(JETON)).not.toContain("next=");
+  });
+
   it("route en français, conformément aux conventions du dépôt", () => {
     // La SPEC écrit `GET /auth/verify?token=` (module-1-utilisateurs.md:211).
     // CLAUDE.md §Folder structure impose les routes en français — écart signalé

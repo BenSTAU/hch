@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 
+import { safeNextPath } from "@/lib/auth/next-path";
 import {
   generateVerificationToken,
   hashVerificationToken,
@@ -36,13 +37,27 @@ import {
 /// d'une boîte email un identifiant suffisant.
 const AFTER_ACTIVATION = "/connexion?compte=active";
 
+/// Destination de retour transportée depuis l'inscription, quand elle venait du
+/// tunnel de réservation (`US-COMPTE-ACTIVER`, DoD réaffectée de T-V3-02).
+///
+/// Elle est passée à la page de connexion, qui sait déjà y rediriger après
+/// authentification : activer ne connecte pas, le retour ne peut donc pas être
+/// immédiat. `safeNextPath` arbitre - le lien vit dans une boîte aux lettres,
+/// il se transfère, et un `next` absolu en ferait un tremplin de hameçonnage.
+function apresActivation(next: string | undefined): string {
+  const retour = safeNextPath(next);
+  return retour === null
+    ? AFTER_ACTIVATION
+    : `${AFTER_ACTIVATION}&next=${encodeURIComponent(retour)}`;
+}
+
 /// Union discriminée des trois refus nommés par la SPEC. `invalid` reste
 /// générique — pas d'énumération des jetons valides.
 export type ActivationOutcome = "expired" | "already_used" | "invalid";
 
 export const activateAccount = actionClient
   .inputSchema(activationSchema)
-  .action(async ({ parsedInput: { token } }) => {
+  .action(async ({ parsedInput: { token, next } }) => {
     const stored = await findEmailVerificationToken(
       hashVerificationToken(token),
     );
@@ -86,7 +101,7 @@ export const activateAccount = actionClient
 
     // Hors du try : `redirect()` fonctionne par throw, une capture le
     // transformerait en erreur serveur silencieuse.
-    redirect(AFTER_ACTIVATION);
+    redirect(apresActivation(next));
   });
 
 export const resendActivation = actionClient
@@ -149,8 +164,13 @@ export async function activateFormAction(
   _prevState: ActivationFormState,
   formData: FormData,
 ): Promise<ActivationFormState> {
+  const next = formData.get("next");
+
   const result = await activateAccount({
     token: String(formData.get("token") ?? ""),
+    // Omis plutôt que transmis vide : une clé présente à `""` n'a pas le même
+    // sens qu'une clé absente.
+    ...(typeof next === "string" && next !== "" ? { next } : {}),
   });
 
   // Succès : `activateAccount` a déjà redirigé par throw. Un jeton malformé

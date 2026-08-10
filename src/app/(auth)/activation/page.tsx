@@ -16,9 +16,10 @@ export default async function ActivationPage({
   searchParams: Promise<{
     token?: string | string[];
     renvoi?: string | string[];
+    next?: string | string[];
   }>;
 }) {
-  const { token, renvoi } = await searchParams;
+  const { token, renvoi, next } = await searchParams;
 
   // Un paramètre répété (`?token=a&token=b`) arrive en tableau. On ne devine pas
   // lequel comptait : aucun des deux.
@@ -29,6 +30,10 @@ export default async function ActivationPage({
       // (T-V3-03). Il ne porte aucune donnée et n'ouvre aucun droit : il
       // choisit l'écran, et le quota reste décompté côté action.
       demandeRenvoi={renvoi === "1"}
+      // Destination de retour, posée par le lien d'email quand l'inscription
+      // vient du tunnel de réservation. Elle traverse le formulaire jusqu'à
+      // l'action, qui la fait arbitrer par `safeNextPath` avant de rediriger.
+      next={typeof next === "string" ? next : undefined}
     />
   );
 }

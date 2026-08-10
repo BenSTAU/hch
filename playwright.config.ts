@@ -90,11 +90,30 @@ export default defineConfig({
   ...(baseURL
     ? {}
     : {
-        webServer: {
-          command: "pnpm dev",
-          url: "http://localhost:3000",
-          reuseExistingServer: true,
-          timeout: 120_000,
-        },
+        webServer: [
+          // Faux service d'adressage. Il ne sert QUE le géocodage de contrôle,
+          // celui que la Server Action émet depuis le processus Next et que
+          // `page.route()` ne peut pas intercepter. L'autocomplétion, elle,
+          // part du navigateur et reste mockée par `page.route()`.
+          //
+          // En CI ce rôle revient au service `hch-ban-mock` du compose : là,
+          // l'application tourne dans un conteneur et ne peut pas joindre un
+          // processus de l'hôte.
+          {
+            command: "pnpm exec tsx tests/support/ban-mock.ts",
+            url: "http://127.0.0.1:3100/",
+            reuseExistingServer: true,
+            timeout: 30_000,
+          },
+          {
+            command: "pnpm dev",
+            url: "http://localhost:3000",
+            reuseExistingServer: true,
+            timeout: 120_000,
+            env: {
+              HCH_BAN_BASE_URL: "http://127.0.0.1:3100/geocodage/search/",
+            },
+          },
+        ],
       }),
 });

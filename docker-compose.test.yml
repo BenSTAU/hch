@@ -64,6 +64,8 @@ services:
     depends_on:
       hch-postgres-test:
         condition: service_healthy
+      hch-ban-mock:
+        condition: service_started
     # L'application joint la base par le nom de service sur le réseau du
     # projet compose, jamais par le port publié : celui-ci n'existe que pour
     # les outils de l'hôte (Playwright, psql).
@@ -83,6 +85,15 @@ services:
       # elle, /api/health répond 503 et le conteneur reste unhealthy. C'est voulu
       # — le même mécanisme protège les deux piles d'une configuration muette.
       HCH_MAIL_TRANSPORT: noop
+      # Faux service d'adressage, joint par son nom de service. Sans lui, le
+      # géocodage de CONTRÔLE de `verifierAdresse` et `reserver` partirait vers
+      # la vraie BAN depuis un runner GitHub à l'IP partagée - ce que la DoD de
+      # `GP-02` interdit. L'autocomplétion, elle, part du navigateur et reste
+      # interceptée par `page.route()`.
+      #
+      # Variable ABSENTE des piles staging et production : non renseignée, le
+      # code retombe sur l'URL réelle (`src/lib/geo/ban.ts`).
+      HCH_BAN_BASE_URL: http://hch-ban-mock:8080/geocodage/search/
     ports:
       - "127.0.0.1:3000:3000"
     healthcheck:
@@ -102,3 +113,35 @@ services:
       timeout: 5s
       retries: 20
       start_period: 10s
+
+  # Faux service d'adressage de la barrière (T-V3-14).
+  #
+  # `verifierAdresse` et `reserver` re-géocodent l'adresse **côté serveur** :
+  # cet appel part du processus Next, dans le conteneur, et `page.route()` de
+  # Playwright - qui intercepte au niveau du contexte navigateur - ne le voit
+  # pas. Sans ce service, `GP-02` ne pouvait pas dépasser l'autocomplétion sans
+  # taper la vraie BAN depuis un runner GitHub à l'IP partagée.
+  #
+  # `node:24-alpine` et non un serveur de mock dédié : c'est déjà la base de
+  # l'image applicative, donc aucune image supplémentaire à tirer.
+  #
+  # Il sert le MÊME fichier que le faux service local
+  # (`tests/support/ban-mock.ts`), et un test unitaire vérifie que ce fichier ne
+  # diverge pas des fixtures MSW - une réponse de mock qui ment sur la forme de
+  # la vraie réponse ne prouve rien.
+  hch-ban-mock:
+    profiles: [e2e]
+    image: node:24-alpine
+    container_name: hch-ban-mock
+    volumes:
+      - ./tests/fixtures/ban-search.json:/fixtures/ban-search.json:ro
+    command:
+      - node
+      - -e
+      - |
+        const http = require('node:http');
+        const body = require('node:fs').readFileSync('/fixtures/ban-search.json', 'utf8');
+        http.createServer((_, res) => {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(body);
+        }).listen(8080, '0.0.0.0');
