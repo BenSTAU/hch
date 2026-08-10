@@ -115,6 +115,41 @@ describe("EtapePanier - rupture", () => {
     await expect(axe(container)).resolves.toHaveNoViolations();
   });
 
+  it("laisse retirer une ligne dont le produit est tombé en rupture", async () => {
+    // ⚠️ **Rouge à l'écriture, agent testeur, 2026-08-10. Défaut de produit,
+    // pas d'oracle.**
+    //
+    // Le cas est celui que la DoD décrit elle-même : le panier survit à
+    // l'aller-retour d'activation, le catalogue est relu par le serveur au
+    // retour, et le produit a pu partir entre-temps. La carte bascule alors sur
+    // la branche `rupture`, qui rend « Indisponible » AU LIEU du sélecteur de
+    // quantité (`etape-panier.tsx:178-181`) : la ligne reste dans le panier,
+    // elle continue de compter dans le total du récapitulatif, la validation la
+    // refuse - et l'écran n'offre aucun moyen de l'enlever. Le tunnel est en
+    // impasse sur son dernier écran.
+    //
+    // La DoD dit « ne rien modifier dans le panier dans le dos du client » ;
+    // elle suppose que le client peut le corriger lui-même. Ici il ne peut pas.
+    const { onChangement, utilisateur } = poser(
+      [{ productId: 9, quantity: 1 }],
+      [
+        {
+          id: 9,
+          label: "Antivol épuisé",
+          description: null,
+          price: "39.90",
+          stock: 0,
+        },
+      ],
+    );
+
+    await utilisateur.click(
+      screen.getByRole("button", { name: /retirer.*antivol épuisé/i }),
+    );
+
+    expect(onChangement).toHaveBeenCalledWith([]);
+  });
+
   it("dit le catalogue vide au lieu d'afficher une dalle nue", async () => {
     poser([], []);
 

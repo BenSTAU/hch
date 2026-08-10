@@ -141,11 +141,15 @@ function CarteProduit({
         rupture && "opacity-60",
       )}
     >
-      {choisi ? <Badge className="absolute top-2 right-2">Ajouté</Badge> : null}
+      {/* Un seul badge. Les deux se superposaient au même point d'ancrage dès
+          qu'une ligne déjà choisie tombait en rupture, et c'est la rupture qui
+          prime : c'est elle qui demande un geste. */}
       {rupture ? (
         <Badge variant="secondary" className="absolute top-2 right-2">
           Rupture
         </Badge>
+      ) : choisi ? (
+        <Badge className="absolute top-2 right-2">Ajouté</Badge>
       ) : null}
 
       <div className="flex items-center gap-4">
@@ -175,9 +179,17 @@ function CarteProduit({
           {formatPrixEuros(produit.price)}
         </span>
 
-        {rupture ? (
-          <span className="text-sm text-muted-foreground">Indisponible</span>
-        ) : choisi ? (
+        {/* ⚠️ **`choisi` est testé AVANT `rupture`, et l'ordre est le
+            correctif.** L'inverse masquait le sélecteur de quantité derrière
+            « Indisponible » dès qu'une ligne déjà au panier tombait à zéro : la
+            ligne restait, comptait dans le total, faisait refuser la validation,
+            et l'écran n'offrait plus aucun moyen de l'enlever. Le tunnel était
+            en impasse sur son dernier écran, dans le cas que la DoD décrit
+            elle-même - le panier survit à l'aller-retour d'activation, et le
+            catalogue est relu au retour.
+            Le « + » reste désarmé par le plafond de stock, le « - » redevient
+            atteignable. Relevé par l'agent testeur. */}
+        {choisi ? (
           <div className="flex items-center gap-1 rounded-full bg-secondary p-1">
             <Button
               type="button"
@@ -215,6 +227,8 @@ function CarteProduit({
               </span>
             </Button>
           </div>
+        ) : rupture ? (
+          <span className="text-sm text-muted-foreground">Indisponible</span>
         ) : (
           <Button
             type="button"
@@ -230,6 +244,16 @@ function CarteProduit({
           </Button>
         )}
       </div>
+
+      {/* Dire pourquoi la validation refusera, plutôt que de laisser le client
+          buter dessus. Le panier n'est pas corrigé dans son dos, mais l'impasse
+          ne se déguise pas non plus en silence. */}
+      {rupture && choisi ? (
+        <p className="text-sm leading-[1.5] text-destructive">
+          Ce produit n&apos;est plus disponible. Retirez-le pour valider votre
+          réservation.
+        </p>
+      ) : null}
     </li>
   );
 }

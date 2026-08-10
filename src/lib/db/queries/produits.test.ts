@@ -125,6 +125,38 @@ describe("vendreProduits - T=0, dans la transaction de réservation", () => {
     expect(requetes[0]).toContain('ORDER BY "id"');
   });
 
+  it("verrouille TOUT le panier en une fois, avant la première écriture", async () => {
+    // ⚠️ Ajouté par l'agent testeur, 2026-08-10. Le test ci-dessus lit la forme
+    // de la requête sur un panier d'UN produit : un refactor qui verrouillerait
+    // ligne par ligne dans la boucle le laisserait vert, et perdrait pourtant
+    // la seule protection contre l'interblocage. `ORDER BY "id"` ne trie que
+    // l'intérieur d'une requête - il ne dit rien de l'ordre entre deux.
+    queryRaw.mockResolvedValue([
+      ANTIVOL,
+      {
+        id: 1,
+        label: "Chambre a air",
+        price: new Prisma.Decimal("12.90"),
+        stock: 40,
+        isActive: true,
+      },
+    ]);
+
+    await vendreProduits(tx as never, {
+      interventionId: 42,
+      panier: [
+        { productId: 2, quantity: 1 },
+        { productId: 1, quantity: 1 },
+      ],
+    });
+
+    expect(requetes).toHaveLength(1);
+    expect(queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      productUpdate.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(productUpdate).toHaveBeenCalledTimes(2);
+  });
+
   it("n'écrit aucune ligne quand le stock ne suffit plus", async () => {
     queryRaw.mockResolvedValue([{ ...ANTIVOL, stock: 1 }]);
 
