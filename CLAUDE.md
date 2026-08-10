@@ -463,6 +463,26 @@ Arborescence de référence : [[adr-006-archi-applicative-hch|ADR-006 v2]]
 - **Signal de dérive** : un fichier dont plus de ~30 % des lignes sont du
   commentaire porte probablement un ADR déguisé.
 
+### Typographie
+
+- **MUST NOT** tiret cadratin (`—`, U+2014) ni demi-cadratin (`–`, U+2013)
+  dans le dépôt. Un trait d'union (`-`) partout.
+- **Portée : le dépôt entier.** Commentaires, identifiants, chaînes,
+  messages de commit, corps de PR, `README`, ce fichier, et **la copie
+  produit** - libellés d'interface, messages d'erreur, gabarits d'email.
+  Aucune exception pour un message « repris mot pour mot de la SPEC » : le
+  cadratin de la SPEC ne voyage pas.
+- **MUST** appliquer la règle aux fichiers que tu touches, et **rien
+  au-delà**. Le balayage rétroactif du dépôt est une tâche à part
+  (1039 occurrences dans 164 fichiers au 2026-08-10) - le mélanger à une PR
+  de fonctionnalité double sa surface de relecture pour rien.
+- **MUST** signaler dans le body de PR tout libellé produit dont la
+  typographie s'écarte désormais de celle inscrite au vault : c'est le
+  write-back qui aligne la SPEC, pas toi.
+- Le vault suit la même règle depuis le 2026-08-10, mais **avec un régime
+  différent** : rétroactif au fil du lint, jamais par balayage. Ne réécris
+  jamais une page wiki pour cette raison ; signale, le write-back tranche.
+
 ### Patterns composants
 
 - **MUST** composition (`children` + slots) en première intention.
