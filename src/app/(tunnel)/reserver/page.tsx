@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 /// `/connexion`. La réservation précède l'inscription (Constitution §3.2).
 ///
 /// La page ne porte que la récupération. Tout le rendu vit dans
-/// `TunnelReservation`, synchrone et donc déroulable sous RTL — un RSC
+/// `TunnelReservation`, synchrone et donc déroulable sous RTL : un RSC
 /// asynchrone ne l'est pas (ADR-014 : async Server Components → E2E seulement).
 export default async function ReserverPage() {
   // Indépendantes, donc en parallèle et jamais en cascade.

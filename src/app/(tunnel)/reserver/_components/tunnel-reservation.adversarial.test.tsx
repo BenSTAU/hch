@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -153,10 +153,15 @@ describe("TunnelReservation - cohérence forfait / créneau", () => {
     expect(titre).not.toHaveTextContent(/finalisez votre réservation/i);
   });
 
-  it("ne fait pas valider une réservation sur un créneau d'un autre forfait", async () => {
-    // Poussé jusqu'au geste qui engage. Le serveur, lui, refuse bien
-    // (`reserver.ts:105-122`), mais avec « ce créneau vient d'être réservé » :
-    // un message faux, qui impute à un tiers un état que le tunnel a produit.
+  it("ne propose pas de valider sur un créneau d'un autre forfait", async () => {
+    // Le serveur refuse bien (`reserver.ts:105-122`), mais avec « ce créneau
+    // vient d'être réservé » : un message faux, qui impute à un tiers un état
+    // que le tunnel a produit seul. L'écran ne doit donc pas conduire là.
+    //
+    // ⚠️ Écrit par l'agent testeur avec une garde `if (valider === null)
+    // return`, qui le rendait **vide** une fois le défaut corrigé. Il le
+    // signalait lui-même. Réécrit en oracle direct : l'absence du bouton EST
+    // l'invariant, et l'affirmer se falsifie.
     const { utilisateur } = poser(`?etape=forfait&forfait=${String(REVISION)}`);
     await composerJusquAuCreneau(utilisateur, /Révision complète/, "09:00");
     await laisserRetomberLaFileNuqs();
@@ -165,24 +170,10 @@ describe("TunnelReservation - cohérence forfait / créneau", () => {
     poser(`?etape=recapitulatif&forfait=${String(DIAGNOSTIC)}`);
     await screen.findByRole("heading", { level: 1 });
 
-    const valider = screen.queryByRole("button", {
-      name: /valider ma réservation/i,
-    });
-    if (valider === null) return;
-
-    await userEvent.setup().click(valider);
-    await waitFor(() => {
-      expect(reserver).toHaveBeenCalled();
-    });
-
-    // Si la validation part quand même, elle ne doit pas mélanger le forfait
-    // courant et le créneau dérivé de l'autre.
-    expect(reserver).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        serviceId: DIAGNOSTIC,
-        debut: CRENEAU_REVISION,
-      }),
-    );
+    expect(
+      screen.queryByRole("button", { name: /valider ma réservation/i }),
+    ).toBeNull();
+    expect(reserver).not.toHaveBeenCalled();
   });
 });
 
@@ -254,9 +245,7 @@ describe("TunnelReservation - barre d'action du récapitulatif", () => {
       name: /finalisez votre réservation/i,
     });
 
-    expect(
-      screen.queryByRole("button", { name: /^continuer/i }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: /^continuer/i })).toBeNull();
     expect(
       screen.queryByRole("link", { name: /retour à l'accueil/i }),
     ).toBeNull();
