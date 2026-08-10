@@ -59,10 +59,28 @@ const CLE_REPRISE = "hch:tunnel";
 /// pour que sa référence soit stable d'un rendu à l'autre.
 const SANS_ABONNEMENT = () => () => undefined;
 
+/// Un créneau retenu, **avec ce dont il a été dérivé**.
+///
+/// Constitution §2.1 : le pool se dérive à la volée, `planning(tech de la zone)
+/// × durée(forfait)`. Un instant n'a donc de sens que pour le couple qui l'a
+/// produit. Le stocker nu laissait un créneau survivre à un changement de
+/// forfait ou d'adresse, et le récapitulatif engager sur un couple impossible.
+type CreneauRetenu = {
+  debut: string;
+  serviceId: number;
+  zoneId: number;
+};
+
 type EtatConserve = {
+  /// Conservé ici **en plus** de l'URL. Le forfait vit dans la query string
+  /// parce que le parcours est partageable, mais la destination de retour
+  /// annoncée par C5 ne la porte pas : sans cette copie, revenir de
+  /// `/connexion?next=…` affichait l'écran de reprise et imputait la perte à
+  /// une ouverture cross-appareil qui n'avait pas eu lieu.
+  forfaitId: number | null;
   adresse: SuggestionAdresse | null;
   zoneId: number | null;
-  creneau: string | null;
+  creneau: CreneauRetenu | null;
   photos: PhotoDeposee[];
 };
 
@@ -72,6 +90,7 @@ type EtatConserve = {
 /// Rend l'état vide côté serveur - `sessionStorage` n'y existe pas.
 function lireEtatConserve(): EtatConserve {
   const vide: EtatConserve = {
+    forfaitId: null,
     adresse: null,
     zoneId: null,
     creneau: null,
@@ -84,6 +103,11 @@ function lireEtatConserve(): EtatConserve {
     if (!brut) return vide;
 
     const repris = { ...vide, ...(JSON.parse(brut) as Partial<EtatConserve>) };
+
+    // Un enregistrement d'une version antérieure porte `creneau` en chaîne
+    // nue, sans le couple qui l'a dérivé. On ne peut pas le rattacher après
+    // coup : il est ignoré, et le visiteur rechoisit un créneau.
+    if (typeof repris.creneau !== "object") repris.creneau = null;
 
     // `apercu` est une URL d'objet (`blob:`), valable pour le seul document qui
     // l'a créée : après un rechargement elle pointe dans le vide. La conserver
@@ -111,20 +135,32 @@ export function TunnelReservation({
     "etape",
     parseAsStringLiteral(ETAPES).withDefault("forfait"),
   );
-  const [forfaitId, setForfaitId] = useQueryState("forfait", parseAsInteger);
+  const [forfaitUrl, setForfaitUrl] = useQueryState("forfait", parseAsInteger);
 
   // Conservé pendant l'aller-retour de création de compte : le visiteur part
   // s'inscrire, active, se connecte, et retrouve sa sélection. Le CRÉNEAU, lui,
   // n'est pas tenu - il est revalidé au retour, et la grille rafraîchie prend
   // le relais s'il est parti.
-  //
   const [conserve] = useState(lireEtatConserve);
   const [adresse, setAdresse] = useState<SuggestionAdresse | null>(
     conserve.adresse,
   );
   const [zoneId, setZoneId] = useState<number | null>(conserve.zoneId);
-  const [creneau, setCreneau] = useState<string | null>(conserve.creneau);
+  const [creneau, setCreneau] = useState<CreneauRetenu | null>(
+    conserve.creneau,
+  );
   const [photos, setPhotos] = useState<PhotoDeposee[]>(conserve.photos);
+
+  /// L'URL fait foi quand elle porte un forfait - c'est elle qui rend le
+  /// parcours partageable, et c'est par elle que la landing pré-sélectionne.
+  /// À défaut, l'état conservé prend le relais : la destination de retour
+  /// annoncée par C5 ne porte pas de forfait, et sans ce repli le visiteur
+  /// revenait de sa connexion sur un tunnel vide.
+  ///
+  /// Déduction, jamais recopie dans l'URL par un effet : un `setState` dans un
+  /// effet est ce que le compilateur React refuse, et la recopie n'apporterait
+  /// rien de plus qu'un paramètre d'affichage.
+  const forfaitId = forfaitUrl ?? conserve.forfaitId;
 
   // ⚠️ **Le rendu du serveur et le premier rendu du navigateur doivent être
   // identiques**, et ils ne peuvent pas l'être : `sessionStorage` n'existe que
@@ -151,18 +187,31 @@ export function TunnelReservation({
   const idTitre = useId();
   const forfait = forfaits.find((f) => f.id === forfaitId) ?? null;
 
+  /// Le créneau retenu **s'il vaut encore**. Constitution §2.1 : il a été dérivé
+  /// d'un couple `(forfait, zone)`, et il ne désigne plus rien dès que l'un des
+  /// deux change. La cohérence se déduit ici, à chaque rendu, plutôt que de
+  /// dépendre d'un gestionnaire qui penserait à le remettre à zéro - c'est un
+  /// gestionnaire oublié qui laissait le récapitulatif engager sur un couple
+  /// impossible.
+  const creneauValide =
+    creneau !== null &&
+    creneau.serviceId === forfaitId &&
+    creneau.zoneId === zoneId
+      ? creneau.debut
+      : null;
+
   // Écriture seule : aucun `setState`, donc aucun rendu en cascade.
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       window.sessionStorage.setItem(
         CLE_REPRISE,
-        JSON.stringify({ adresse, zoneId, creneau, photos }),
+        JSON.stringify({ forfaitId, adresse, zoneId, creneau, photos }),
       );
     } catch {
       // Stockage refusé : la reprise ne fonctionnera pas, le tunnel si.
     }
-  }, [adresse, zoneId, creneau, photos]);
+  }, [forfaitId, adresse, zoneId, creneau, photos]);
 
   // Tant qu'on n'est pas monté, on rend une attente - jamais un contenu qui
   // dépendrait de l'état conservé. Le serveur et l'hydratation produisent alors
@@ -192,7 +241,7 @@ export function TunnelReservation({
       ? "forfait"
       : adresse === null || zoneId === null
         ? "adresse"
-        : creneau === null
+        : creneauValide === null
           ? "creneau"
           : "recapitulatif";
 
@@ -240,14 +289,18 @@ export function TunnelReservation({
   }
 
   function valider() {
-    if (!forfait || !adresse || !creneau) return;
+    // `creneauValide` et non `creneau` : c'est ce qui empêche d'envoyer le
+    // forfait courant avec un instant dérivé d'un autre. Le serveur refuserait
+    // de toute façon, mais avec « ce créneau vient d'être réservé » - un
+    // message faux, qui impute à un tiers un état que le tunnel a produit seul.
+    if (!forfait || !adresse || creneauValide === null) return;
     setErreur(null);
 
     demarrer(async () => {
       const resultat = await reserver({
         serviceId: forfait.id,
         adresse,
-        debut: creneau,
+        debut: creneauValide,
         photos: photos.map((photo) => photo.url),
       });
 
@@ -336,7 +389,7 @@ export function TunnelReservation({
                 forfaits={forfaits}
                 forfaitId={forfaitId}
                 onSelection={(id) => {
-                  void setForfaitId(id);
+                  void setForfaitUrl(id);
                   setErreur(null);
                 }}
                 idTitre={idTitre}
@@ -381,9 +434,13 @@ export function TunnelReservation({
             forfait={forfait}
             adresse={adresse}
             zoneId={zoneId}
-            creneauChoisi={creneau}
+            creneauChoisi={creneauValide}
             idTitre={idTitre}
-            onChoisir={setCreneau}
+            // Le créneau est retenu AVEC le couple qui l'a dérivé : c'est ce
+            // qui permet de le déclarer périmé au lieu de le croire sur parole.
+            onChoisir={(debut) => {
+              setCreneau({ debut, serviceId: forfait.id, zoneId });
+            }}
             onModifierAdresse={() => {
               aller("adresse");
             }}
@@ -394,11 +451,11 @@ export function TunnelReservation({
         etapeAffichee === "recapitulatif" &&
         forfait &&
         adresse &&
-        creneau ? (
+        creneauValide ? (
           <Recapitulatif
             forfait={forfait}
             adresse={adresse}
-            creneau={creneau}
+            creneau={creneauValide}
             photos={photos}
             onChangementPhotos={setPhotos}
             estConnecte={estConnecte}
@@ -443,7 +500,7 @@ export function TunnelReservation({
             disabled={
               (etapeAffichee === "forfait" && forfait === null) ||
               (etapeAffichee === "adresse" && adresse === null) ||
-              (etapeAffichee === "creneau" && creneau === null)
+              (etapeAffichee === "creneau" && creneauValide === null)
             }
             onClick={() => {
               aller(

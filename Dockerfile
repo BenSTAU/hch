@@ -92,6 +92,14 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # conteneur, exactement ce que fournit `env_file` en production.
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 
+# Dépôt des photos d'intervention. Créé ICI, en root, puis donné à nextjs :
+# sous USER nextjs (UID 1001) le runtime ne peut pas créer un dossier dans
+# /app, qui appartient à root. `mkdir({recursive:true})` de
+# src/lib/photos/stockage.ts échoue alors en EACCES, et l'upload rend une
+# erreur que rien n'attrape avant la barrière.
+# Relevé sur le run CI 31384530544 (job e2e, GP-02 complet).
+RUN mkdir -p /app/uploads && chown nextjs:nodejs /app/uploads
+
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000 HOSTNAME="0.0.0.0"

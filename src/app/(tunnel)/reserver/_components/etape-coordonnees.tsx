@@ -12,7 +12,7 @@ import {
   type SignupFormState,
 } from "@/lib/actions/auth/signup";
 
-/// Bloc « Vos coordonnées » de l'écran **C5** — qui **est** le formulaire
+/// Bloc « Vos coordonnées » de l'écran **C5**, qui **est** le formulaire
 /// d'inscription (PLAN S4 §4.3, aligné le 2026-08-09).
 ///
 /// Le tunnel s'explore sans compte, mais la validation en exige un créé,
