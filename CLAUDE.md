@@ -318,8 +318,10 @@ dans les 12 pages d'axe de [[conventions-react-next]].
   rollback inline vers l'image précédente, job rouge. Sans cette garde, l'absence
   d'une clé applicative ne se voit qu'à l'usage — le mot de passe d'application
   email à l'inscription, la clé Google Maps du back-office admin en V1. Le
-  géocodage client, lui, n'a **aucune** variable d'environnement : la BAN n'a
-  pas de clé (ADR-015 v2).
+  géocodage client, lui, n'a **aucune clé** : la BAN n'en demande pas
+  ([[adr-015-provider-carto|ADR-015 v2]]). Sa seule variable est
+  `HCH_BAN_BASE_URL`, qui relève de l'exception ci-dessous et n'existe que
+  pour la barrière.
 - **MUST NOT** évaluer ce schéma au chargement d'un module importé par le build.
   C'est exactement le piège payé sur `prisma.config.ts` ci-dessus : le stage
   builder du Dockerfile n'a **aucune** de ces variables.
@@ -327,6 +329,24 @@ dans les 12 pages d'axe de [[conventions-react-next]].
   piles, dans `.env.prod.example`, et dans l'Environment GitHub si le pipeline la
   consomme — plus son entrée dans `src/lib/env.ts`. La consigne seule ne suffit
   pas, la garde seule non plus.
+- **EXCEPTION, une seule : la variable d'injection de barrière.** Une variable
+  qui n'existe que pour rendre un appel sortant interceptable en E2E ne suit
+  pas la règle ci-dessus, elle suit celle-ci. Elle **MUST NOT** figurer dans
+  `.env.prod.example`, dans les `.env.prod` des piles, ni dans `src/lib/env.ts` :
+  une variable proposée finit par être renseignée, et celle-ci détournerait la
+  production vers un faux service. Elle **MUST** être lue **à l'appel** et non
+  au chargement du module, avec repli sur la valeur réelle, de sorte que non
+  renseignée elle soit inerte. Elle **MUST** être documentée dans `.env.example`
+  avec la mention « ne pas renseigner », et posée uniquement par
+  `playwright.config.ts` (barrière locale) et `docker-compose.test.yml`
+  (barrière CI). Aujourd'hui : `HCH_BAN_BASE_URL` seule.
+
+  Motif, tranché le 2026-08-10 : le géocodage de contrôle part du **processus
+  Next**, donc `page.route()` de Playwright ne le voit pas, et l'alternative
+  (monter MSW par `instrumentation.ts`) ferait voyager un faux service jusqu'en
+  production, ce qui avait déjà fait rejeter le worker MSW navigateur. Une
+  variable inerte est le seul point d'injection qui ne survit pas au conteneur
+  de production.
 - **MUST** déclarer dans `onlyBuiltDependencies` (`pnpm-workspace.yaml`) tout
   paquet qui a besoin d'un script d'installation. pnpm 10 n'en exécute aucun
   sans autorisation, et **échoue en silence** : `bcrypt` se retrouve sans
@@ -516,7 +536,7 @@ Arborescence de référence : [[adr-006-archi-applicative-hch|ADR-006 v2]]
 - **MUST NOT** virtualiser sous 200 items DOM.
 - **DEFAULT** `next/dynamic` + `<Suspense>` pour le client lourd hors du fold —
   carte Google Maps du **back-office admin V1**, calendrier, modales. Le
-  parcours client n'a plus de carte depuis ADR-015 v2.
+  parcours client n'a plus de carte depuis [[adr-015-provider-carto|ADR-015 v2]].
 - **DEFAULT** `experimental.optimizePackageImports` pour `lucide-react` et `zod`.
   L'option vit sous **`experimental`**, et `lucide-react` figure **déjà dans la
   liste optimisée par défaut** de Next 16 — il y est listé pour l'intention,
@@ -667,11 +687,20 @@ Détail applicatif complet : [[s3-infra-ci-cd|PLAN S3]].
   Hiérarchie de queries : Role > LabelText > PlaceholderText > Text >
   DisplayValue > AltText > Title > TestId.
 - **MUST** `@testing-library/user-event` v14+. Pas de `fireEvent`.
-- **MUST** MSW 2 pour mocker à la frontière réseau — **recherche BAN**
-  (`data.geopf.fr/geocodage/search/`, branchée depuis T-V3-06), endpoint token
-  Google OAuth. `onUnhandledRequest: 'error'`, handlers partagés entre Vitest
-  et Playwright dans `src/mocks/` — côté Playwright le partage devient effectif
-  avec `GP-02` (T-V3-08).
+- **MUST** mocker **à la frontière réseau**, jamais la fonction. Deux outils
+  selon la surface, une seule source de données :
+  - **Vitest (Node)** → **MSW 2**, `onUnhandledRequest: 'error'`, handlers dans
+    `src/mocks/handlers.ts` — recherche BAN (`data.geopf.fr/geocodage/search/`,
+    branchée depuis T-V3-06), endpoint token Google OAuth.
+  - **Playwright (navigateur)** → **`page.route()`**, alimenté par les
+    **fixtures exportées** de `src/mocks/` (`entiteBan`, `reponseBan`,
+    `ADRESSE_DEMO`). Le worker MSW navigateur est **écarté** : il exige
+    `public/mockServiceWorker.js`, servi par l'application **en production**,
+    et un interrupteur d'activation du mock dans une image unique promue vers
+    les deux piles. `page.route()` intercepte au niveau du contexte navigateur,
+    donc plus près de la frontière qu'un service worker vivant dans la page.
+  - Ce qui est **partagé** est la **donnée de mock**, pas le mécanisme
+    d'interception. Amendé le 2026-08-09 ([[v3-parcours-client|T-V3-08]]).
 - **MUST** Playwright pour l'E2E, `webServer` = `pnpm dev` en local,
   `pnpm build && pnpm start` **en CI** — la CI teste la vraie pipeline de
   production, jamais le dev server.
@@ -729,9 +758,11 @@ décision de design. Les violer produit du code qui compile et un produit faux.
   facture. Pas de boutique séparée.
 - **Trois rôles cloisonnés** (§3.1) — le technicien ne peut **pas** modifier les
   prix : interdit fonctionnel, pas seulement masqué dans l'UI.
-- **La réservation précède l'inscription** (§3.2) — `client_id` nullable au
-  moment de la réservation guest, `guest_email` porte la clé de rattachement
-  rétroactif.
+- **Le tunnel s'explore sans compte, la validation exige un compte activé**
+  (§3.2, aligné le 2026-08-09) — `client_id` est **`NOT NULL`**, aucune colonne
+  `guest_email` nulle part. Le récapitulatif porte le formulaire d'inscription
+  pré-rempli ; l'état du tunnel survit à l'aller-retour d'activation et le
+  créneau est revalidé au retour.
 - **Prix figé à la réservation** (§4.1) — `price_snapshot` /
   `unit_price_snapshot` sur chaque ligne. Un changement de tarif catalogue
   n'altère **jamais** une facture passée.
