@@ -55,16 +55,37 @@ async function soumettre(
   await page.getByRole("button", { name: "Se connecter" }).click();
 }
 
+/// Destination post-connexion d'un client.
+///
+/// ⚠️ **Elle a changé avec T-V3-10**, qui livre l'espace client et porte donc la
+/// DoD finale de `US-COMPTE-CONNECTER` §Cas nominal. T-V3-03 avait posé
+/// l'accueil en provisoire, refusant de créer une coquille vide pour une route
+/// qui n'aurait rien porté (leçon T-T2-16 d'Argo).
+const ESPACE_CLIENT = /\/mes-interventions\/a-venir$/;
+
+/// Se déconnecte depuis le menu utilisateur.
+///
+/// ⚠️ **Un cran de plus depuis T-V3-10.** `US-COMPTE-DECONNECTER` §Contexte
+/// place l'action « dans le menu utilisateur (avatar / initiales dans le
+/// header) » ; jusque-là le bouton était directement dans la barre. Ce qui est
+/// vérifié par les tests qui l'appellent n'a pas bougé d'un pouce : la session
+/// se ferme, le cookie disparaît, et l'accès est réellement révoqué.
+async function seDeconnecter(page: Page): Promise<void> {
+  await page.getByRole("button", { name: /Ouvrir le menu de/ }).click();
+  await page.getByRole("menuitem", { name: "Se déconnecter" }).click();
+}
+
 test.describe("connexion du client", () => {
-  test("dépose le client sur l'accueil, pas sur un 403", async ({ page }) => {
+  test("dépose le client sur son espace, pas sur un 403", async ({ page }) => {
     // DoD T-V3-03, reportée de T-V3-02 : `AFTER_LOGIN` valait
     // `/admin/parametres` pour tout le monde. Un client fraîchement activé se
-    // connectait avec succès et voyait un refus.
+    // connectait avec succès et voyait un refus. T-V3-10 remplace la
+    // destination provisoire par celle de la SPEC.
     const { email } = await creerClientActive(page, db, "connexion");
 
     await soumettre(page, email, MOT_DE_PASSE_CLIENT);
 
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(ESPACE_CLIENT);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 
@@ -72,7 +93,7 @@ test.describe("connexion du client", () => {
     const { email } = await creerClientActive(page, db, "cookie");
 
     await soumettre(page, email, MOT_DE_PASSE_CLIENT);
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(ESPACE_CLIENT);
 
     const session = (await page.context().cookies()).find(
       (c) => c.name === "hch_session",
@@ -159,7 +180,7 @@ test.describe("cloisonnement des rôles", () => {
     // le proxy.
     const { email } = await creerClientActive(page, db, "cloisonnement");
     await soumettre(page, email, MOT_DE_PASSE_CLIENT);
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(ESPACE_CLIENT);
 
     const reponse = await page.goto("/admin/parametres");
 
@@ -177,9 +198,9 @@ test.describe("déconnexion", () => {
   test("efface la session et ramène à l'accueil", async ({ page }) => {
     const { email } = await creerClientActive(page, db, "deconnexion");
     await soumettre(page, email, MOT_DE_PASSE_CLIENT);
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(ESPACE_CLIENT);
 
-    await page.getByRole("button", { name: "Se déconnecter" }).click();
+    await seDeconnecter(page);
 
     await expect(page).toHaveURL(/\/\?deconnecte=1$/);
     await expect(page.getByRole("status")).toContainText(/déconnecté/i);
@@ -197,7 +218,7 @@ test.describe("déconnexion", () => {
     // c'est ce qui compte : sans cookie, on ne franchit plus la porte.
     const { email } = await creerClientActive(page, db, "revocation");
     await soumettre(page, email, MOT_DE_PASSE_CLIENT);
-    await page.getByRole("button", { name: "Se déconnecter" }).click();
+    await seDeconnecter(page);
     await expect(page).toHaveURL(/deconnecte=1/);
 
     await page.goto("/admin/parametres");
@@ -210,10 +231,10 @@ test.describe("déconnexion", () => {
     // l'en-tête d'une page encore affichée alors que le cookie a déjà disparu.
     const { email } = await creerClientActive(page, db, "idempotent");
     await soumettre(page, email, MOT_DE_PASSE_CLIENT);
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(ESPACE_CLIENT);
 
     await page.context().clearCookies();
-    await page.getByRole("button", { name: "Se déconnecter" }).click();
+    await seDeconnecter(page);
 
     await expect(page).toHaveURL(/\/\?deconnecte=1$/);
   });
@@ -277,7 +298,7 @@ test.describe("plafond d'échecs", () => {
     const { email } = await creerClientActive(page, db, "epargne");
     await soumettre(page, email, MOT_DE_PASSE_CLIENT);
 
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(ESPACE_CLIENT);
   });
 
   /// Ajout de l'agent testeur. Les trois tests ci-dessus prouvent que le
@@ -338,7 +359,7 @@ test.describe("accueil et session - surface publique", () => {
     expect(reponse?.status()).toBe(200);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Se déconnecter" }),
+      page.getByRole("button", { name: /Ouvrir le menu de/ }),
     ).toHaveCount(0);
     await expect(
       page.getByRole("banner").getByRole("link", { name: "Connexion" }),
@@ -405,8 +426,14 @@ test.describe("accueil et session - surface publique", () => {
 /// l'intention change (règle du test rouge, cas 3).
 ///
 /// L'intention est donc nommée ici plutôt que réécrite trois fois : est
-/// considéré comme connecté un visiteur à qui l'en-tête propose de se
-/// déconnecter, et à qui il ne propose plus de se connecter.
+/// considéré comme connecté un visiteur dont l'en-tête porte le menu
+/// utilisateur, et à qui il ne propose plus de se connecter.
+///
+/// ⚠️ **Second déplacement d'oracle, T-V3-10.** Le marqueur était le bouton
+/// « Se déconnecter » ; `US-COMPTE-DECONNECTER` §Contexte le place désormais
+/// dans le menu utilisateur, qui n'existe dans le DOM qu'une fois ouvert. Le
+/// déclencheur du menu est le marqueur équivalent, et il porte le nom de la
+/// personne — donc un signal plus fort que le précédent, pas plus faible.
 ///
 /// Assertions `toHaveCount` et non un `count()` comparé après coup : les
 /// premières réessaient jusqu'au délai imparti, la seconde photographie le DOM
@@ -415,7 +442,7 @@ async function verifierEtatSession(page: Page, connecte: boolean) {
   const enTete = page.getByRole("banner");
 
   await expect(
-    enTete.getByRole("button", { name: "Se déconnecter" }),
+    enTete.getByRole("button", { name: /Ouvrir le menu de/ }),
   ).toHaveCount(connecte ? 1 : 0);
   await expect(enTete.getByRole("link", { name: "Connexion" })).toHaveCount(
     connecte ? 0 : 1,
@@ -456,8 +483,16 @@ test("la déconnexion ferme la session sans hydratation", async ({
     .getByLabel("Mot de passe", { exact: true })
     .fill(MOT_DE_PASSE_CLIENT);
   await sansJs.getByRole("button", { name: "Se connecter" }).click();
-  await expect(sansJs).toHaveURL(/\/$/);
+  await expect(sansJs).toHaveURL(ESPACE_CLIENT);
 
+  // ⚠️ **Ce que ce clic éprouve a changé de nature avec T-V3-10, et c'est
+  // pour cela que le test n'a pas été touché ici.** La déconnexion vit
+  // désormais dans un menu déroulant Radix, qui ne s'ouvre pas sans
+  // hydratation : livrée telle quelle, elle aurait été **inatteignable** sur
+  // cette page-ci, et ce test serait passé au rouge en disant exactement ce
+  // qu'il fallait entendre. `src/components/layouts/site-header.tsx` porte donc
+  // un repli `<noscript>`, dont le contenu n'est rendu que lorsque le script
+  // est absent. Ce clic est ce qui prouve que le repli existe et fonctionne.
   await sansJs.getByRole("button", { name: "Se déconnecter" }).click();
 
   await expect(sansJs).toHaveURL(/\/\?deconnecte=1$/);
@@ -549,7 +584,7 @@ test.describe("accessibilité outillée", () => {
     // et ne pas entrer en concurrence avec un autre repère live de la page.
     const { email } = await creerClientActive(page, db, "axe-sortie");
     await soumettre(page, email, MOT_DE_PASSE_CLIENT);
-    await page.getByRole("button", { name: "Se déconnecter" }).click();
+    await seDeconnecter(page);
     await expect(page.getByRole("status")).toContainText(/déconnecté/i);
 
     const resultats = await new AxeBuilder({ page }).withTags(TAGS).analyze();

@@ -1,8 +1,9 @@
-// En-tête de la coquille publique. Trois comportements que rien d'autre ne
-// porte, et qui sont chacun une contrainte de source :
+// En-tête **unique** du site depuis T-V3-10, qui a fusionné `AppHeader` dedans.
+// Trois comportements que rien d'autre ne porte, et qui sont chacun une
+// contrainte de source :
 //
-//   · il s'affiche pour un visiteur ANONYME — c'est la différence avec
-//     `AppHeader`, et Constitution §5.1 en fait une page ouverte à tous ;
+//   · il s'affiche pour un visiteur ANONYME, Constitution §5.1 faisant de
+//     l'accueil une page ouverte à tous ;
 //   · il retire l'appel à la réservation quand le catalogue est vide
 //     (`US-FORFAIT-CONSULTER` §Cas limites) ;
 //   · sa nav ne porte ni « Avis » ni « Contact », les deux items des maquettes
@@ -54,16 +55,52 @@ describe("SiteHeader — visiteur anonyme", () => {
 });
 
 describe("SiteHeader — session ouverte", () => {
-  it("nomme la personne connectée et porte sa déconnexion", () => {
+  // ⚠️ **Oracle déplacé par T-V3-10, règle du test rouge cas 3.** Ce test
+  // cherchait « Se déconnecter » directement dans l'en-tête : c'était vrai du
+  // couple « nom + bouton » de T-V3-03, et `US-COMPTE-DECONNECTER` §Contexte
+  // place l'action « dans le menu utilisateur (avatar / initiales dans le
+  // header) ». Le bouton n'a pas disparu, il a changé de profondeur. La
+  // propriété vérifiée est la même : une session ouverte se voit, et elle se
+  // ferme depuis l'en-tête.
+  it("nomme la personne connectée et porte sa déconnexion", async () => {
+    const utilisateur = userEvent.setup();
     render(<SiteHeader user={CAMILLE} reservationDisponible />);
 
     expect(screen.getByText(/Camille Durand/)).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Se déconnecter" }),
-    ).toBeInTheDocument();
-    expect(
       screen.queryByRole("link", { name: "Connexion" }),
     ).not.toBeInTheDocument();
+
+    await utilisateur.click(
+      screen.getByRole("button", { name: "Ouvrir le menu de Camille Durand" }),
+    );
+
+    expect(
+      screen.getByRole("menuitem", { name: "Se déconnecter" }),
+    ).toBeInTheDocument();
+  });
+
+  it("mène à l'espace client depuis le menu", async () => {
+    const utilisateur = userEvent.setup();
+    render(<SiteHeader user={CAMILLE} reservationDisponible />);
+
+    await utilisateur.click(
+      screen.getByRole("button", { name: "Ouvrir le menu de Camille Durand" }),
+    );
+
+    expect(
+      screen.getByRole("menuitem", { name: "Mes interventions" }),
+    ).toHaveAttribute("href", "/mes-interventions/a-venir");
+  });
+
+  it("porte les initiales de la personne, pas sa photo", () => {
+    // `users` n'a aucune colonne d'avatar, et [[maquettage]] §Notes portage
+    // tranche « initiales SD » contre la photo dessinée en C7 et C8. Aucune
+    // balise `img` ne doit donc apparaître dans le déclencheur.
+    render(<SiteHeader user={CAMILLE} reservationDisponible />);
+
+    expect(screen.getByText("CD")).toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 
   it("n'affiche ni email ni rôle", () => {
@@ -219,8 +256,11 @@ describe("SiteHeader — menu mobile", () => {
     const panneau = within(screen.getByRole("dialog"));
 
     expect(panneau.getByText(/Camille Durand/)).toBeInTheDocument();
+    // Le panneau mobile porte le même `UserMenu` que la barre desktop, donc son
+    // déclencheur et non le bouton final : la déconnexion est à un cran de plus
+    // depuis T-V3-10.
     expect(
-      panneau.getByRole("button", { name: "Se déconnecter" }),
+      panneau.getByRole("button", { name: "Ouvrir le menu de Camille Durand" }),
     ).toBeInTheDocument();
   });
 });

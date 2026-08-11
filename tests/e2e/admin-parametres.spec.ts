@@ -223,6 +223,48 @@ test("un visiteur non connecté n'atteint pas l'écran d'administration", async 
   );
 });
 
+/// Ajout de l'agent testeur, 2026-08-11 — contrepartie du correctif hors
+/// périmètre de T-V3-10.
+///
+/// `src/proxy.ts:41-43` laisse désormais passer toute requête portant un
+/// en-tête `Next-Action`, même sans cookie. Le motif est juste (une Server
+/// Action se poste sur l'URL courante, et une redirection lui répond par une
+/// navigation que React ne sait pas lire), et le raisonnement du commentaire
+/// l'est aussi : une Server Action exportée est joignable depuis n'importe
+/// quelle route, y compris une route publique hors matcher (ADR-006 v2).
+///
+/// Mais l'en-tête est **choisi par l'appelant**, et rien n'oblige la requête à
+/// être une Server Action. Ce test pose la question directement : un `GET` sur
+/// l'écran d'administration, sans session, avec l'en-tête qui désarme le proxy.
+/// La réponse doit être exactement celle du test précédent - le proxy n'a
+/// jamais été le rempart, `requireAdmin()` l'est.
+///
+/// Il rougirait le jour où une page sous le matcher s'en remettrait au proxy
+/// pour son contrôle d'accès.
+test("l'en-tête `Next-Action` désarme le proxy, jamais la page", async ({
+  page,
+}) => {
+  const sansEnTete = await page.request.get("/admin/parametres", {
+    maxRedirects: 0,
+  });
+  const avecEnTete = await page.request.get("/admin/parametres", {
+    headers: { "Next-Action": "0123456789abcdef0123456789abcdef01234567" },
+    maxRedirects: 0,
+  });
+
+  // Le proxy redirige la navigation ordinaire, et lui seul porte le `next=`.
+  expect(sansEnTete.status()).toBe(307);
+  expect(sansEnTete.headers()["location"]).toContain("next=");
+
+  // Avec l'en-tête, la requête atteint la page : c'est la page qui refuse.
+  expect(avecEnTete.status()).toBeGreaterThanOrEqual(300);
+  expect(avecEnTete.status()).toBeLessThan(400);
+  expect(avecEnTete.headers()["location"]).toContain("/connexion");
+
+  // Et rien de l'écran ne fuit dans la réponse, redirection ou pas.
+  expect(await avecEnTete.text()).not.toContain(LIBELLE);
+});
+
 /// Le cas qui compte vraiment pour une authentification écrite à la main.
 ///
 /// `src/proxy.ts:17` ne teste que la PRÉSENCE du cookie — il ne lit ni la

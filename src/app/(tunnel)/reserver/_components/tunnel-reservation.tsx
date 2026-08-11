@@ -18,6 +18,7 @@ import { reserver } from "@/lib/actions/interventions/reserver";
 import type { ForfaitPublic } from "@/lib/db/queries/forfaits";
 import type { LignePanier, ProduitVendable } from "@/lib/db/queries/produits";
 import { formatPrixEuros } from "@/lib/format";
+import { CHEMIN_ESPACE_CLIENT } from "@/lib/routes";
 import type { SuggestionAdresse } from "@/lib/geo/ban";
 import { cn } from "@/lib/utils";
 
@@ -609,7 +610,12 @@ function EcranConfirmation({ confirmation }: { confirmation: Confirmation }) {
         </p>
 
         <Button asChild className="h-auto rounded-xl px-6 py-3">
-          <Link href="/client/interventions">Voir mes interventions</Link>
+          {/* La destination existe depuis T-V3-10. Elle visait
+              `/client/interventions`, route qui n'a jamais été créée et que
+              `src/proxy.ts` aurait de toute façon renvoyée vers `/connexion` :
+              dernier geste du parcours de démonstration, et il tombait dans le
+              vide. Relevé par Benjamin à la passe manuelle du 2026-08-10. */}
+          <Link href={CHEMIN_ESPACE_CLIENT}>Voir mes interventions</Link>
         </Button>
       </div>
     </main>

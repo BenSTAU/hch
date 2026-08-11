@@ -53,10 +53,22 @@ const transaction = vi.fn(async (rappel: (client: typeof tx) => unknown) => {
   }
 });
 
+// Lectures de l'espace client (T-V3-10). Elles ne passent pas par
+// `$transaction` : ce sont des `SELECT`, et les mocker séparément garde le faux
+// client transactionnel ci-dessus concentré sur ce qu'il observe.
+const interventionFindMany = vi.fn();
+const interventionFindFirst = vi.fn();
+const interventionCount = vi.fn();
+
 vi.mock("@/lib/db/client", () => ({
   db: {
     $transaction: (rappel: (client: typeof tx) => unknown) =>
       transaction(rappel),
+    intervention: {
+      findMany: (args: unknown) => interventionFindMany(args),
+      findFirst: (args: unknown) => interventionFindFirst(args),
+      count: (args: unknown) => interventionCount(args),
+    },
   },
 }));
 
@@ -65,7 +77,14 @@ vi.mock("@/lib/db/queries/adresses", () => ({
   creerAdresse: () => Promise.resolve(77),
 }));
 
-const { reserverIntervention } = await import("./interventions");
+const {
+  abregerNom,
+  compterInterventionsClient,
+  listerInterventionsAVenir,
+  listerInterventionsPassees,
+  reserverIntervention,
+  TAILLE_PAGE_PASSEES,
+} = await import("./interventions");
 
 const CLIENT = "11111111-1111-4111-8111-111111111111";
 
@@ -254,5 +273,284 @@ describe("reserverIntervention - la course perdue sur le creneau", () => {
     expect(rollbacks).toHaveLength(1);
     expect(commits).toHaveLength(0);
     expect(productUpdate).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Lectures de l'espace client — T-V3-10.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Une ligne telle que Prisma la rend, avec ses `Decimal` et ses relations.
+/// Écrite à la main plutôt que dérivée du type : un jeu construit à partir de
+/// la forme du code testerait le code contre lui-même.
+function ligneLue(surcharge: Record<string, unknown> = {}) {
+  return {
+    id: 847,
+    status: "PLANNED",
+    appointmentAt: new Date("2026-08-08T08:00:00.000Z"),
+    durationSnapshot: 60,
+    priceSnapshot: new Prisma.Decimal("85.00"),
+    cancellationReason: null,
+    service: { label: "Revision complete" },
+    tech: { firstname: "Marc", lastname: "Lefebvre" },
+    address: {
+      label: "Domicile",
+      street: "12 rue de la Republique",
+      city: { zipCode: "69002", city: "Lyon" },
+    },
+    products: [],
+    photos: [],
+    ...surcharge,
+  };
+}
+
+describe("abregerNom - protection RGPD du technicien", () => {
+  it("rend le prenom et la seule initiale du nom", () => {
+    // Les deux US l'ecrivent mot pour mot : « tech (prenom + initiale nom,
+    // protection RGPD) ». Le patronyme entier ne doit jamais atteindre le
+    // navigateur, ou il suffit d'ouvrir les outils de developpement.
+    expect(abregerNom("Marc", "Lefebvre")).toBe("Marc L.");
+  });
+
+  it("met l'initiale en capitale", () => {
+    expect(abregerNom("Julie", "bernard")).toBe("Julie B.");
+  });
+
+  it("survit a un patronyme vide sans produire un point orphelin", () => {
+    // Apres pseudonymisation (Constitution §4.1), `lastname` peut etre vide.
+    // Un « Marc . » serait un artefact visible sur un ecran client.
+    expect(abregerNom("Marc", "")).toBe("Marc");
+    expect(abregerNom("Marc", "   ")).toBe("Marc");
+  });
+});
+
+describe("listerInterventionsAVenir", () => {
+  it("filtre sur le STATUT seul, sans borne de date", async () => {
+    // ⚠️ Arbitrage du 2026-08-11. L'US ecrit « le **filtre par defaut** =
+    // `appointment_at >= now()` ET `status IN (PLANNED)` », et un defaut n'est
+    // pas un invariant. Applique a la lettre, un rendez-vous d'hier que le
+    // technicien n'a pas cloture sortirait de « a venir » sans entrer dans
+    // « passees », qui ne retient que les statuts terminaux : le client
+    // perdrait de vue une intervention qui existe encore.
+    interventionFindMany.mockResolvedValue([]);
+
+    await listerInterventionsAVenir({ clientId: CLIENT });
+
+    const args = interventionFindMany.mock.calls[0]?.[0] as {
+      where: Record<string, unknown>;
+      orderBy: unknown;
+    };
+
+    expect(args.where).toEqual({ clientId: CLIENT, status: "PLANNED" });
+    expect(args.where).not.toHaveProperty("appointmentAt");
+    expect(args.orderBy).toEqual({ appointmentAt: "asc" });
+  });
+
+  it("projette le technicien abrege et le total forfait + produits", async () => {
+    interventionFindMany.mockResolvedValue([
+      ligneLue({
+        products: [
+          {
+            productId: 2,
+            quantity: 1,
+            unitPriceSnapshot: new Prisma.Decimal("22.00"),
+            product: { label: "Pack usure standard" },
+          },
+        ],
+      }),
+    ]);
+
+    const [intervention] = await listerInterventionsAVenir({
+      clientId: CLIENT,
+    });
+
+    expect(intervention?.technicien).toBe("Marc L.");
+    // `price_snapshot` porte le FORFAIT seul ; le total se recalcule.
+    expect(intervention?.priceSnapshot).toBe("85.00");
+    expect(intervention?.total).toBe("107.00");
+    expect(intervention?.produits).toEqual([
+      {
+        productId: 2,
+        label: "Pack usure standard",
+        quantity: 1,
+        unitPriceSnapshot: "22.00",
+      },
+    ]);
+  });
+
+  it("calcule le total en decimal, pas en flottant", async () => {
+    // `12.90 x 3` vaut `38.699999999999996` en binaire. L'ecart est invisible
+    // sur une ligne et cesse de l'etre des qu'on en additionne quelques-unes,
+    // sur un montant que le client lit.
+    interventionFindMany.mockResolvedValue([
+      ligneLue({
+        priceSnapshot: new Prisma.Decimal("0.00"),
+        products: [
+          {
+            productId: 1,
+            quantity: 3,
+            unitPriceSnapshot: new Prisma.Decimal("12.90"),
+            product: { label: "Chambre a air" },
+          },
+        ],
+      }),
+    ]);
+
+    const [intervention] = await listerInterventionsAVenir({
+      clientId: CLIENT,
+    });
+
+    expect(intervention?.total).toBe("38.70");
+  });
+
+  it("ne rend que les identifiants des photos, jamais leur chemin disque", async () => {
+    // `photos.url` est un chemin de systeme de fichiers. Le descendre au
+    // navigateur donnerait a qui inspecte la page le nom exact du fichier sur
+    // le serveur ; la vignette passe par une route controlee.
+    interventionFindMany.mockResolvedValue([
+      ligneLue({ photos: [{ id: 7 }, { id: 9 }] }),
+    ]);
+
+    const [intervention] = await listerInterventionsAVenir({
+      clientId: CLIENT,
+    });
+
+    expect(intervention?.photos).toEqual([{ id: 7 }, { id: 9 }]);
+    expect(JSON.stringify(intervention)).not.toContain("uploads/");
+  });
+});
+
+describe("listerInterventionsPassees", () => {
+  beforeEach(() => {
+    interventionCount.mockResolvedValue(0);
+    interventionFindMany.mockResolvedValue([]);
+  });
+
+  it("ne retient que les statuts terminaux, du plus recent au plus ancien", async () => {
+    await listerInterventionsPassees({ clientId: CLIENT });
+
+    const args = interventionFindMany.mock.calls[0]?.[0] as {
+      where: { status: { in: string[] } };
+      orderBy: unknown;
+    };
+
+    expect(args.where.status.in).toEqual(["DONE", "CANCELLED"]);
+    expect(args.orderBy).toEqual({ appointmentAt: "desc" });
+  });
+
+  it("borne la periode de fin au LENDEMAIN, en exclusif", async () => {
+    // Une borne `<= 2026-08-11T00:00Z` ecarterait tout ce qui a eu lieu dans la
+    // journee du 11, ce qui est faux pour qui vient de saisir cette date comme
+    // fin de periode. Le defaut ne se voit que sur la derniere journee choisie.
+    await listerInterventionsPassees({
+      clientId: CLIENT,
+      du: new Date("2026-01-01T00:00:00.000Z"),
+      au: new Date("2026-08-11T00:00:00.000Z"),
+    });
+
+    const args = interventionFindMany.mock.calls[0]?.[0] as {
+      where: { appointmentAt: { gte: Date; lt: Date } };
+    };
+
+    expect(args.where.appointmentAt.gte).toEqual(
+      new Date("2026-01-01T00:00:00.000Z"),
+    );
+    expect(args.where.appointmentAt.lt).toEqual(
+      new Date("2026-08-12T00:00:00.000Z"),
+    );
+  });
+
+  it("n'ajoute aucune borne quand aucune periode n'est demandee", async () => {
+    await listerInterventionsPassees({ clientId: CLIENT });
+
+    const args = interventionFindMany.mock.calls[0]?.[0] as { where: object };
+
+    expect(args.where).not.toHaveProperty("appointmentAt");
+  });
+
+  it("pagine, et compte le TOTAL du filtre et non celui de la page", async () => {
+    interventionCount.mockResolvedValue(25);
+
+    const page = await listerInterventionsPassees({
+      clientId: CLIENT,
+      page: 3,
+    });
+
+    expect(interventionFindMany.mock.calls[0]?.[0]).toMatchObject({
+      skip: 2 * TAILLE_PAGE_PASSEES,
+      take: TAILLE_PAGE_PASSEES,
+    });
+    expect(page.total).toBe(25);
+    expect(page.pages).toBe(3);
+  });
+
+  it("ramene une page nulle ou negative a la premiere", async () => {
+    // Le numero vient de l'URL, donc de n'importe qui. Un `skip` negatif ferait
+    // lever Prisma, et la page repondrait 500 sur un parametre bricole.
+    await listerInterventionsPassees({ clientId: CLIENT, page: -4 });
+
+    expect(interventionFindMany.mock.calls[0]?.[0]).toMatchObject({ skip: 0 });
+  });
+
+  it("ramene un numero de page fractionnaire a un entier", async () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11. RED au moment de l'ecriture.
+    //
+    // Meme famille que le test ci-dessus, et meme motif : le numero vient de
+    // l'URL, donc de n'importe qui. `passees/page.tsx:53` le lit par
+    // `Number(parametres.page) || 1`, qui rend `2.3` pour `?page=2.3` ; ici,
+    // `Math.max(1, ...)` redresse le negatif mais laisse passer le
+    // fractionnaire, et `skip` vaut alors `12.999999999999998`.
+    //
+    // Deux consequences, toutes deux visibles :
+    //   · Prisma valide `skip` comme un `Int` et leve sur un flottant - la page
+    //     repond 500 sur un parametre bricole, exactement ce que le test du
+    //     `page: -4` cherchait a empecher ;
+    //   · `page` est ressorti tel quel vers `PaginationPassees`, dont le
+    //     `cible === page` ne peut plus etre vrai : plus aucun `aria-current`,
+    //     donc plus de page courante annoncee (RGAA A).
+    await listerInterventionsPassees({ clientId: CLIENT, page: 2.3 });
+
+    const args = interventionFindMany.mock.calls[0]?.[0] as { skip: number };
+
+    expect(Number.isInteger(args.skip)).toBe(true);
+  });
+
+  it("annonce une page meme quand l'historique est vide", async () => {
+    // `Math.ceil(0 / 10)` vaut zero, et une pagination « page 1 sur 0 » est un
+    // etat que rien ne sait rendre.
+    const page = await listerInterventionsPassees({ clientId: CLIENT });
+
+    expect(page.pages).toBe(1);
+  });
+
+  it("rend le motif d'annulation d'une intervention annulee", async () => {
+    interventionFindMany.mockResolvedValue([
+      ligneLue({ status: "CANCELLED", cancellationReason: "Client absent" }),
+    ]);
+
+    const page = await listerInterventionsPassees({ clientId: CLIENT });
+
+    expect(page.interventions[0]?.cancellationReason).toBe("Client absent");
+  });
+});
+
+// ⚠️ Les deux tests de `chargerInterventionDuClient` ont été retirés avec la
+// fonction, au 2026-08-11 : l'agent testeur a constaté qu'elle n'avait aucun
+// appelant, et ils couvraient donc du code qui ne tournait jamais en
+// production. Ce n'est pas un oracle rendu vert - c'est un sujet qui a disparu.
+
+describe("compterInterventionsClient", () => {
+  it("compte les deux onglets sur le meme client", async () => {
+    interventionCount.mockResolvedValueOnce(2).mockResolvedValueOnce(5);
+
+    const compteurs = await compterInterventionsClient({ clientId: CLIENT });
+
+    expect(compteurs).toEqual({ aVenir: 2, passees: 5 });
+    expect(interventionCount.mock.calls[0]?.[0]).toMatchObject({
+      where: { clientId: CLIENT, status: "PLANNED" },
+    });
+    expect(interventionCount.mock.calls[1]?.[0]).toMatchObject({
+      where: { clientId: CLIENT, status: { in: ["DONE", "CANCELLED"] } },
+    });
   });
 });

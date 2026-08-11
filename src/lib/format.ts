@@ -6,6 +6,8 @@
 /// séparateur ou d'un symbole, et c'est le genre d'écart qu'aucun test ne
 /// rattrape parce que chacun teste sa propre version.
 
+import { FUSEAU_EXPLOITATION } from "@/lib/creneaux/horaires";
+
 const EUROS = new Intl.NumberFormat("fr-FR", {
   style: "currency",
   currency: "EUR",
@@ -41,6 +43,40 @@ export function sommeEuros(montants: readonly string[]): string {
     0,
   );
   return (centimes / 100).toFixed(2);
+}
+
+/// Date et heure d'un rendez-vous, **ancrées sur le fuseau d'exploitation**.
+///
+/// Les deux US de l'espace client demandent « `appointment_at` timezone
+/// client ». Le fuseau est nommé explicitement plutôt que laissé au fuseau
+/// local, pour deux motifs qui vont dans le même sens : l'entreprise n'opère
+/// qu'en France métropolitaine, donc le fuseau du client **est** celui-là ; et
+/// un formatage implicite rend une chaîne différente au serveur (conteneur en
+/// UTC) et dans le navigateur, ce qui produit une divergence d'hydratation sur
+/// la donnée la plus lue de l'écran.
+const DATE_LONGUE = new Intl.DateTimeFormat("fr-FR", {
+  timeZone: FUSEAU_EXPLOITATION,
+  dateStyle: "full",
+  timeStyle: "short",
+});
+
+const DATE_COURTE = new Intl.DateTimeFormat("fr-FR", {
+  timeZone: FUSEAU_EXPLOITATION,
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+/// « vendredi 8 août 2026 à 10:00 » — titre du panneau de détail.
+export function formatDateLongue(instant: Date): string {
+  return DATE_LONGUE.format(instant);
+}
+
+/// « ven. 8 août, 10:00 » — cartes de la liste.
+export function formatDateCourte(instant: Date): string {
+  return DATE_COURTE.format(instant);
 }
 
 /// La durée reste **en minutes**, y compris au-delà de l'heure.
