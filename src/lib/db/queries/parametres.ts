@@ -128,6 +128,36 @@ export async function updateAppSettings(
   });
 }
 
+/// Coordonnées de contact de la société - `company.phone` et `company.email`.
+///
+/// Premier lecteur de ces deux clés **hors du back-office** : elles étaient
+/// seedées depuis le jalon 0 et n'étaient affichées nulle part. C'est
+/// `US-INTERVENTION-ANNULER-CLIENT` §Cas d'erreur qui les fait sortir, en
+/// renvoyant le client vers l'atelier passé la fenêtre H-24 - il faut alors lui
+/// dire *comment* nous joindre, et la seule source qui fasse foi est celle que
+/// l'administrateur tient à jour.
+///
+/// Les deux valeurs sont **facultatives** : la colonne est NULLable, un
+/// administrateur peut vider le champ, et un `tel:` construit sur une chaîne
+/// vide donnerait un lien mort. L'écran affiche ce qui existe.
+export async function lireContactSociete(): Promise<{
+  telephone: string | null;
+  email: string | null;
+}> {
+  const lignes = await db.appSetting.findMany({
+    where: { key: { in: ["company.phone", "company.email"] } },
+    select: { key: true, value: true },
+  });
+
+  const parCle = new Map(lignes.map((ligne) => [ligne.key, ligne.value]));
+  const lire = (cle: string): string | null => {
+    const valeur = parCle.get(cle)?.trim();
+    return valeur ? valeur : null;
+  };
+
+  return { telephone: lire("company.phone"), email: lire("company.email") };
+}
+
 /// Horaires d'ouverture de la société, lus depuis les sept clés
 /// `business_hours.*`.
 ///

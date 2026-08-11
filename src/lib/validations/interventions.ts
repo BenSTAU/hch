@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { MOTIF_ANNULATION_MAX } from "@/lib/interventions/annulation";
 import { MAX_PHOTOS } from "@/lib/photos/stockage";
 
 import { adresseSelectionneeSchema } from "./adresses";
@@ -78,4 +79,27 @@ export type ReserverInput = z.infer<typeof reserverSchema>;
 export const ajouterPhotoSchema = z.object({
   interventionId: z.number().int().positive(),
   url: cheminPhotoSchema,
+});
+
+/// Motif d'annulation - `US-INTERVENTION-ANNULER-CLIENT` §Cas d'erreur, « Motif
+/// d'annulation requis ».
+///
+/// Champ **libre et obligatoire**. Les deux bornes ne viennent d'aucune source :
+/// `interventions.cancellation_reason` est un TEXT sans contrainte, et l'US ne
+/// dit que « obligatoire ». Arbitrées le 2026-08-11 - trois caractères pour que
+/// « . » ne vaille pas motif, le plafond dans le module pur parce que la zone de
+/// saisie le porte aussi.
+///
+/// `trim` AVANT `min` : sans lui, une suite d'espaces satisfait la longueur et
+/// s'écrit en base comme un motif vide.
+export const annulerInterventionSchema = z.object({
+  interventionId: z.number().int().positive(),
+  motif: z
+    .string()
+    .trim()
+    .min(3, "Motif d'annulation requis.")
+    .max(
+      MOTIF_ANNULATION_MAX,
+      `Motif trop long (${MOTIF_ANNULATION_MAX} caractères maximum).`,
+    ),
 });

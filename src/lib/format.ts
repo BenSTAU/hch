@@ -79,6 +79,54 @@ export function formatDateCourte(instant: Date): string {
   return DATE_COURTE.format(instant);
 }
 
+/// Jour calendaire d'un instant, dans le fuseau d'exploitation, au format
+/// `AAAA-MM-JJ`. `fr-CA` est le seul locale courant qui rende l'ISO.
+const JOUR_CALENDAIRE = new Intl.DateTimeFormat("fr-CA", {
+  timeZone: FUSEAU_EXPLOITATION,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/// « Dans 3 jours » - chip des cartes de la liste (écran **C8**).
+///
+/// ── Pourquoi un écart de jours CALENDAIRES et non de millisecondes
+///
+/// Un rendez-vous demain à 9 h est « demain », qu'on le lise à 8 h ou à 23 h.
+/// Un écart en millisecondes le dirait « aujourd'hui » le soir même, et
+/// changerait de réponse entre le rendu serveur et l'hydratation - c'est la
+/// divergence d'hydratation payée sur le stepper du tunnel (PR #29 note 8). La
+/// borne de jour ne bouge qu'à minuit.
+///
+/// ── Une date passée ne rend AUCUN chip
+///
+/// L'onglet « À venir » retient `status = PLANNED` **sans borne de date**
+/// (arbitrage du 2026-08-11) : un rendez-vous que le technicien n'a pas clôturé
+/// y reste. « Dans -2 jours » n'a pas de sens, et aucune source ne dit quoi
+/// afficher à la place. La date complète est déjà sur la carte, elle suffit.
+///
+/// `maintenant` est un paramètre, jamais `new Date()` : l'appelant le fixe une
+/// fois côté serveur, sinon le rendu et l'hydratation lisent deux horloges.
+export function formatDelaiRelatif(
+  quand: Date,
+  maintenant: Date,
+): string | null {
+  const enJours = (instant: Date): number =>
+    Date.parse(`${JOUR_CALENDAIRE.format(instant)}T00:00:00Z`) / 86_400_000;
+
+  const ecart = Math.round(enJours(quand) - enJours(maintenant));
+
+  if (ecart < 0) return null;
+  if (ecart === 0) return "Aujourd'hui";
+  if (ecart === 1) return "Demain";
+  // Deux semaines pleines : au-delà, « Dans 23 jours » se compte, « Dans
+  // 3 semaines » se lit. La maquette C8 écrit « Dans X jours/semaines » sans
+  // dire où passe la bascule.
+  if (ecart < 14) return `Dans ${String(ecart)} jours`;
+
+  return `Dans ${String(Math.round(ecart / 7))} semaines`;
+}
+
 /// La durée reste **en minutes**, y compris au-delà de l'heure.
 ///
 /// Ce n'est pas un oubli de « 1 h 30 » : `US-FORFAIT-CONSULTER` §Cas nominal

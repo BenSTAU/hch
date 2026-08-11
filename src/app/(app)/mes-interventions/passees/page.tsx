@@ -72,6 +72,11 @@ export default async function InterventionsPasseesPage({
           // terminale, et charger le catalogue produit ici serait une requête
           // pour un bloc que le panneau ne rendra pas.
           produits={[]}
+          // Aucune ligne de cet onglet n'est annulable : le bloc ne se rend
+          // jamais ici, et le contact n'a donc rien à alimenter. Le lire quand
+          // même serait une requête pour un composant que le panneau écarte.
+          contact={{ telephone: null, email: null }}
+          maintenant={new Date()}
           vide={{
             message: "Vous n'avez pas d'historique de rendez-vous.",
             href: CHEMIN_RESERVATION,

@@ -9,6 +9,7 @@ import type { ProduitVendable } from "@/lib/db/queries/produits";
 import {
   formatDateCourte,
   formatDateLongue,
+  formatDelaiRelatif,
   formatDuree,
   formatPrixEuros,
 } from "@/lib/format";
@@ -16,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import { BlocAnnulation, type ContactSociete } from "./bloc-annulation";
 import { BlocPhotos } from "./bloc-photos";
 import { BlocProduits } from "./bloc-produits";
 
@@ -45,12 +47,25 @@ import { BlocProduits } from "./bloc-produits";
 export function InterventionsVue({
   interventions,
   produits,
+  contact,
+  maintenant,
   vide,
 }: {
   interventions: readonly InterventionClient[];
   /// Catalogue vendable, pour le bloc T+n du panneau. Vide sur l'onglet des
   /// passées, où aucune ligne n'est modifiable.
   produits: readonly ProduitVendable[];
+  /// Coordonnées de l'atelier, affichées par le bloc d'annulation quand la
+  /// fenêtre H-24 est dépassée (`US-INTERVENTION-ANNULER-CLIENT` §Cas d'erreur).
+  contact: ContactSociete;
+  /// Horloge du **rendu serveur**, descendue en prop plutôt que lue ici.
+  ///
+  /// Deux surfaces en dépendent, le chip « Dans X jours » et la fenêtre
+  /// d'annulation, et toutes deux sont rendues au serveur puis hydratées. Un
+  /// `new Date()` au rendu produirait deux valeurs, donc potentiellement deux
+  /// résultats : c'est la divergence d'hydratation payée sur le stepper du
+  /// tunnel (PR #29 note 8).
+  maintenant: Date;
   vide: { message: string; href: string; libelle: string };
 }) {
   const [selection, setSelection] = useQueryState(
@@ -89,6 +104,7 @@ export function InterventionsVue({
             <CarteIntervention
               intervention={intervention}
               courante={intervention.id === courante.id}
+              maintenant={maintenant}
               onChoisir={() => {
                 void setSelection(intervention.id);
               }}
@@ -97,7 +113,12 @@ export function InterventionsVue({
         ))}
       </ul>
 
-      <PanneauDetail intervention={courante} produits={produits} />
+      <PanneauDetail
+        intervention={courante}
+        produits={produits}
+        contact={contact}
+        maintenant={maintenant}
+      />
     </div>
   );
 }
@@ -143,12 +164,19 @@ function EtiquetteStatut({ statut }: { statut: string }) {
 function CarteIntervention({
   intervention,
   courante,
+  maintenant,
   onChoisir,
 }: {
   intervention: InterventionClient;
   courante: boolean;
+  maintenant: Date;
   onChoisir: () => void;
 }) {
+  // Chip « Dans X jours » de C8, absent de la maquette portée par T-V3-10
+  // (§Notes portage). `null` sur une date passée : l'onglet « À venir » retient
+  // `PLANNED` sans borne de date, et « Dans -2 jours » ne veut rien dire.
+  const delai = formatDelaiRelatif(intervention.appointmentAt, maintenant);
+
   return (
     <button
       type="button"
@@ -175,8 +203,16 @@ function CarteIntervention({
         )}
       </div>
 
-      <span className="font-heading text-base font-bold">
-        {formatDateCourte(intervention.appointmentAt)}
+      <span className="flex flex-wrap items-center gap-2">
+        <span className="font-heading text-base font-bold">
+          {formatDateCourte(intervention.appointmentAt)}
+        </span>
+        {/* Le chip ne se montre que sur une intervention encore à venir : sur
+            une annulée ou une terminée de l'onglet « Passées », un délai
+            relatif décrirait un rendez-vous qui n'aura pas lieu. */}
+        {delai && intervention.status === "PLANNED" ? (
+          <Badge variant="outline">{delai}</Badge>
+        ) : null}
       </span>
 
       <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
@@ -203,17 +239,20 @@ function CarteIntervention({
 ///   · **la note « ☆ 4.9/5 »** du technicien : aucune notation au dictionnaire,
 ///     et aucune US v1 n'en crée ;
 ///   · **« Voir le récapitulatif complet »** : la note SPEC de
-///     `US-INTERVENTIONS-LISTER-CLIENT-PASSEES` renvoie le détail complet en v2 ;
-///   · **le bloc d'annulation** (bouton et bandeau « Annulation impossible en
-///     ligne ») : il appartient à **T-V3-11**, qui le montera ici. Aucun
-///     emplacement réservé, aucun bouton désactivé - une place gardée pour une
-///     tâche future est un mort-vivant si la tâche glisse.
+///     `US-INTERVENTIONS-LISTER-CLIENT-PASSEES` renvoie le détail complet en v2.
+///
+/// Le **bloc d'annulation** y figurait comme non porté jusqu'à T-V3-11, qui le
+/// monte ci-dessous.
 function PanneauDetail({
   intervention,
   produits,
+  contact,
+  maintenant,
 }: {
   intervention: InterventionClient;
   produits: readonly ProduitVendable[];
+  contact: ContactSociete;
+  maintenant: Date;
 }) {
   // Le statut décide, pas l'onglet : c'est la même règle que celle des trois
   // mutations côté serveur (`STATUT_MODIFIABLE`), et la faire dépendre de la
@@ -323,6 +362,20 @@ function PanneauDetail({
             </dd>
           </div>
         </dl>
+      ) : null}
+
+      {/* Le bloc n'existe que sur une intervention annulable, et `modifiable`
+          porte déjà exactement cette condition (`status === "PLANNED"`) : c'est
+          la même que celle des trois mutations côté serveur. Sur une terminée
+          ou une annulée, il n'y a ni bouton grisé ni bandeau - il n'y a rien,
+          parce qu'il n'y a plus rien à annuler. */}
+      {modifiable ? (
+        <BlocAnnulation
+          interventionId={intervention.id}
+          appointmentAt={intervention.appointmentAt}
+          maintenant={maintenant}
+          contact={contact}
+        />
       ) : null}
     </section>
   );

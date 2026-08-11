@@ -27,15 +27,28 @@ const serviceFindUniqueOrThrow = vi.fn();
 const addressFindFirst = vi.fn();
 const queryRaw = vi.fn();
 
+// Annulation (T-V3-11). Elle lit, verrouille, relit puis écrit, le tout dans
+// la transaction : ses quatre appels ont donc leur double ici.
+const txInterventionFindFirst = vi.fn();
+const txInterventionFindUniqueOrThrow = vi.fn();
+const txInterventionUpdate = vi.fn();
+const auditCreate = vi.fn();
+
 const tx = {
   $queryRaw: (_strings: TemplateStringsArray, ...valeurs: unknown[]) =>
     queryRaw(valeurs),
   product: { update: productUpdate },
-  intervention: { create: interventionCreate },
+  intervention: {
+    create: interventionCreate,
+    findFirst: (args: unknown) => txInterventionFindFirst(args),
+    findUniqueOrThrow: (args: unknown) => txInterventionFindUniqueOrThrow(args),
+    update: (args: unknown) => txInterventionUpdate(args),
+  },
   interventionProduct: { create: interventionProductCreate },
   photo: { createMany: photoCreateMany },
   service: { findUniqueOrThrow: serviceFindUniqueOrThrow },
   address: { findFirst: addressFindFirst },
+  auditLog: { create: (args: unknown) => auditCreate(args) },
 };
 
 /// Ce que la base fait du rappel : commit s'il rend, rollback s'il lève.
@@ -79,6 +92,7 @@ vi.mock("@/lib/db/queries/adresses", () => ({
 
 const {
   abregerNom,
+  annulerInterventionDuClient,
   compterInterventionsClient,
   listerInterventionsAVenir,
   listerInterventionsPassees,
@@ -551,6 +565,217 @@ describe("compterInterventionsClient", () => {
     });
     expect(interventionCount.mock.calls[1]?.[0]).toMatchObject({
       where: { clientId: CLIENT, status: { in: ["DONE", "CANCELLED"] } },
+    });
+  });
+});
+
+describe("annulerInterventionDuClient", () => {
+  const MOTIF = "Empechement de derniere minute";
+  const RDV = new Date("2026-08-20T08:00:00.000Z");
+
+  /// Une intervention planifiée, telle que la première lecture la rend.
+  function planifiee(surcharge: Record<string, unknown> = {}) {
+    return {
+      status: "PLANNED",
+      appointmentAt: RDV,
+      durationSnapshot: 60,
+      service: { label: "Revision complete" },
+      tech: { email: "tech@exemple.fr", firstname: "Marc" },
+      address: {
+        street: "12 rue de la Republique",
+        city: { zipCode: "69002", city: "Lyon" },
+      },
+      ...surcharge,
+    };
+  }
+
+  function armer(surcharge: Record<string, unknown> = {}) {
+    txInterventionFindFirst.mockResolvedValue(planifiee(surcharge));
+    txInterventionFindUniqueOrThrow.mockResolvedValue({
+      status: (surcharge["status"] as string | undefined) ?? "PLANNED",
+    });
+  }
+
+  it("passe l'intervention en CANCELLED avec son motif", async () => {
+    armer();
+
+    const resultat = await annulerInterventionDuClient({
+      interventionId: 847,
+      clientId: CLIENT,
+      motif: MOTIF,
+      // H-25 : la fenetre est ouverte d'une heure.
+      maintenant: new Date("2026-08-19T07:00:00.000Z"),
+    });
+
+    expect(resultat.ok).toBe(true);
+    expect(txInterventionUpdate).toHaveBeenCalledWith({
+      where: { id: 847 },
+      data: { status: "CANCELLED", cancellationReason: MOTIF },
+    });
+    expect(commits).toHaveLength(1);
+  });
+
+  it("accepte a H-25 et refuse a H-23", async () => {
+    // La DoD nomme ces deux bornes. `> 24 h` est la formulation de l'US, en
+    // miroir de son cas d'erreur `<= 24 h`.
+    armer();
+    const accepte = await annulerInterventionDuClient({
+      interventionId: 847,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T07:00:00.000Z"),
+    });
+    expect(accepte.ok).toBe(true);
+
+    vi.clearAllMocks();
+    armer();
+    const refuse = await annulerInterventionDuClient({
+      interventionId: 847,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T09:00:00.000Z"),
+    });
+    expect(refuse).toEqual({ ok: false, reason: "fenetre_depassee" });
+    expect(txInterventionUpdate).not.toHaveBeenCalled();
+  });
+
+  it("refuse a exactement H-24, l'egalite tombant du cote du refus", async () => {
+    // L'US ecrit le nominal en `> 24 h` et le refus en `<= 24 h` : la borne
+    // exacte appartient au second. Aucune source ne laisse le choix, et c'est
+    // la seule valeur ou les deux formulations pourraient diverger.
+    armer();
+
+    const resultat = await annulerInterventionDuClient({
+      interventionId: 847,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T08:00:00.000Z"),
+    });
+
+    expect(resultat).toEqual({ ok: false, reason: "fenetre_depassee" });
+  });
+
+  it("ne distingue pas l'intervention inconnue de celle d'un tiers", async () => {
+    // La garde de propriete vit dans la clause `where`, pas dans un `if` :
+    // l'intervention d'un tiers ne remonte simplement pas. Une reponse
+    // distincte confirmerait son existence a qui incremente un SERIAL.
+    txInterventionFindFirst.mockResolvedValue(null);
+
+    const resultat = await annulerInterventionDuClient({
+      interventionId: 999_999,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T07:00:00.000Z"),
+    });
+
+    expect(resultat).toEqual({ ok: false, reason: "introuvable" });
+    expect(txInterventionFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 999_999, clientId: CLIENT } }),
+    );
+  });
+
+  it("refuse tout statut autre que PLANNED", async () => {
+    // `IN_PROGRESS → CANCELLED` existe au cycle de vie (Constitution §2.4) mais
+    // appartient au technicien, en repli de refus de paiement. L'ouvrir au
+    // client lui permettrait d'annuler pendant que le technicien est chez lui.
+    for (const status of ["IN_PROGRESS", "DONE", "CANCELLED"]) {
+      vi.clearAllMocks();
+      armer({ status });
+
+      const resultat = await annulerInterventionDuClient({
+        interventionId: 847,
+        clientId: CLIENT,
+        motif: MOTIF,
+        maintenant: new Date("2026-08-19T07:00:00.000Z"),
+      });
+
+      expect(resultat).toEqual({ ok: false, reason: "non_annulable" });
+      expect(txInterventionUpdate).not.toHaveBeenCalled();
+    }
+  });
+
+  it("ecrit l'audit RGPD DANS la transaction", async () => {
+    // Constitution §4.2. Une trace ecrite a cote de sa transaction survit a un
+    // rollback, ou manque alors que l'ecriture a eu lieu : c'est la piece qu'on
+    // produit en cas de contestation.
+    armer();
+
+    await annulerInterventionDuClient({
+      interventionId: 847,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T07:00:00.000Z"),
+    });
+
+    expect(auditCreate).toHaveBeenCalledWith({
+      data: {
+        entityType: "interventions",
+        entityId: "847",
+        action: "UPDATE",
+        actorId: CLIENT,
+        details: {
+          statutAvant: "PLANNED",
+          statutApres: "CANCELLED",
+          motif: MOTIF,
+        },
+      },
+    });
+  });
+
+  it("verrouille la ligne APRES la garde de propriete", async () => {
+    // Un appelant qui incremente des identifiants ne doit pas pouvoir poser un
+    // verrou sur le rendez-vous d'un tiers : le `FOR UPDATE` ne part que si la
+    // lecture filtree a rendu quelque chose.
+    txInterventionFindFirst.mockResolvedValue(null);
+
+    await annulerInterventionDuClient({
+      interventionId: 999_999,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T07:00:00.000Z"),
+    });
+
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("refuse quand une transaction voisine a annule entre la lecture et le verrou", async () => {
+    // Deux annulations concurrentes passent toutes les deux la premiere lecture
+    // sous READ COMMITTED. Sans la relecture SOUS verrou, la seconde ecrirait
+    // une deuxieme entree d'audit et enverrait un deuxieme email au technicien
+    // pour un rendez-vous deja annule.
+    txInterventionFindFirst.mockResolvedValue(planifiee());
+    txInterventionFindUniqueOrThrow.mockResolvedValue({ status: "CANCELLED" });
+
+    const resultat = await annulerInterventionDuClient({
+      interventionId: 847,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T07:00:00.000Z"),
+    });
+
+    expect(resultat).toEqual({ ok: false, reason: "non_annulable" });
+    expect(txInterventionUpdate).not.toHaveBeenCalled();
+    expect(auditCreate).not.toHaveBeenCalled();
+  });
+
+  it("rend au technicien de quoi etre prevenu, sans relire la base", async () => {
+    armer();
+
+    const resultat = await annulerInterventionDuClient({
+      interventionId: 847,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T07:00:00.000Z"),
+    });
+
+    expect(resultat).toEqual({
+      ok: true,
+      technicien: { email: "tech@exemple.fr", firstname: "Marc" },
+      appointmentAt: RDV,
+      durationSnapshot: 60,
+      forfait: "Revision complete",
+      adresse: "12 rue de la Republique, 69002 Lyon",
+      motif: MOTIF,
     });
   });
 });

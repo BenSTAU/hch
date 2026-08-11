@@ -17,7 +17,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NuqsTestingAdapter } from "nuqs/adapters/testing";
 import { axe } from "jest-axe";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 vi.mock("@/lib/actions/produits/ajouter-produit", () => ({
   ajouterProduit: vi.fn(),
@@ -27,6 +27,9 @@ vi.mock("@/lib/actions/produits/retirer-produit", () => ({
 }));
 vi.mock("@/lib/actions/interventions/ajouter-photo", () => ({
   ajouterPhoto: vi.fn(),
+}));
+vi.mock("@/lib/actions/interventions/annuler-intervention", () => ({
+  annulerIntervention: vi.fn(),
 }));
 
 const { InterventionsVue } = await import("./interventions-vue");
@@ -50,6 +53,32 @@ function Enveloppe({
     <NuqsTestingAdapter searchParams={searchParams} hasMemory>
       {children}
     </NuqsTestingAdapter>
+  );
+}
+
+/// Horloge du rendu, sept jours avant le rendez-vous des fixtures : la fenetre
+/// d'annulation H-24 y est donc OUVERTE, et le bloc de T-V3-11 se rend dans son
+/// etat nominal. Sa fermeture est eprouvee par `bloc-annulation.test.tsx`, qui
+/// en est le proprietaire.
+///
+/// Fixe et non `new Date()` : le composant en derive le chip « Dans X jours » et
+/// l'etat du bouton, une horloge reelle rendrait ce fichier vert aujourd'hui et
+/// rouge la semaine prochaine.
+const MAINTENANT = new Date("2026-08-01T08:00:00.000Z");
+
+const CONTACT = { telephone: "+33639980000", email: "contact@exemple.fr" };
+
+/// Injecte les deux props que T-V3-11 a ajoutees, sans les redire a chaque
+/// appel. Elles sont **requises** a dessein cote composant : `maintenant` doit
+/// venir du serveur, un defaut l'aurait laisse se lire au rendu.
+function Vue(
+  props: Omit<
+    ComponentProps<typeof InterventionsVue>,
+    "contact" | "maintenant"
+  >,
+) {
+  return (
+    <InterventionsVue contact={CONTACT} maintenant={MAINTENANT} {...props} />
   );
 }
 
@@ -92,7 +121,7 @@ describe("InterventionsVue - liste vide", () => {
     // pas de rendez-vous prevu → Reserver un creneau ».
     render(
       <Enveloppe>
-        <InterventionsVue interventions={[]} produits={[]} vide={VIDE} />
+        <Vue interventions={[]} produits={[]} vide={VIDE} />
       </Enveloppe>,
     );
 
@@ -108,11 +137,7 @@ describe("InterventionsVue - liste", () => {
   it("porte statut, date, technicien, commune et montant sur chaque carte", () => {
     render(
       <Enveloppe>
-        <InterventionsVue
-          interventions={[intervention()]}
-          produits={[]}
-          vide={VIDE}
-        />
+        <Vue interventions={[intervention()]} produits={[]} vide={VIDE} />
       </Enveloppe>,
     );
 
@@ -124,10 +149,48 @@ describe("InterventionsVue - liste", () => {
     expect(within(carte).getByText("85,00 €")).toBeInTheDocument();
   });
 
+  it("porte le chip « Dans X jours » sur une intervention a venir", () => {
+    // Divergence de portage C8 attribuee a T-V3-11 (§Ecrans) : « chip "Dans X
+    // jours" manquant sur les cards ». Sept jours separent MAINTENANT du
+    // rendez-vous des fixtures.
+    render(
+      <Enveloppe>
+        <Vue interventions={[intervention()]} produits={[]} vide={VIDE} />
+      </Enveloppe>,
+    );
+
+    const carte = screen.getByRole("button", { current: true });
+    expect(within(carte).getByText("Dans 7 jours")).toBeInTheDocument();
+  });
+
+  it("n'affiche AUCUN chip sur un rendez-vous dont la date est passee", () => {
+    // L'onglet « A venir » retient `status = PLANNED` **sans borne de date**
+    // (arbitrage du 2026-08-11) : un rendez-vous que le technicien n'a pas
+    // cloture y reste, et « Dans -2 jours » ne veut rien dire. La date
+    // complete est deja sur la carte.
+    render(
+      <Enveloppe>
+        <Vue
+          interventions={[
+            intervention({
+              appointmentAt: new Date("2026-07-20T08:00:00.000Z"),
+            }),
+          ]}
+          produits={[]}
+          vide={VIDE}
+        />
+      </Enveloppe>,
+    );
+
+    const carte = screen.getByRole("button", { current: true });
+    expect(within(carte).queryByText(/^Dans /)).toBeNull();
+    expect(within(carte).queryByText(/Aujourd|Demain/)).toBeNull();
+  });
+
   it("selectionne la premiere intervention par defaut", () => {
     render(
       <Enveloppe>
-        <InterventionsVue
+        <Vue
           interventions={[intervention(), intervention({ id: 848 })]}
           produits={[]}
           vide={VIDE}
@@ -143,7 +206,7 @@ describe("InterventionsVue - liste", () => {
   it("ouvre l'intervention nommee dans l'URL", () => {
     render(
       <Enveloppe searchParams="?intervention=848">
-        <InterventionsVue
+        <Vue
           interventions={[
             intervention(),
             intervention({ id: 848, forfait: "Diagnostic express" }),
@@ -163,11 +226,7 @@ describe("InterventionsVue - liste", () => {
     // rendez-vous d'un tiers a qui incremente un SERIAL.
     render(
       <Enveloppe searchParams="?intervention=999999">
-        <InterventionsVue
-          interventions={[intervention()]}
-          produits={[]}
-          vide={VIDE}
-        />
+        <Vue interventions={[intervention()]} produits={[]} vide={VIDE} />
       </Enveloppe>,
     );
 
@@ -180,7 +239,7 @@ describe("InterventionsVue - liste", () => {
     const utilisateur = userEvent.setup();
     render(
       <Enveloppe>
-        <InterventionsVue
+        <Vue
           interventions={[
             intervention(),
             intervention({ id: 848, forfait: "Diagnostic express" }),
@@ -202,11 +261,7 @@ describe("InterventionsVue - panneau de detail", () => {
   it("rend l'adresse, le technicien, le forfait et la duree", () => {
     render(
       <Enveloppe>
-        <InterventionsVue
-          interventions={[intervention()]}
-          produits={[]}
-          vide={VIDE}
-        />
+        <Vue interventions={[intervention()]} produits={[]} vide={VIDE} />
       </Enveloppe>,
     );
 
@@ -221,11 +276,7 @@ describe("InterventionsVue - panneau de detail", () => {
     // l'intervention, pas un encaissement constate.
     render(
       <Enveloppe>
-        <InterventionsVue
-          interventions={[intervention()]}
-          produits={[]}
-          vide={VIDE}
-        />
+        <Vue interventions={[intervention()]} produits={[]} vide={VIDE} />
       </Enveloppe>,
     );
 
@@ -238,11 +289,7 @@ describe("InterventionsVue - panneau de detail", () => {
     // facture a part.
     render(
       <Enveloppe>
-        <InterventionsVue
-          interventions={[intervention()]}
-          produits={[]}
-          vide={VIDE}
-        />
+        <Vue interventions={[intervention()]} produits={[]} vide={VIDE} />
       </Enveloppe>,
     );
 
@@ -253,7 +300,7 @@ describe("InterventionsVue - panneau de detail", () => {
   it("detaille la ligne produits quand il y en a", () => {
     render(
       <Enveloppe>
-        <InterventionsVue
+        <Vue
           interventions={[
             intervention({
               produits: [
@@ -280,7 +327,7 @@ describe("InterventionsVue - panneau de detail", () => {
   it("rend le motif d'annulation d'une intervention annulee", () => {
     render(
       <Enveloppe>
-        <InterventionsVue
+        <Vue
           interventions={[
             intervention({
               status: "CANCELLED",
@@ -321,7 +368,7 @@ describe("InterventionsVue - panneau de detail", () => {
     // meme decision, pas deux.
     render(
       <Enveloppe>
-        <InterventionsVue
+        <Vue
           interventions={[
             intervention({
               status: "CANCELLED",
@@ -344,23 +391,26 @@ describe("InterventionsVue - panneau de detail", () => {
     expect(panneau.queryByText("85,00 €")).toBeNull();
   });
 
-  it("ne porte NI bouton d'annulation NI reference inventee", () => {
-    // Le bloc d'annulation appartient a T-V3-11, qui le montera ici. Aucun
-    // emplacement reserve : une place gardee pour une tache future est un
-    // mort-vivant si la tache glisse.
-    // « Ref: INT-2026-0847 » n'existe nulle part au modele, `interventions.id`
-    // est un SERIAL.
+  it("ne porte AUCUNE reference ni recapitulatif inventes", () => {
+    // ⚠️ **Regle du test rouge, cas 3** - oracle reecrit par T-V3-11.
+    //
+    // Ce test s'appelait « ne porte NI bouton d'annulation NI reference
+    // inventee » et assertait `queryByText(/Annuler cette intervention/i)`
+    // nul. Cette moitie-la datait le fichier plutot qu'elle ne decrivait une
+    // propriete : elle disait « T-V3-11 n'a pas encore livre », ce qui devient
+    // faux le jour ou elle livre - et l'arbitrage C8 du 2026-08-10 l'annonçait
+    // (« cette tache monte son propre bouton dans la coquille livree »).
+    //
+    // Ce qui reste EST une propriete, et ne bouge pas : « Ref: INT-2026-0847 »
+    // n'existe nulle part au modele (`interventions.id` est un SERIAL), et
+    // « Voir le recapitulatif complet » est renvoye en v2 par la note SPEC de
+    // `US-INTERVENTIONS-LISTER-CLIENT-PASSEES`.
     render(
       <Enveloppe>
-        <InterventionsVue
-          interventions={[intervention()]}
-          produits={[]}
-          vide={VIDE}
-        />
+        <Vue interventions={[intervention()]} produits={[]} vide={VIDE} />
       </Enveloppe>,
     );
 
-    expect(screen.queryByText(/Annuler cette intervention/i)).toBeNull();
     expect(screen.queryByText(/INT-20/)).toBeNull();
     expect(screen.queryByText(/recapitulatif complet/i)).toBeNull();
   });
@@ -370,11 +420,7 @@ describe("InterventionsVue - le statut gouverne les actions", () => {
   it("propose d'ajouter un produit et une photo sur une intervention planifiee", () => {
     render(
       <Enveloppe>
-        <InterventionsVue
-          interventions={[intervention()]}
-          produits={PRODUITS}
-          vide={VIDE}
-        />
+        <Vue interventions={[intervention()]} produits={PRODUITS} vide={VIDE} />
       </Enveloppe>,
     );
 
@@ -390,7 +436,7 @@ describe("InterventionsVue - le statut gouverne les actions", () => {
     for (const status of ["IN_PROGRESS", "DONE", "CANCELLED"]) {
       const { unmount } = render(
         <Enveloppe>
-          <InterventionsVue
+          <Vue
             interventions={[intervention({ status })]}
             produits={PRODUITS}
             vide={VIDE}
@@ -414,7 +460,7 @@ describe("InterventionsVue - accessibilite", () => {
   it("ne presente aucune violation, avec ou sans produits", async () => {
     const vue = render(
       <Enveloppe>
-        <InterventionsVue
+        <Vue
           interventions={[
             intervention({
               produits: [
@@ -441,7 +487,7 @@ describe("InterventionsVue - accessibilite", () => {
   it("ne presente aucune violation sur la liste vide", async () => {
     const vue = render(
       <Enveloppe>
-        <InterventionsVue interventions={[]} produits={[]} vide={VIDE} />
+        <Vue interventions={[]} produits={[]} vide={VIDE} />
       </Enveloppe>,
     );
 
