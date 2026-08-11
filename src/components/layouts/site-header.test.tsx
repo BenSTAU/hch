@@ -40,6 +40,16 @@ describe("SiteHeader — visiteur anonyme", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("ne propose pas « Mes interventions » à un visiteur anonyme", () => {
+    // L'espace est protégé : l'entrée l'enverrait sur le formulaire de
+    // connexion, ce qui est une promesse tenue de travers.
+    render(<SiteHeader user={null} reservationDisponible />);
+
+    expect(
+      screen.queryByRole("link", { name: "Mes interventions" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("mène au tunnel de réservation", () => {
     // `/reserver` et NON `/client/reserver` : le matcher de `src/proxy.ts`
     // couvre `/client/:path*` et renverrait un visiteur anonyme vers la
@@ -90,6 +100,17 @@ describe("SiteHeader — session ouverte", () => {
 
     expect(
       screen.getByRole("menuitem", { name: "Mes interventions" }),
+    ).toHaveAttribute("href", "/mes-interventions/a-venir");
+  });
+
+  it("porte « Mes interventions » dans la nav, sans ouvrir de menu", () => {
+    // L'entrée double celle du menu utilisateur, et c'est voulu : le menu doit
+    // être ouvert pour livrer son contenu, alors que l'espace client est la
+    // destination la plus fréquente d'un client connecté.
+    render(<SiteHeader user={CAMILLE} reservationDisponible />);
+
+    expect(
+      screen.getByRole("link", { name: "Mes interventions" }),
     ).toHaveAttribute("href", "/mes-interventions/a-venir");
   });
 

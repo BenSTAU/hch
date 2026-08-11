@@ -5,7 +5,7 @@ import { LogoutButton } from "@/components/features/auth/logout-button";
 import { Button } from "@/components/ui/button";
 
 import { SiteNavMobile } from "./site-nav-mobile";
-import { CHEMIN_RESERVATION, NAV_PUBLIQUE } from "./site-navigation";
+import { CHEMIN_RESERVATION, navigationPrincipale } from "./site-navigation";
 import { UserMenu } from "./user-menu";
 
 type UtilisateurAffiche = Pick<CurrentUser, "firstname" | "lastname"> | null;
@@ -83,7 +83,7 @@ export function SiteHeader({
             nav-ci est alors hors de l'arbre d'accessibilité. */}
         <nav aria-label="Navigation principale" className="hidden md:block">
           <ul className="flex items-center gap-8">
-            {NAV_PUBLIQUE.map((item) => (
+            {navigationPrincipale(user !== null).map((item) => (
               <li key={item.href}>
                 <Link
                   href={item.href}
@@ -114,7 +114,11 @@ export function SiteHeader({
               serveur** et descendues en `children`. Les passer en props
               sérialiserait le DTO utilisateur dans la charge envoyée au
               navigateur. */}
-          <SiteNavMobile>
+          {/* `connecte` est un booléen, pas le DTO : le panneau doit porter les
+              mêmes entrées que la barre desktop, sans rien apprendre de la
+              personne. Les actions de session, elles, restent des `children`
+              rendus côté serveur. */}
+          <SiteNavMobile connecte={user !== null}>
             <ActionsSession user={user} />
           </SiteNavMobile>
         </div>
