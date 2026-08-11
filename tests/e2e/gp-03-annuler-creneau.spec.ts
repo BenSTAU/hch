@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import AxeBuilder from "@axe-core/playwright";
 import { PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
@@ -42,8 +44,32 @@ test.beforeAll(async () => {
   });
   serviceId = service.id;
 
-  const tech = await db.user.findFirstOrThrow({
-    where: { roles: { has: "ROLE_TECH" } },
+  // ⚠️ **Un technicien DEDIE, et non celui du seed.**
+  //
+  // `no_double_booking` porte sur le couple technicien/plage, et le seed n'en
+  // pose qu'un : tout ce que la barriere reserve ailleurs occupe son agenda.
+  // Or `gp-02` reserve par le tunnel et **ne nettoie rien** (aucun `afterAll`
+  // dans son fichier), donc sur la base de developpement, partagee et
+  // persistante, ses rendez-vous s'accumulent. Deux seedings de ce fichier ont
+  // ete refuses pour cette raison le 2026-08-11.
+  //
+  // En CI la base est jetable et le defaut ne se voit jamais - c'est donc un
+  // rouge qui ne tombe qu'en local, sur un fichier qu'on n'a pas modifie, et
+  // qui coute une session a diagnostiquer. Un technicien a nous rend cette
+  // suite independante de ce que les autres reservent.
+  //
+  // Il n'est affecte a aucune zone, donc il n'apparait dans aucune grille de
+  // creneaux : il ne perturbe rien en retour.
+  const tech = await db.user.create({
+    data: {
+      email: `tech-gp03-${randomBytes(6).toString("hex")}@example.test`,
+      firstname: "Tech",
+      lastname: "GP03",
+      roles: ["ROLE_TECH"],
+      isActive: true,
+      emailVerifiedAt: new Date(),
+    },
+    select: { id: true },
   });
   techId = tech.id;
 
@@ -72,6 +98,9 @@ test.afterAll(async () => {
     where: { id: { in: interventionsCreees } },
   });
   await db.address.deleteMany({ where: { id: { in: adressesCreees } } });
+  // Apres les interventions : `interventions.tech_id` est NOT NULL, l'ordre
+  // inverse casserait la cle etrangere.
+  await db.user.deleteMany({ where: { id: techId } });
   await db.$disconnect();
 });
 
@@ -367,8 +396,25 @@ test("le serveur refuse l'intervention d'un tiers, meme modale ouverte", async (
 
   await modale.getByRole("button", { name: /Confirmer l'annulation/ }).click();
 
-  await expect(modale.getByRole("alert")).toHaveText(
-    "Intervention introuvable.",
+  // ⚠️ **Regle du test rouge, cas 3** - oracle reecrit le 2026-08-11, apres que
+  // la barriere CI l'a trouve rouge sur trois tentatives alors qu'il etait vert
+  // en local.
+  //
+  // Il cherchait l'alerte DANS la modale. C'est le detail d'implementation
+  // qu'un changement legitime a invalide : la revalidation des chemins de refus
+  // (corrige a la demande de l'agent testeur) fait revenir la liste sans cette
+  // intervention, qui n'appartient plus au client - donc le bloc, la modale et
+  // son alerte se demontent. L'ancien oracle passait en `pnpm dev` parce que
+  // l'aller-retour RSC y est plus lent que le rendu de l'alerte, et echouait
+  // face a l'image de production. Ce n'etait pas un alea : le message etait
+  // devenu structurellement inatteignable, et la barriere l'a rendu visible.
+  //
+  // La propriete ne bouge pas - le client est informe, et par un message
+  // indifferencie. Ce qui change est la SURFACE : le toast du layout, qui reste
+  // monte quand la ligne disparait. Meme mecanique que le message de succes.
+  await expect(page.getByText("Intervention introuvable.")).toBeVisible();
+  await expect(page.getByText(/ce n'est pas a vous|appartient/i)).toHaveCount(
+    0,
   );
 
   const apres = await db.intervention.findUniqueOrThrow({

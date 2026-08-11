@@ -64,6 +64,12 @@ export function BlocAnnulation({
   const [enCours, demarrer] = useTransition();
   const [ouvert, setOuvert] = useState(false);
   const [motif, setMotif] = useState("");
+  /// Refus **qui laissent ce bloc en place** : ceux de Zod et une panne
+  /// serveur. Ni l'un ni l'autre ne mute quoi que ce soit, donc rien n'est
+  /// revalidé et la modale reste ouverte sur la même intervention - une alerte
+  /// à côté du champ est alors la bonne surface.
+  ///
+  /// Les refus **métier** ne passent plus par ici : voir `confirmer`.
   const [erreur, setErreur] = useState<string | null>(null);
   // Bascule vers le bandeau de contact quand le serveur refuse pour cause de
   // fenêtre dépassée, sur un écran qui la croyait encore ouverte.
@@ -98,13 +104,37 @@ export function BlocAnnulation({
 
       const donnees = resultat?.data;
       if (donnees && !donnees.ok) {
-        setErreur(donnees.message);
-        // Le seul refus qui change l'écran plutôt que d'y afficher une alerte :
-        // la fenêtre s'est refermée pendant que l'onglet était ouvert.
+        // La fenêtre s'est refermée pendant que l'onglet était ouvert. Rien
+        // n'a changé en base, la ligne reste dans la liste, donc ce bloc reste
+        // monté : il bascule sur le bandeau de contact, qui EST le message.
         if (donnees.fenetreDepassee) {
           setOuvert(false);
           setRefusee(true);
+          return;
         }
+
+        // 🐛 **Les deux autres refus passent par le toast, pas par une alerte
+        // locale.** Rouge de la barrière CI du 2026-08-11, vert en local.
+        //
+        // `introuvable` et `non_annulable` disent tous deux que la ligne n'est
+        // plus dans « À venir » - elle a changé de propriétaire, ou son statut
+        // n'est plus `PLANNED`. La Server Action revalide donc, et la liste
+        // revient sans elle : ce composant **se démonte**, emportant l'alerte
+        // qu'on venait d'y poser. Et s'il ne se démonte pas, parce que le
+        // client a d'autres rendez-vous, il se rattache au premier de la liste
+        // et afficherait une erreur qui parle d'un AUTRE rendez-vous.
+        //
+        // C'est exactement le raisonnement déjà appliqué au message de succès
+        // ci-dessous, que je n'avais pas étendu aux refus en ajoutant la
+        // revalidation. Le local a survécu en `pnpm dev`, où l'aller-retour RSC
+        // est assez lent pour que l'alerte s'affiche avant le démontage ; face
+        // à l'image de production, le démontage gagne. La course n'était pas un
+        // aléa, c'est la barrière qui l'a rendue déterministe.
+        //
+        // Durée allongée : un message d'erreur se lit, là où « Intervention
+        // annulée » se constate.
+        setOuvert(false);
+        toast.error(donnees.message, { duration: 8_000 });
         return;
       }
 
