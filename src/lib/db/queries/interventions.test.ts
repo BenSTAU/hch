@@ -79,7 +79,6 @@ vi.mock("@/lib/db/queries/adresses", () => ({
 
 const {
   abregerNom,
-  chargerInterventionDuClient,
   compterInterventionsClient,
   listerInterventionsAVenir,
   listerInterventionsPassees,
@@ -493,6 +492,29 @@ describe("listerInterventionsPassees", () => {
     expect(interventionFindMany.mock.calls[0]?.[0]).toMatchObject({ skip: 0 });
   });
 
+  it("ramene un numero de page fractionnaire a un entier", async () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11. RED au moment de l'ecriture.
+    //
+    // Meme famille que le test ci-dessus, et meme motif : le numero vient de
+    // l'URL, donc de n'importe qui. `passees/page.tsx:53` le lit par
+    // `Number(parametres.page) || 1`, qui rend `2.3` pour `?page=2.3` ; ici,
+    // `Math.max(1, ...)` redresse le negatif mais laisse passer le
+    // fractionnaire, et `skip` vaut alors `12.999999999999998`.
+    //
+    // Deux consequences, toutes deux visibles :
+    //   · Prisma valide `skip` comme un `Int` et leve sur un flottant - la page
+    //     repond 500 sur un parametre bricole, exactement ce que le test du
+    //     `page: -4` cherchait a empecher ;
+    //   · `page` est ressorti tel quel vers `PaginationPassees`, dont le
+    //     `cible === page` ne peut plus etre vrai : plus aucun `aria-current`,
+    //     donc plus de page courante annoncee (RGAA A).
+    await listerInterventionsPassees({ clientId: CLIENT, page: 2.3 });
+
+    const args = interventionFindMany.mock.calls[0]?.[0] as { skip: number };
+
+    expect(Number.isInteger(args.skip)).toBe(true);
+  });
+
   it("annonce une page meme quand l'historique est vide", async () => {
     // `Math.ceil(0 / 10)` vaut zero, et une pagination « page 1 sur 0 » est un
     // etat que rien ne sait rendre.
@@ -512,45 +534,10 @@ describe("listerInterventionsPassees", () => {
   });
 });
 
-describe("chargerInterventionDuClient", () => {
-  it("repond `null` sur l'intervention d'un tiers, sans la distinguer d'une inconnue", async () => {
-    // `interventions.id` est un SERIAL, donc enumerable : une reponse « acces
-    // refuse » distincte d'un « introuvable » confirmerait l'existence du
-    // rendez-vous d'autrui a qui s'amuse a incrementer. Meme arbitrage que
-    // PR #32 note 6.
-    interventionFindFirst.mockResolvedValue(null);
-
-    await expect(
-      chargerInterventionDuClient({ interventionId: 848, clientId: CLIENT }),
-    ).resolves.toBeNull();
-
-    expect(interventionFindFirst.mock.calls[0]?.[0]).toMatchObject({
-      where: { id: 848, clientId: CLIENT },
-    });
-  });
-
-  it("projette comme les listes", async () => {
-    interventionFindFirst.mockResolvedValue(ligneLue());
-
-    const intervention = await chargerInterventionDuClient({
-      interventionId: 847,
-      clientId: CLIENT,
-    });
-
-    expect(intervention).toMatchObject({
-      id: 847,
-      forfait: "Revision complete",
-      technicien: "Marc L.",
-      total: "85.00",
-      adresse: {
-        label: "Domicile",
-        street: "12 rue de la Republique",
-        zipCode: "69002",
-        city: "Lyon",
-      },
-    });
-  });
-});
+// ⚠️ Les deux tests de `chargerInterventionDuClient` ont été retirés avec la
+// fonction, au 2026-08-11 : l'agent testeur a constaté qu'elle n'avait aucun
+// appelant, et ils couvraient donc du code qui ne tournait jamais en
+// production. Ce n'est pas un oracle rendu vert - c'est un sujet qui a disparu.
 
 describe("compterInterventionsClient", () => {
   it("compte les deux onglets sur le meme client", async () => {

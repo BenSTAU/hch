@@ -17,22 +17,56 @@ const photoCount = vi.fn();
 const photoCreate = vi.fn();
 const photoFindFirst = vi.fn();
 
-const tx = {
-  intervention: { findFirst: (args: unknown) => interventionFindFirst(args) },
-  photo: {
-    count: (args: unknown) => photoCount(args),
-    create: (args: unknown) => photoCreate(args),
-  },
-};
+const queryRaw = vi.fn();
 
 /// Commit s'il rend, rollback s'il leve - la seule distinction qui compte, et
 /// celle qu'un `$transaction: (cb) => cb(tx)` naif efface (leçon PR #32).
 const commits: string[] = [];
 const rollbacks: string[] = [];
 
+/// ⚠️ **Modele de verrouillage ajoute par l'agent testeur, 2026-08-11.**
+///
+/// Le faux `$transaction` d'origine executait son rappel immediatement : deux
+/// appels concurrents s'y seraient croises sans que rien ne s'y oppose, et
+/// aucun test ne pouvait donc dire si le quota tient sous concurrence. Ce qui
+/// est modele ici est le regime reel de PostgreSQL :
+///
+///   · **READ COMMITTED par defaut** - un `count` ne voit pas les insertions
+///     non commitees des autres transactions. Deux transactions qui comptent
+///     puis inserent lisent donc le meme total ;
+///   · **un verrou de ligne pris par `SELECT … FOR UPDATE`** (le `tx.$queryRaw`
+///     ci-dessous) fait attendre la transaction suivante jusqu'au commit de la
+///     precedente. C'est le mecanisme que `queries/produits.ts` §verrouillerProduits
+///     emploie deja pour le stock, et le seul filet de ce depot : `photos` ne
+///     porte aucune contrainte de cardinalite en base.
+///
+/// Chaque transaction recoit son PROPRE client : le partager rendrait le
+/// verrou impossible a rattacher a celle qui l'a pris.
+let fileDesVerrous: Promise<void> = Promise.resolve();
+
 vi.mock("@/lib/db/client", () => ({
   db: {
-    $transaction: async (rappel: (client: typeof tx) => unknown) => {
+    $transaction: async (rappel: (client: unknown) => unknown) => {
+      let liberer: () => void = () => undefined;
+
+      const tx = {
+        intervention: {
+          findFirst: (args: unknown) => interventionFindFirst(args),
+        },
+        photo: {
+          count: (args: unknown) => photoCount(args),
+          create: (args: unknown) => photoCreate(args),
+        },
+        $queryRaw: async (...args: unknown[]) => {
+          const precedent = fileDesVerrous;
+          fileDesVerrous = new Promise<void>((resoudre) => {
+            liberer = resoudre;
+          });
+          await precedent;
+          return queryRaw(args);
+        },
+      };
+
       try {
         const valeur = await rappel(tx);
         commits.push("commit");
@@ -40,6 +74,9 @@ vi.mock("@/lib/db/client", () => ({
       } catch (erreur) {
         rollbacks.push("rollback");
         throw erreur;
+      } finally {
+        // Le commit (ou le rollback) relache ce que la transaction tenait.
+        liberer();
       }
     },
     photo: { findFirst: (args: unknown) => photoFindFirst(args) },
@@ -56,9 +93,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   commits.length = 0;
   rollbacks.length = 0;
+  fileDesVerrous = Promise.resolve();
   interventionFindFirst.mockResolvedValue({ status: "PLANNED" });
   photoCount.mockResolvedValue(0);
   photoCreate.mockResolvedValue({ id: 7 });
+  queryRaw.mockResolvedValue([]);
 });
 
 describe("attacherPhoto - cloisonnement", () => {
@@ -184,6 +223,64 @@ describe("attacherPhoto - quota", () => {
 
     expect(commits).toHaveLength(1);
     expect(photoCount).toHaveBeenCalled();
+  });
+
+  it("refuse le second de deux depots concurrents sur la cinquieme place", async () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11. RED au moment de l'ecriture.
+    //
+    // C'est la propriete que le module s'attribue en toutes lettres : « le
+    // quota des cinq photos par intervention se verifie **dans la
+    // transaction** : compte avant, deux depots simultanes le franchiraient
+    // tous les deux » (`photos.ts:40-44`). Ouvrir une transaction ne suffit
+    // pas a l'obtenir. Sous READ COMMITTED - le defaut de PostgreSQL, et celui
+    // de `db.$transaction` sans `isolationLevel` - le `count` de chaque
+    // transaction ignore l'insertion non commitee de l'autre : les deux lisent
+    // quatre, les deux ecrivent, l'intervention se retrouve avec six photos.
+    //
+    // Rien d'autre ne rattrape : `photos` n'a aucune contrainte de cardinalite
+    // en base, la ou le stock a son `products_stock_non_negative` (migration
+    // 013) DERRIERE le `SELECT … FOR UPDATE` de `verrouillerProduits`. Ce
+    // dossier-ci n'a ni l'un ni l'autre.
+    //
+    // Le scenario n'est pas theorique : `bloc-photos.tsx` envoie les fichiers
+    // en boucle depuis l'ecran, et deux onglets ouverts sur la meme
+    // intervention suffisent - le commentaire du composant (`:54-56`) le dit
+    // lui-meme, en s'appuyant sur une garde serveur qui n'existe pas.
+    //
+    // ⚠️ Ce que ce test suppose du correctif : qu'il passe par un verrou de
+    // ligne pris dans la transaction (`tx.$queryRaw … FOR UPDATE`, le modele
+    // du faux client ci-dessus), comme le stock. Si Benjamin tranche pour une
+    // contrainte en base, c'est le faux client qu'il faudra etendre - pas
+    // l'assertion, qui porte sur la propriete et non sur le mecanisme.
+    const enBase: { id: number }[] = [
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
+    ];
+
+    photoCount.mockImplementation(async () => {
+      // Le `await` est le point d'entrelacement : sans lui, les deux
+      // transactions s'executeraient l'une apres l'autre par construction, et
+      // le faux client rendrait vert un code sans aucun verrou.
+      await Promise.resolve();
+      return enBase.length;
+    });
+    photoCreate.mockImplementation(async () => {
+      await Promise.resolve();
+      const ligne = { id: enBase.length + 1 };
+      enBase.push(ligne);
+      return ligne;
+    });
+
+    const resultats = await Promise.all([
+      attacherPhoto({ interventionId: 42, clientId: CLIENT, url: CHEMIN }),
+      attacherPhoto({ interventionId: 42, clientId: CLIENT, url: CHEMIN }),
+    ]);
+
+    expect(resultats.filter((resultat) => resultat.ok)).toHaveLength(1);
+    expect(resultats).toContainEqual({ ok: false, reason: "quota_atteint" });
+    expect(enBase).toHaveLength(5);
   });
 });
 

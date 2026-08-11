@@ -446,7 +446,20 @@ export async function listerInterventionsPassees(params: {
   au?: Date;
   page?: number;
 }): Promise<PagePassees> {
-  const page = Math.max(1, params.page ?? 1);
+  // 🐛 `Math.trunc` en plus du plancher, relevé par l'agent testeur. Le numéro
+  // vient de l'URL, donc de n'importe qui : `?page=2.3` traversait `Math.max`
+  // intact, et `skip` valait `12.999999999999998`. Prisma type `skip` en `Int`
+  // et refuse un flottant, donc 500 sur un paramètre bricolé ; et le numéro
+  // fractionnaire ressortait dans `PagePassees`, où `cible === page` ne pouvait
+  // plus être vrai - plus aucune page marquée `aria-current` (RGAA A).
+  //
+  // Même motif que le plancher à 1, qui ne couvrait que la moitié négative du
+  // cas. `Number.isFinite` ferme les deux dernières formes, `NaN` et `Infinity`,
+  // que `Math.max` propagerait telles quelles.
+  const demandee = params.page ?? 1;
+  const page = Number.isFinite(demandee)
+    ? Math.max(1, Math.trunc(demandee))
+    : 1;
 
   const fenetre =
     params.du || params.au
@@ -509,22 +522,11 @@ export async function compterInterventionsClient(params: {
   return { aVenir, passees };
 }
 
-/// Une intervention **du client**, ou `null`.
-///
-/// `null` couvre l'inconnue **et** celle d'un tiers, sans les distinguer :
-/// `interventions.id` est un `SERIAL`, donc énumérable, et une réponse « accès
-/// refusé » distincte d'un « introuvable » confirmerait l'existence du
-/// rendez-vous d'autrui à qui s'amuse à incrémenter. Même régime que les deux
-/// mutations produits (`queries/produits.ts` §ResultatLigne) et que les
-/// adresses de [PR #26].
-export async function chargerInterventionDuClient(params: {
-  interventionId: number;
-  clientId: string;
-}): Promise<InterventionClient | null> {
-  const ligne = await db.intervention.findFirst({
-    where: { id: params.interventionId, clientId: params.clientId },
-    select: SELECTION_CLIENT,
-  });
-
-  return ligne ? projeter(ligne) : null;
-}
+// ⚠️ `chargerInterventionDuClient` a été écrite ici puis **retirée** au
+// 2026-08-11, sur constat de l'agent testeur : aucun appelant. Le panneau de
+// détail sélectionne côté client dans la liste déjà chargée, il ne recharge
+// rien. Elle aurait servi T-V3-11, qui devra lire l'intervention à annuler dans
+// sa Server Action - et c'est exactement le motif de la retirer : le panneau du
+// même écran écrit qu'« une place gardée pour une tâche future est un
+// mort-vivant si la tâche glisse ». Trois lignes à réécrire le jour où un
+// appelant existe, sur le modèle de `SELECTION_CLIENT` et `projeter`.

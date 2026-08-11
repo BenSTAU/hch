@@ -37,11 +37,27 @@ export type ResultatPhoto =
 /// fichier, l'a dépouillé de son EXIF et l'a ré-encodé en WebP. Ce qui naît
 /// ici, c'est la **ligne**, pas le fichier.
 ///
-/// Le quota des cinq photos par intervention se vérifie **dans la
-/// transaction** : compté avant, deux dépôts simultanés le franchiraient tous
-/// les deux. C'est le seul endroit du parcours qui connaisse le dossier
-/// complet - l'endpoint d'upload, lui, ne sait pas encore à quelle
-/// intervention le fichier se destine (US-INTERVENTION-PHOTOS-AJOUTER §Quotas).
+/// Le quota des cinq photos par intervention est le seul contrôle que ce
+/// parcours puisse porter : l'endpoint d'upload, lui, ne sait pas encore à
+/// quelle intervention le fichier se destine
+/// (US-INTERVENTION-PHOTOS-AJOUTER §Quotas).
+///
+/// 🐛 **Ouvrir une transaction ne suffisait pas**, relevé par l'agent testeur.
+/// `db.$transaction` sans `isolationLevel` s'exécute en **READ COMMITTED**, le
+/// défaut PostgreSQL : le `count` ci-dessous ne voit pas l'insertion non
+/// commitée d'une transaction voisine. Deux dépôts concurrents lisaient quatre,
+/// franchissaient tous les deux le plafond, et l'intervention se retrouvait
+/// avec six photos. Deux onglets ouverts suffisaient, et le commentaire
+/// affirmait pourtant la protection - dans ce fichier **et** dans le composant
+/// qui s'y appuyait.
+///
+/// Le correctif est un **verrou pessimiste sur la ligne d'intervention**, le
+/// même mécanisme que `verrouillerProduits` pour le stock : la seconde
+/// transaction attend le commit de la première, donc compte cinq et se voit
+/// refusée. Il n'y a pas de second filet en base ici - `photos` ne porte aucune
+/// contrainte de cardinalité, et une contrainte de comptage n'est pas
+/// exprimable en `CHECK`. Le verrou est donc l'unique garde, et c'est pourquoi
+/// il ne doit pas être retiré.
 export async function attacherPhoto(params: {
   interventionId: number;
   clientId: string;
@@ -58,6 +74,21 @@ export async function attacherPhoto(params: {
     if (intervention.status !== STATUT_MODIFIABLE) {
       return { ok: false as const, reason: "verrouillee" as const };
     }
+
+    // Le verrou est pris sur l'INTERVENTION et non sur les lignes `photos` :
+    // `FOR UPDATE` ne verrouille que les lignes qu'il lit, et le dossier est
+    // justement défini par celles qui n'existent pas encore. Verrouiller le
+    // parent sérialise tous les dépôts d'une même intervention, et n'en gêne
+    // aucun autre.
+    //
+    // Après la garde de propriété, jamais avant : un appelant qui incrémente
+    // des identifiants ne doit pas pouvoir poser un verrou sur le rendez-vous
+    // d'un tiers.
+    await tx.$queryRaw`
+      SELECT "id" FROM "interventions"
+      WHERE "id" = ${params.interventionId}
+      FOR UPDATE
+    `;
 
     const deja = await tx.photo.count({
       where: { interventionId: params.interventionId },

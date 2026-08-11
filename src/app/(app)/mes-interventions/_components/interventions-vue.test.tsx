@@ -296,6 +296,54 @@ describe("InterventionsVue - panneau de detail", () => {
     expect(screen.getByText(/Client absent/)).toBeInTheDocument();
   });
 
+  it("ne chiffre AUCUN montant sur une intervention annulee", () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11. RED au moment de l'ecriture.
+    //
+    // Deux sources disent la meme chose, et le code fait l'inverse :
+    //
+    //   · `US-INTERVENTIONS-LISTER-CLIENT-PASSEES` §Cas nominal enumere « ...
+    //     montant paye (`payments.amount_snapshot` si `DONE`) **ou** motif
+    //     d'annulation (`interventions.cancellation_reason` si `CANCELLED`) ».
+    //     Le « ou » est exclusif, il est indexe sur le statut ;
+    //   · l'arbitrage (1) de T-V3-10 du 2026-08-11 : « Cette tache affiche le
+    //     total calcule sous le libelle "Montant" [...] et **rien sur une
+    //     `CANCELLED`** ».
+    //
+    // Le panneau rend son recapitulatif tarifaire sans condition de statut
+    // (`interventions-vue.tsx:276-301`), et la carte de liste son total
+    // (`:159-161`). Un rendez-vous annule affiche donc « Montant 85,00 € » en
+    // gras, dans la couleur `primary`, juste sous le motif de son annulation -
+    // soit un chiffre qui ressemble a une somme due pour une intervention qui
+    // n'a pas eu lieu.
+    //
+    // Ce test porte sur le PANNEAU, la surface que l'arbitrage nomme. Le meme
+    // ecart existe sur la carte, il est rapporte sans etre teste ici : c'est la
+    // meme decision, pas deux.
+    render(
+      <Enveloppe>
+        <InterventionsVue
+          interventions={[
+            intervention({
+              status: "CANCELLED",
+              cancellationReason: "Client absent",
+              total: "85.00",
+            }),
+          ]}
+          produits={[]}
+          vide={VIDE}
+        />
+      </Enveloppe>,
+    );
+
+    // Le panneau est nomme par son titre, la date du rendez-vous : les blocs
+    // produits et photos sont eux aussi des `region`.
+    const panneau = within(screen.getByRole("region", { name: /\d{4}/ }));
+
+    expect(panneau.getByText(/Client absent/)).toBeInTheDocument();
+    expect(panneau.queryByText("Montant")).toBeNull();
+    expect(panneau.queryByText("85,00 €")).toBeNull();
+  });
+
   it("ne porte NI bouton d'annulation NI reference inventee", () => {
     // Le bloc d'annulation appartient a T-V3-11, qui le montera ici. Aucun
     // emplacement reserve : une place gardee pour une tache future est un

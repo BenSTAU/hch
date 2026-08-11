@@ -52,8 +52,9 @@ export function BlocPhotos({
     setErreur(null);
 
     // Le quota côté écran ne fait qu'éviter des allers-retours perdus : celui
-    // qui décide est compté **dans la transaction** d'`attacherPhoto`. Deux
-    // onglets ouverts le franchiraient sinon tous les deux.
+    // qui décide est compté **sous verrou**, dans la transaction
+    // d'`attacherPhoto`. Sans ce verrou, deux onglets ouverts le
+    // franchiraient tous les deux.
     const place = MAX_PHOTOS - photos.length;
     if (place <= 0) {
       setErreur(`${String(MAX_PHOTOS)} photos maximum par intervention.`);

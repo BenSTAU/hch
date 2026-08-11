@@ -118,6 +118,16 @@ const STATUTS: Record<string, { label: string; classe: string }> = {
   CANCELLED: { label: "Annulée", classe: "bg-destructive/10 text-destructive" },
 };
 
+/// Une intervention annulée ne porte aucun montant, nulle part.
+///
+/// La règle vaut pour la carte de liste **et** pour le panneau : c'est le même
+/// arbitrage, et la scinder en deux tests de statut laisserait la moitié
+/// dériver. Le motif d'annulation prend la place du chiffre, comme l'US
+/// l'indexe.
+function estAnnulee(intervention: InterventionClient): boolean {
+  return intervention.status === "CANCELLED";
+}
+
 function EtiquetteStatut({ statut }: { statut: string }) {
   const connu = STATUTS[statut];
   // Un statut inconnu s'affiche tel quel plutôt que de disparaître : c'est le
@@ -156,9 +166,13 @@ function CarteIntervention({
     >
       <div className="flex items-start justify-between gap-3">
         <EtiquetteStatut statut={intervention.status} />
-        <span className="font-heading text-lg font-bold tracking-tighter">
-          {formatPrixEuros(intervention.total)}
-        </span>
+        {/* Même règle que le récapitulatif du panneau : rien de chiffré sur une
+            annulée. La carte est la surface la plus lue des deux. */}
+        {estAnnulee(intervention) ? null : (
+          <span className="font-heading text-lg font-bold tracking-tighter">
+            {formatPrixEuros(intervention.total)}
+          </span>
+        )}
       </div>
 
       <span className="font-heading text-base font-bold">
@@ -205,6 +219,7 @@ function PanneauDetail({
   // mutations côté serveur (`STATUT_MODIFIABLE`), et la faire dépendre de la
   // route donnerait un écran qui propose ce que l'action refusera.
   const modifiable = intervention.status === "PLANNED";
+  const chiffre = !estAnnulee(intervention);
   const produitsTotal = intervention.produits.reduce(
     (somme, ligne) => somme + Number(ligne.unitPriceSnapshot) * ligne.quantity,
     0,
@@ -272,33 +287,43 @@ function PanneauDetail({
 
       {/* Récapitulatif tarifaire de C8. « Déplacement / Inclus » est bien dans
           le produit : Constitution §1.1, le technicien se déplace et le
-          déplacement n'est pas facturé à part. */}
-      <dl className="flex flex-col gap-2 rounded-xl bg-secondary/60 p-4">
-        <LigneTarif intitule={`Forfait ${intervention.forfait}`}>
-          {formatPrixEuros(intervention.priceSnapshot)}
-        </LigneTarif>
+          déplacement n'est pas facturé à part.
 
-        {intervention.produits.length > 0 ? (
-          <LigneTarif intitule="Produits additionnels">
-            {formatPrixEuros(produitsTotal.toFixed(2))}
+          🐛 **Rien de chiffré sur une intervention annulée**, relevé par l'agent
+          testeur. Le bloc était rendu sans condition de statut : sous « Motif de
+          l'annulation », un « Montant 85,00 € » s'affichait en gras, et se
+          lisait comme une somme due pour une intervention qui n'a pas eu lieu.
+          `US-INTERVENTIONS-LISTER-CLIENT-PASSEES` §Cas nominal indexe le champ
+          sur le statut - « montant payé **si `DONE`** OU motif d'annulation
+          **si `CANCELLED`** » - et l'arbitrage du 2026-08-11 le redit. */}
+      {chiffre ? (
+        <dl className="flex flex-col gap-2 rounded-xl bg-secondary/60 p-4">
+          <LigneTarif intitule={`Forfait ${intervention.forfait}`}>
+            {formatPrixEuros(intervention.priceSnapshot)}
           </LigneTarif>
-        ) : null}
 
-        <LigneTarif intitule="Déplacement">Inclus</LigneTarif>
+          {intervention.produits.length > 0 ? (
+            <LigneTarif intitule="Produits additionnels">
+              {formatPrixEuros(produitsTotal.toFixed(2))}
+            </LigneTarif>
+          ) : null}
 
-        <div className="mt-1 flex items-baseline justify-between border-t border-border pt-3">
-          {/* ⚠️ « Montant » et non « Montant payé ». L'US des passées demande
-              `payments.amount_snapshot`, et la table `payments` n'existe pas :
-              elle arrive avec **T-V2-03 « Clôture et paiement terrain »**
-              (migration 009, `US-PAIEMENT-ENREGISTRER`). Ce total est celui de
-              l'intervention, pas un encaissement constaté - le nommer « payé »
-              affirmerait un fait qu'aucune donnée ne porte. */}
-          <dt className="font-heading text-base font-bold">Montant</dt>
-          <dd className="font-heading text-2xl font-extrabold tracking-tighter text-primary">
-            {formatPrixEuros(intervention.total)}
-          </dd>
-        </div>
-      </dl>
+          <LigneTarif intitule="Déplacement">Inclus</LigneTarif>
+
+          <div className="mt-1 flex items-baseline justify-between border-t border-border pt-3">
+            {/* ⚠️ « Montant » et non « Montant payé ». L'US des passées demande
+                `payments.amount_snapshot`, et la table `payments` n'existe pas :
+                elle arrive avec **T-V2-03 « Clôture et paiement terrain »**
+                (migration 009, `US-PAIEMENT-ENREGISTRER`). Ce total est celui de
+                l'intervention, pas un encaissement constaté - le nommer « payé »
+                affirmerait un fait qu'aucune donnée ne porte. */}
+            <dt className="font-heading text-base font-bold">Montant</dt>
+            <dd className="font-heading text-2xl font-extrabold tracking-tighter text-primary">
+              {formatPrixEuros(intervention.total)}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
     </section>
   );
 }
