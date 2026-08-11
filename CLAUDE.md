@@ -244,9 +244,12 @@ dans les 12 pages d'axe de [[conventions-react-next]].
 
 ### Server Actions + Forms
 
-- **MUST** Server Actions pour **toutes** les mutations. Route Handlers réservés
-  à trois cas : `api/auth/google/{initiate,callback}`,
-  `api/upload-intervention-photo`, et les webhooks éventuels.
+- **MUST** Server Actions pour **toutes** les mutations. Route Handler autorisé
+  seulement quand le canal HTTP est **nécessaire en soi** : flux binaire entrant
+  ou sortant (une Server Action sérialise sa charge utile et sa réponse),
+  redirection OAuth, webhook tiers, sonde d'infrastructure. Partout ailleurs,
+  Server Action. Un Route Handler qui ne relève d'aucun de ces cas est une
+  divergence à signaler dans le body de PR, pas une préférence.
 - **MUST** wrapper chaque action avec input dans `next-safe-action`
   (`createSafeActionClient` + `.use().inputSchema().action()`), schémas Zod dans
   `src/lib/validations/<domaine>.ts`.
@@ -281,7 +284,8 @@ dans les 12 pages d'axe de [[conventions-react-next]].
   technicien du jour, planning admin, grille de créneaux pendant une
   réservation. Partout ailleurs, revalidation Next en sortie d'action.
 - **MUST NOT** Route Handler appelé depuis un Client Component pour de la
-  lecture.
+  lecture. Un `<img src>` n'en est pas un : c'est le navigateur qui va chercher
+  l'octet, pas le composant.
 - **MUST NOT** `useEffect` + `setState` pour un fetch initial.
 - **DEFAULT** paramétrage du polling conforme à [[s1-archi-stack|S1]] §6.1 :
   `refetchInterval: 30_000` et `refetchIntervalInBackground: false`. L'intervalle
