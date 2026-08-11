@@ -75,9 +75,9 @@ export async function creerClientActive(
 /// Connecte un client déjà activé.
 ///
 /// Distinct de `seConnecter` du dossier voisin, qui attend `/admin/parametres` :
-/// un client n'a pas ce rôle et atterrit sur l'accueil
-/// (`AFTER_LOGIN_DEFAULT`, T-V3-03). Attendre la mauvaise URL ferait échouer le
-/// helper sur une connexion pourtant réussie.
+/// un client n'a pas ce rôle, et depuis T-V3-10 il atterrit sur
+/// `/mes-interventions/a-venir` (`AFTER_LOGIN_CLIENT`). Attendre la mauvaise
+/// URL ferait échouer le helper sur une connexion pourtant réussie.
 export async function seConnecterClient(
   page: Page,
   email: string,
@@ -91,9 +91,13 @@ export async function seConnecterClient(
     .fill(MOT_DE_PASSE_CLIENT);
   await page.getByRole("button", { name: "Se connecter" }).click();
 
-  // L'en-tête propose de SE DÉCONNECTER : preuve de session la plus robuste,
-  // elle ne dépend d'aucune destination. Libellé exact de `LogoutButton`.
+  // ⚠️ **Oracle déplacé par T-V3-10.** Il cherchait le bouton « Se déconnecter »
+  // dans l'en-tête ; `US-COMPTE-DECONNECTER` §Contexte place l'action « dans le
+  // menu utilisateur (avatar / initiales dans le header) », donc à un cran de
+  // plus. Le déclencheur du menu est la preuve de session équivalente, et il
+  // reste indépendant de la destination — c'est ce qui faisait la valeur de
+  // l'oracle précédent.
   await expect(
-    page.getByRole("button", { name: /se déconnecter/i }),
+    page.getByRole("button", { name: /ouvrir le menu de/i }),
   ).toBeVisible();
 }

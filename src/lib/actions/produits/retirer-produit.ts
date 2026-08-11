@@ -1,5 +1,8 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
+import { CHEMIN_ESPACE_CLIENT } from "@/lib/routes";
 import { retirerProduitIntervention } from "@/lib/db/queries/produits";
 import { authActionClient } from "@/lib/safe-action";
 import { retirerProduitSchema } from "@/lib/validations/produits";
@@ -13,8 +16,8 @@ import { messageRefus } from "./messages";
 /// 2026-08-08 : sans elle, un catalogue se vide au fil des paniers abandonnés,
 /// et rien ne le signale avant la rupture.
 ///
-/// Pas de `revalidatePath` - même motif que l'ajout, l'écran appartient à
-/// T-V3-10.
+/// `revalidatePath` posé en T-V3-10 avec le montage de l'écran, même motif que
+/// l'ajout.
 export const retirerProduit = authActionClient
   .inputSchema(retirerProduitSchema)
   .action(async ({ parsedInput, ctx: { user } }) => {
@@ -23,7 +26,11 @@ export const retirerProduit = authActionClient
       clientId: user.id,
     });
 
-    return resultat.ok
-      ? { ok: true as const, total: resultat.total }
-      : { ok: false as const, message: messageRefus(resultat, "retrait") };
+    if (!resultat.ok) {
+      return { ok: false as const, message: messageRefus(resultat, "retrait") };
+    }
+
+    revalidatePath(CHEMIN_ESPACE_CLIENT);
+
+    return { ok: true as const, total: resultat.total };
   });

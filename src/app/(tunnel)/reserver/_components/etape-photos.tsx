@@ -4,6 +4,7 @@ import { ImageIcon, UploadCloud, X } from "lucide-react";
 import { useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { FORMATS_ACCEPTES, MAX_PHOTOS } from "@/lib/photos/quotas";
 import { cn } from "@/lib/utils";
 
 /// Bloc « Photos préparatoires » de l'écran **C5** (`c5:246-257`).
@@ -33,9 +34,12 @@ import { cn } from "@/lib/utils";
 /// vignette cède alors la place au nom du fichier, plutôt qu'à une image
 /// cassée.
 
-const MAX_PHOTOS = 5;
-
-const FORMATS = "image/jpeg,image/png,image/webp,image/heic,image/heif";
+/// ⚠️ Ces deux valeurs étaient **recopiées ici**, en face des mêmes constantes
+/// de `src/lib/photos/stockage.ts` que le serveur applique. Un quota affiché qui
+/// diverge du quota appliqué fait promettre à l'écran ce que le serveur refuse.
+/// Elles vivent depuis T-V3-10 dans `src/lib/photos/quotas.ts`, module pur que
+/// les deux côtés peuvent importer — `stockage.ts` tire `sharp`, donc `node:fs`,
+/// et un composant client qui l'importe fait échouer le build.
 
 type PhotoDeposee = {
   /// Chemin rendu par le serveur - c'est lui qui part à la validation.
@@ -176,7 +180,7 @@ export function EtapePhotos({
           ref={champRef}
           id={idChamp}
           type="file"
-          accept={FORMATS}
+          accept={FORMATS_ACCEPTES}
           multiple
           className="sr-only"
           disabled={enCours || complet}

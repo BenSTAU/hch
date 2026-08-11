@@ -4,15 +4,31 @@ import type { Prisma } from "@prisma/client";
 
 import { db } from "@/lib/db/client";
 
-/// Les quatre actions du dictionnaire §audit_logs, tenues par un CHECK SQL en
-/// migration 003. Le dictionnaire les qualifie d'« extensible » : en ajouter
-/// une passe par un ALTER de la contrainte, pas par un ALTER TYPE.
+/// Les actions du dictionnaire §audit_logs, tenues par un CHECK SQL. Le
+/// dictionnaire les qualifie d'« extensible » : en ajouter une passe par un
+/// ALTER de la contrainte, pas par un ALTER TYPE.
+///
+/// `LOGIN` et `LOGOUT` ajoutés par la migration 014 (T-V3-10), reportés de
+/// T-V3-03. Cette liste doit rester le miroir exact du CHECK : une valeur
+/// écrite ici sans y être ferait échouer l'insertion en base, donc la mutation
+/// qu'elle devait tracer.
 export const AUDIT_ACTIONS = [
   "CREATE",
   "UPDATE",
   "DELETE",
   "ANONYMIZE",
+  "LOGIN",
+  "LOGOUT",
 ] as const;
+
+/// `entity_type` des deux évènements de session.
+///
+/// `session` et non `users`, et la nuance est écrite au dictionnaire :
+/// Constitution §4.2 vise « toute action **administrative** sensible », or une
+/// connexion n'en est pas une - c'est un évènement de sécurité. ADR-005 code
+/// déjà cette valeur. Corollaire conservé : créer un compte n'est pas
+/// administrer, T-V3-02 avait tranché « pas d'audit à l'inscription ».
+export const ENTITE_SESSION = "session";
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

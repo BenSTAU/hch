@@ -16,6 +16,13 @@ vi.mock("@/lib/db/queries/produits", () => ({
     retirerProduitIntervention(args),
 }));
 
+// `revalidatePath` posé par T-V3-10 avec le montage de l'écran. Hors contexte
+// de requête Next il lève, et le succès repartirait en `serverError`.
+const revalidatePath = vi.fn();
+vi.mock("next/cache", () => ({
+  revalidatePath: (chemin: string) => revalidatePath(chemin),
+}));
+
 const { retirerProduit } = await import("./retirer-produit");
 
 const CLIENT = "3f1e0a5c-0b2d-4c6e-9a11-2b3c4d5e6f70";
@@ -44,6 +51,23 @@ describe("retirerProduit", () => {
     const resultat = await retirerProduit({ interventionId: 42, productId: 2 });
 
     expect(resultat?.data).toEqual({ ok: true, total: "85.00" });
+  });
+
+  it("invalide l'espace client après un retrait", async () => {
+    await retirerProduit({ interventionId: 42, productId: 2 });
+
+    expect(revalidatePath).toHaveBeenCalledWith("/mes-interventions/a-venir");
+  });
+
+  it("n'invalide rien quand le retrait est refusé", async () => {
+    retirerProduitIntervention.mockResolvedValue({
+      ok: false,
+      reason: "ligne_absente",
+    });
+
+    await retirerProduit({ interventionId: 42, productId: 2 });
+
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 
   it("répond « déjà retiré » sur une ligne disparue", async () => {

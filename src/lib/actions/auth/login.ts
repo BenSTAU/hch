@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 
+import { ENTITE_SESSION, writeAuditLog } from "@/lib/audit/log";
 import { afterLoginPath } from "@/lib/auth/after-login";
 import { authenticateWithPassword } from "@/lib/auth/authenticate";
 import { safeNextPath } from "@/lib/auth/next-path";
@@ -68,6 +69,25 @@ export const login = actionClient
     await clearRateLimit(cle);
 
     await createSession(result.user.id, result.user.roles);
+
+    // Audit de connexion — ADR-005 §Flux, ADR-014 §5 (`GP-01` vérifie
+    // « `LOGIN` audit_logs »). Reporté de T-V3-03, où le CHECK de la migration
+    // 003 bornait la colonne à quatre valeurs.
+    //
+    // **Après** `createSession` et non avant : une trace de connexion écrite
+    // pour une session qui n'a pas été créée est un journal qui ment. L'ordre
+    // inverse ne se rattraperait pas, il n'y a pas de transaction ici — le
+    // cookie n'est pas une écriture de base.
+    //
+    // Les échecs ne sont pas tracés : `audit_logs.actor_id` est une vraie FK
+    // NOT NULL, et une tentative sur un email inconnu n'a aucun acteur à
+    // nommer. Le plafond d'échecs, lui, est déjà compté par `rate_limits`.
+    await writeAuditLog({
+      entityType: ENTITE_SESSION,
+      entityId: result.user.id,
+      action: "LOGIN",
+      actorId: result.user.id,
+    });
 
     // `next` consommé APRÈS authentification seulement : sinon la page de
     // connexion serait un redirecteur ouvert utilisable sans compte. À défaut,

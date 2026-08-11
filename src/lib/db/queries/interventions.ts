@@ -1,5 +1,7 @@
 import "server-only";
 
+import { Prisma } from "@prisma/client";
+
 import { ROLE_TECH } from "@/lib/auth/permissions";
 import type { TechnicienCharge } from "@/lib/creneaux/derivation";
 import { db } from "@/lib/db/client";
@@ -258,4 +260,271 @@ export async function reserverIntervention(params: {
     }
     throw error;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Espace client - `US-INTERVENTIONS-LISTER-CLIENT-A-VENIR` et
+// `US-INTERVENTIONS-LISTER-CLIENT-PASSEES` (T-V3-10).
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Statuts terminaux, ceux de l'onglet « Passées ».
+///
+/// `IN_PROGRESS` n'y figure pas et n'est pas non plus « à venir » : une
+/// intervention commencée n'est ni finie ni future. Elle reste dans l'onglet
+/// « À venir » par le filtre ci-dessous, qui ne retient que `PLANNED` - un
+/// rendez-vous en cours d'exécution n'a rien à faire dans un historique.
+export const STATUTS_TERMINAUX = ["DONE", "CANCELLED"] as const;
+
+export type ProduitAttache = {
+  productId: number;
+  label: string;
+  quantity: number;
+  /// Prix figé à la vente (Constitution §4.1), en chaîne à deux décimales.
+  unitPriceSnapshot: string;
+};
+
+export type InterventionClient = {
+  id: number;
+  status: string;
+  appointmentAt: Date;
+  durationSnapshot: number;
+  /// Le forfait SEUL. `total` porte forfait + produits.
+  priceSnapshot: string;
+  cancellationReason: string | null;
+  forfait: string;
+  adresse: {
+    label: string | null;
+    street: string;
+    zipCode: string;
+    city: string;
+  };
+  /// « Marc L. » - prénom et initiale, jamais le patronyme entier.
+  technicien: string;
+  produits: ProduitAttache[];
+  total: string;
+  photos: { id: number }[];
+};
+
+/// Prénom plus initiale du nom, exigé par les deux US au titre du RGPD
+/// (« tech (prénom + initiale nom, protection RGPD) »).
+///
+/// L'abréviation se fait **ici**, à la frontière de la couche d'accès, et pas
+/// dans la vue : c'est une décision de minimisation, pas de mise en forme. Le
+/// patronyme entier ne doit pas traverser jusqu'au navigateur, où il suffirait
+/// d'ouvrir les outils de développement pour le lire.
+export function abregerNom(firstname: string, lastname: string): string {
+  const initiale = lastname.trim().charAt(0).toUpperCase();
+  return initiale ? `${firstname} ${initiale}.` : firstname;
+}
+
+/// Le `select` partagé par les deux listes et par le panneau de détail. Une
+/// seule forme lue, donc une seule forme à faire évoluer.
+const SELECTION_CLIENT = {
+  id: true,
+  status: true,
+  appointmentAt: true,
+  durationSnapshot: true,
+  priceSnapshot: true,
+  cancellationReason: true,
+  service: { select: { label: true } },
+  tech: { select: { firstname: true, lastname: true } },
+  address: {
+    select: {
+      label: true,
+      street: true,
+      city: { select: { zipCode: true, city: true } },
+    },
+  },
+  products: {
+    select: {
+      productId: true,
+      quantity: true,
+      unitPriceSnapshot: true,
+      product: { select: { label: true } },
+    },
+    orderBy: { productId: "asc" },
+  },
+  // Les identifiants seuls : le contenu passe par
+  // `GET /api/intervention-photos/[id]`, jamais par un chemin de fichier rendu
+  // au navigateur.
+  photos: { select: { id: true }, orderBy: { id: "asc" } },
+} satisfies Prisma.InterventionSelect;
+
+type LigneLue = Prisma.InterventionGetPayload<{
+  select: typeof SELECTION_CLIENT;
+}>;
+
+/// Total affiché : `price_snapshot` du forfait + Σ `unit_price_snapshot` × qté.
+///
+/// Les deux US produits écrivent cette formule mot pour mot, et
+/// `src/lib/db/queries/produits.ts` la calcule à l'identique après chaque
+/// mutation T+n. Le total n'est **pas** stocké : le dictionnaire §interventions
+/// champ 7 dit « prix TOTAL figé » et se trompe.
+///
+/// `Prisma.Decimal` et non un flottant : `85.00 + 12.90 × 3` perd ses centimes
+/// en binaire, et c'est un montant que le client lit.
+function projeter(ligne: LigneLue): InterventionClient {
+  const total = ligne.products.reduce(
+    (somme, produit) =>
+      somme.plus(produit.unitPriceSnapshot.times(produit.quantity)),
+    ligne.priceSnapshot,
+  );
+
+  return {
+    id: ligne.id,
+    status: ligne.status,
+    appointmentAt: ligne.appointmentAt,
+    durationSnapshot: ligne.durationSnapshot,
+    priceSnapshot: ligne.priceSnapshot.toFixed(2),
+    cancellationReason: ligne.cancellationReason,
+    forfait: ligne.service.label,
+    adresse: {
+      label: ligne.address.label,
+      street: ligne.address.street,
+      zipCode: ligne.address.city.zipCode,
+      city: ligne.address.city.city,
+    },
+    technicien: abregerNom(ligne.tech.firstname, ligne.tech.lastname),
+    produits: ligne.products.map((produit) => ({
+      productId: produit.productId,
+      label: produit.product.label,
+      quantity: produit.quantity,
+      unitPriceSnapshot: produit.unitPriceSnapshot.toFixed(2),
+    })),
+    total: total.toFixed(2),
+    photos: ligne.photos,
+  };
+}
+
+/// Onglet « À venir » - `US-INTERVENTIONS-LISTER-CLIENT-A-VENIR`.
+///
+/// ⚠️ **Le statut seul, sans borne de date.** L'US écrit « le **filtre par
+/// défaut** = `appointment_at >= now()` ET `status IN (PLANNED)` », et un défaut
+/// n'est pas un invariant : appliqué comme tel, un rendez-vous d'hier que le
+/// technicien n'a pas clôturé sortirait de « à venir » sans entrer dans
+/// « passées », qui ne retient que les statuts terminaux. Le client perdrait de
+/// vue une intervention qui existe encore. La date est affichée, il voit
+/// qu'elle est passée. Arbitré le 2026-08-11.
+export async function listerInterventionsAVenir(params: {
+  clientId: string;
+}): Promise<InterventionClient[]> {
+  const lignes = await db.intervention.findMany({
+    where: { clientId: params.clientId, status: "PLANNED" },
+    select: SELECTION_CLIENT,
+    orderBy: { appointmentAt: "asc" },
+  });
+
+  return lignes.map(projeter);
+}
+
+export type PagePassees = {
+  interventions: InterventionClient[];
+  /// Nombre total de lignes du filtre courant, pas de la page.
+  total: number;
+  page: number;
+  pages: number;
+};
+
+/// Dix lignes par page. La pagination est exigée par l'US (« la liste paginée
+/// triée par `appointment_at DESC` ») ; la valeur, elle, n'est écrite nulle
+/// part.
+export const TAILLE_PAGE_PASSEES = 10;
+
+/// Onglet « Passées » - `US-INTERVENTIONS-LISTER-CLIENT-PASSEES`.
+///
+/// Le filtre par période est celui que l'US demande (« un filtre par période
+/// (année, ou date début / fin) ») ; les filtres par statut et par technicien
+/// de la maquette C10 n'y figurent pas et ne sont pas portés.
+///
+/// `au` est reçue comme une date de jour et bornée en **exclusif au lendemain**
+/// plutôt qu'en inclusif : `<= 2026-08-11T00:00Z` écarterait tout ce qui a eu
+/// lieu dans la journée du 11, ce qui est faux pour un utilisateur qui vient de
+/// saisir cette date comme fin de période.
+export async function listerInterventionsPassees(params: {
+  clientId: string;
+  du?: Date;
+  au?: Date;
+  page?: number;
+}): Promise<PagePassees> {
+  const page = Math.max(1, params.page ?? 1);
+
+  const fenetre =
+    params.du || params.au
+      ? {
+          appointmentAt: {
+            ...(params.du ? { gte: params.du } : {}),
+            ...(params.au
+              ? { lt: new Date(params.au.getTime() + 24 * 3_600_000) }
+              : {}),
+          },
+        }
+      : {};
+
+  const filtre = {
+    clientId: params.clientId,
+    status: { in: [...STATUTS_TERMINAUX] },
+    ...fenetre,
+  };
+
+  // Comptage et page en parallèle : ils ne dépendent pas l'un de l'autre, et
+  // la base est jointe par un tunnel SSH où chaque aller-retour se paie.
+  const [total, lignes] = await Promise.all([
+    db.intervention.count({ where: filtre }),
+    db.intervention.findMany({
+      where: filtre,
+      select: SELECTION_CLIENT,
+      orderBy: { appointmentAt: "desc" },
+      skip: (page - 1) * TAILLE_PAGE_PASSEES,
+      take: TAILLE_PAGE_PASSEES,
+    }),
+  ]);
+
+  return {
+    interventions: lignes.map(projeter),
+    total,
+    page,
+    pages: Math.max(1, Math.ceil(total / TAILLE_PAGE_PASSEES)),
+  };
+}
+
+/// Les deux compteurs des onglets (« À venir (2) · Passées (5) », écran C8).
+///
+/// Comptés plutôt que déduits de la longueur des listes : celle des passées est
+/// paginée, et son `length` vaudrait dix quoi qu'il arrive.
+export async function compterInterventionsClient(params: {
+  clientId: string;
+}): Promise<{ aVenir: number; passees: number }> {
+  const [aVenir, passees] = await Promise.all([
+    db.intervention.count({
+      where: { clientId: params.clientId, status: "PLANNED" },
+    }),
+    db.intervention.count({
+      where: {
+        clientId: params.clientId,
+        status: { in: [...STATUTS_TERMINAUX] },
+      },
+    }),
+  ]);
+
+  return { aVenir, passees };
+}
+
+/// Une intervention **du client**, ou `null`.
+///
+/// `null` couvre l'inconnue **et** celle d'un tiers, sans les distinguer :
+/// `interventions.id` est un `SERIAL`, donc énumérable, et une réponse « accès
+/// refusé » distincte d'un « introuvable » confirmerait l'existence du
+/// rendez-vous d'autrui à qui s'amuse à incrémenter. Même régime que les deux
+/// mutations produits (`queries/produits.ts` §ResultatLigne) et que les
+/// adresses de [PR #26].
+export async function chargerInterventionDuClient(params: {
+  interventionId: number;
+  clientId: string;
+}): Promise<InterventionClient | null> {
+  const ligne = await db.intervention.findFirst({
+    where: { id: params.interventionId, clientId: params.clientId },
+    select: SELECTION_CLIENT,
+  });
+
+  return ligne ? projeter(ligne) : null;
 }

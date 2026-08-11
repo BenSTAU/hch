@@ -1,19 +1,26 @@
-import { ROLE_ADMIN, hasRole } from "./permissions";
+import { CHEMIN_ESPACE_CLIENT } from "@/lib/routes";
+
+import { ROLE_ADMIN, ROLE_TECH, hasRole } from "./permissions";
 
 /// Destination post-connexion selon le rôle — `US-COMPTE-CONNECTER` §Cas
-/// nominal, DoD T-V3-03.
+/// nominal ([[module-1-utilisateurs]] §287).
 ///
 /// La SPEC nomme trois espaces : client `/mes-interventions/a-venir`,
-/// technicien `/interventions/du-jour`, administrateur back-office. Un seul
-/// existe. Les deux autres ne sont pas posés en coquilles vides — une route qui
-/// répond 200 sans rien porter est la leçon T-T2-16 d'Argo — et l'accueil sert
-/// de destination provisoire. **T-V3-10 porte la DoD finale côté client** ;
-/// la destination du technicien suivra sa vague.
+/// technicien `/interventions/du-jour`, administrateur back-office. **Deux
+/// existent depuis T-V3-10**, qui livre l'espace client. Le troisième n'est pas
+/// posé en coquille vide — une route qui répond 200 sans rien porter est la
+/// leçon T-T2-16 d'Argo — et l'accueil reste sa destination provisoire jusqu'à
+/// la vague technicien.
 ///
-/// Avant cette tâche, la destination était `/admin/parametres` pour tout le
-/// monde : un client fraîchement activé se connectait, puis se voyait refuser
-/// l'accès par `requireAdmin()`.
+/// Avant T-V3-03, la destination était `/admin/parametres` pour tout le monde :
+/// un client fraîchement activé se connectait, puis se voyait refuser l'accès
+/// par `requireAdmin()`.
 export const AFTER_LOGIN_ADMIN = "/admin/parametres";
+/// Réexporté depuis `src/lib/routes.ts`, seul module que le navigateur peut
+/// aussi importer : le menu utilisateur et l'écran de confirmation du tunnel
+/// visent la même destination, et une seconde copie du littéral finirait par
+/// diverger.
+export const AFTER_LOGIN_CLIENT = CHEMIN_ESPACE_CLIENT;
 export const AFTER_LOGIN_DEFAULT = "/";
 
 /// Destination de la **sortie** de session — `US-COMPTE-DECONNECTER` : « je
@@ -38,5 +45,14 @@ export function afterLoginPath(roles: readonly string[]): string {
   //
   // `hasRole` compare exactement — `ROLE_ADMINISTRATIF` n'est pas un
   // administrateur, `role_admin` non plus.
-  return hasRole(roles, ROLE_ADMIN) ? AFTER_LOGIN_ADMIN : AFTER_LOGIN_DEFAULT;
+  if (hasRole(roles, ROLE_ADMIN)) return AFTER_LOGIN_ADMIN;
+
+  // Le technicien AVANT le client, et l'ordre compte : son espace n'existe
+  // pas, et l'envoyer sur `/mes-interventions/a-venir` lui montrerait la liste
+  // vide de ses propres rendez-vous **en tant que client**, pas sa tournée. Un
+  // écran vide qui ressemble à son métier est pire qu'un accueil neutre. Sa
+  // destination reste provisoire jusqu'à la vague technicien.
+  if (hasRole(roles, ROLE_TECH)) return AFTER_LOGIN_DEFAULT;
+
+  return AFTER_LOGIN_CLIENT;
 }

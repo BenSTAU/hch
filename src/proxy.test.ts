@@ -110,13 +110,53 @@ describe("proxy — ce qu'il ne fait pas", () => {
   });
 });
 
+describe("proxy — Server Actions", () => {
+  // 🐛 Défaut réel trouvé par l'E2E « reste sans erreur sur une session déjà
+  // close » (T-V3-10). Une Server Action se poste sur l'URL COURANTE : sur une
+  // route protégée dont le cookie a expiré, le proxy répondait à un POST
+  // `Next-Action` par une navigation vers `/connexion`, que React ne sait pas
+  // interpréter — « An unexpected response was received from the server ».
+  //
+  // Rien n'est ouvert en laissant passer : une Server Action exportée est
+  // joignable depuis n'importe quelle route, y compris une route publique hors
+  // matcher (ADR-006 v2). Son rempart est `authActionClient`, pas ce fichier.
+  it("laisse passer une Server Action, même sans cookie", () => {
+    const requete = request("/mes-interventions/a-venir");
+    requete.headers.set("Next-Action", "7f9a1c2e");
+
+    expect(proxy(requete).headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("redirige toujours la NAVIGATION vers la même route", () => {
+    // La contrepartie : ce qui vient d'une barre d'adresse ou d'un lien n'a pas
+    // cet en-tête, et continue d'être renvoyé vers la connexion.
+    expect(proxy(request("/mes-interventions/a-venir")).status).toBe(307);
+  });
+});
+
 describe("proxy — périmètre du matcher", () => {
-  it("garde les trois espaces connectés", () => {
+  it("garde les quatre espaces connectés", () => {
+    // `/mes-interventions` ajouté par T-V3-10. Il ne vit pas sous `/client/` —
+    // les routes sont en français et c'est le chemin que la SPEC nomme — mais
+    // les deux US exigent la même redirection vers la connexion avec un
+    // `next=`. Sans cette entrée, l'espace client serait la seule surface
+    // connectée que le proxy laisse passer.
     expect(config.matcher).toEqual([
       "/admin/:path*",
       "/client/:path*",
+      "/mes-interventions/:path*",
       "/tech/:path*",
     ]);
+  });
+
+  it("fabrique le `next=` que les deux US de l'espace client écrivent", () => {
+    // « redirection vers login avec `next=/mes-interventions/passees` », mot
+    // pour mot dans `US-INTERVENTIONS-LISTER-CLIENT-PASSEES` §Cas d'erreur.
+    const reponse = proxy(request("/mes-interventions/passees"));
+
+    expect(reponse.headers.get("location")).toContain(
+      `next=${encodeURIComponent("/mes-interventions/passees")}`,
+    );
   });
 
   it("laisse la vitrine, la connexion et le healthcheck hors de son champ", () => {

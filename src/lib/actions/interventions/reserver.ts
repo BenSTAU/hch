@@ -36,8 +36,12 @@ import { reserverSchema } from "@/lib/validations/interventions";
 /// humaine** (Constitution §1.2) : pas de file de leads, pas de rappel.
 
 const MESSAGE_INDISPONIBLE =
-  "Service de géolocalisation temporairement indisponible - réessayez.";
-const MESSAGE_INTROUVABLE = "Adresse introuvable - vérifiez les informations.";
+  "Service de géolocalisation temporairement indisponible, réessayez.";
+/// ⚠️ Ces deux libellés portaient un **trait d'union sec** depuis [PR #32], là
+/// où la SPEC écrit un cadratin. CLAUDE.md §Typographie nomme ce remplacement
+/// « le pire des remplacements » : la virgule est la bonne substitution.
+/// Correction hors périmètre de T-V3-10, signalée en PR.
+const MESSAGE_INTROUVABLE = "Adresse introuvable, vérifiez les informations.";
 const MESSAGE_HORS_ZONE = "Aucun service disponible à cette adresse.";
 const MESSAGE_FORFAIT_INCONNU = "Ce forfait n'est plus proposé.";
 const MESSAGE_CRENEAU_PRIS =

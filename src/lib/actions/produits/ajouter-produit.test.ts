@@ -18,6 +18,15 @@ vi.mock("@/lib/db/queries/produits", () => ({
     ajouterProduitIntervention(args),
 }));
 
+// `revalidatePath` posé par T-V3-10 avec le montage de l'écran. Hors contexte
+// de requête Next il lève, et `handleServerError` transformerait le succès en
+// `serverError` : sans ce mock, toute la suite deviendrait rouge pour une
+// raison qui n'a rien à voir avec la vente.
+const revalidatePath = vi.fn();
+vi.mock("next/cache", () => ({
+  revalidatePath: (chemin: string) => revalidatePath(chemin),
+}));
+
 const { ajouterProduit } = await import("./ajouter-produit");
 
 const CLIENT = "3f1e0a5c-0b2d-4c6e-9a11-2b3c4d5e6f70";
@@ -58,6 +67,29 @@ describe("ajouterProduit", () => {
     });
 
     expect(resultat?.data).toEqual({ ok: true, total: "97.90" });
+  });
+
+  // DoD de T-V3-10 : « le montage du bloc produits T+n, `revalidatePath`
+  // compris ». T-V3-09 l'avait laissé en report faute d'écran à revalider.
+  it("invalide l'espace client après une vente", async () => {
+    await ajouterProduit({ interventionId: 42, productId: 2, quantity: 1 });
+
+    expect(revalidatePath).toHaveBeenCalledWith("/mes-interventions/a-venir");
+  });
+
+  it("n'invalide rien quand la vente est refusée", async () => {
+    // Un refus ne change aucune donnée. Invalider quand même ferait relire la
+    // base à chaque tentative sur un produit en rupture.
+    ajouterProduitIntervention.mockResolvedValue({
+      ok: false,
+      reason: "stock_insuffisant",
+      label: "Chambre à air 700×35",
+      disponible: 0,
+    });
+
+    await ajouterProduit({ interventionId: 42, productId: 2, quantity: 1 });
+
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 
   it("refuse une quantité nulle ou négative avant d'atteindre la base", async () => {

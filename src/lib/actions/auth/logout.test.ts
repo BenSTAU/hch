@@ -27,6 +27,13 @@ vi.mock("next/navigation", () => ({
   redirect: (url: string) => redirect(url),
 }));
 
+// Trace `LOGOUT`, ajoutée par T-V3-10 (migration 014, report de T-V3-03).
+const writeAuditLog = vi.fn();
+vi.mock("@/lib/audit/log", () => ({
+  writeAuditLog: (entree: unknown) => writeAuditLog(entree),
+  ENTITE_SESSION: "session",
+}));
+
 const { logout } = await import("./logout");
 // La destination est déclarée avec celles de la connexion : un fichier
 // `"use server"` n'exporte que des fonctions asynchrones, et Next refuse le
@@ -34,7 +41,14 @@ const { logout } = await import("./logout");
 // barrière, pas en relisant le fichier.
 const { AFTER_LOGOUT } = await import("@/lib/auth/after-login");
 
-beforeEach(() => vi.clearAllMocks());
+const UTILISATEUR = "3f1e0a5c-0b2d-4c6e-9a11-2b3c4d5e6f70";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Session lisible par défaut : c'est le cas nominal, et les tests du jeton
+  // illisible posent explicitement `null`.
+  readSessionToken.mockResolvedValue({ sub: UTILISATEUR, roles: [] });
+});
 
 describe("logout", () => {
   it("efface le cookie de session", async () => {
@@ -77,13 +91,59 @@ describe("logout", () => {
     expect(redirect).toHaveBeenCalledWith(AFTER_LOGOUT);
   });
 
-  it("ne lit jamais la session avant de la détruire", async () => {
-    // Une lecture préalable rendrait l'action dépendante d'un jeton VALIDE :
-    // un cookie expiré, ou signé avec un secret depuis remplacé, ne pourrait
-    // plus être effacé et la personne resterait coincée avec un cookie mort
-    // que `src/proxy.ts` continue de prendre pour une session.
+  // ⚠️ **Oracle remplacé par T-V3-10, règle du test rouge cas 3.** Le test
+  // asseyait la propriété sur un détail d'implémentation — « `readSessionToken`
+  // n'est jamais appelée » — et T-V3-10 doit lire la session pour nommer
+  // l'acteur de la trace `LOGOUT` (`audit_logs.actor_id` est une FK NOT NULL).
+  // La lecture ne CONDITIONNE rien, et c'est cela que la propriété exige. Les
+  // deux tests ci-dessous l'affirment directement, au lieu d'en surveiller un
+  // symptôme.
+  it("détruit la session même quand le jeton est illisible", async () => {
+    // Un cookie expiré, ou signé avec un secret depuis remplacé, doit pouvoir
+    // être effacé : c'est précisément celui dont on veut se débarrasser, et
+    // `src/proxy.ts` continue de le prendre pour une session.
+    readSessionToken.mockResolvedValue(null);
+
     await logout().catch(() => undefined);
 
-    expect(readSessionToken).not.toHaveBeenCalled();
+    expect(destroySession).toHaveBeenCalled();
+  });
+
+  it("n'écrit aucune trace quand le jeton est illisible", async () => {
+    // `audit_logs.actor_id` est une vraie clé étrangère NOT NULL : un cookie
+    // corrompu ne désigne personne, il n'y a pas d'acteur à inscrire.
+    readSessionToken.mockResolvedValue(null);
+
+    await logout().catch(() => undefined);
+
+    expect(writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("trace la déconnexion sur la session, pas sur l'utilisateur", async () => {
+    // `entity_type = 'session'` : Constitution §4.2 vise « toute action
+    // ADMINISTRATIVE sensible », et une déconnexion n'en est pas une — c'est un
+    // évènement de sécurité. ADR-005 écrit déjà cette valeur.
+    readSessionToken.mockResolvedValue({ sub: UTILISATEUR, roles: [] });
+
+    await logout().catch(() => undefined);
+
+    expect(writeAuditLog).toHaveBeenCalledWith({
+      entityType: "session",
+      entityId: UTILISATEUR,
+      action: "LOGOUT",
+      actorId: UTILISATEUR,
+    });
+  });
+
+  it("détruit la session AVANT d'écrire la trace", async () => {
+    // Un échec d'écriture du journal ne doit pas laisser une session debout.
+    // Se déconnecter est l'acte de sécurité, l'auditer n'en est que la mémoire.
+    readSessionToken.mockResolvedValue({ sub: UTILISATEUR, roles: [] });
+
+    await logout().catch(() => undefined);
+
+    expect(destroySession.mock.invocationCallOrder[0]).toBeLessThan(
+      writeAuditLog.mock.invocationCallOrder[0]!,
+    );
   });
 });

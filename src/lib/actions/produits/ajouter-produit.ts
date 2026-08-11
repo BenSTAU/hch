@@ -1,5 +1,8 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
+import { CHEMIN_ESPACE_CLIENT } from "@/lib/routes";
 import { ajouterProduitIntervention } from "@/lib/db/queries/produits";
 import { authActionClient } from "@/lib/safe-action";
 import { ajouterProduitSchema } from "@/lib/validations/produits";
@@ -12,11 +15,10 @@ import { messageRefus } from "./messages";
 /// Le jumeau T=0 est la validation du tunnel, qui vend le panier dans la
 /// transaction de la réservation : deux moments, une seule règle de stock.
 ///
-/// **Aucun `revalidatePath` ici**, et c'est délibéré : l'écran de détail
-/// d'intervention (C8) n'existe pas encore, T-V3-10 en est propriétaire depuis
-/// l'arbitrage du 2026-08-10 et porte la DoD de montage. Revalider une route
-/// absente serait un chemin mort à relire dans deux semaines. Même précédent
-/// que les adresses de PR #23, montées par T-V3-07.
+/// Le `revalidatePath` que T-V3-09 avait laissé en report : l'écran de détail
+/// (C8) n'existait pas encore, revalider une route absente aurait été un chemin
+/// mort. Il arrive avec le montage, en T-V3-10. Même mécanique que les adresses
+/// de PR #23, montées par T-V3-07.
 export const ajouterProduit = authActionClient
   .inputSchema(ajouterProduitSchema)
   .action(async ({ parsedInput, ctx: { user } }) => {
@@ -28,7 +30,13 @@ export const ajouterProduit = authActionClient
       clientId: user.id,
     });
 
-    return resultat.ok
-      ? { ok: true as const, total: resultat.total }
-      : { ok: false as const, message: messageRefus(resultat, "ajout") };
+    if (!resultat.ok) {
+      return { ok: false as const, message: messageRefus(resultat, "ajout") };
+    }
+
+    // Le panneau de détail rend les lignes et le total : sans invalidation, le
+    // produit ajouté n'apparaîtrait qu'à la navigation suivante.
+    revalidatePath(CHEMIN_ESPACE_CLIENT);
+
+    return { ok: true as const, total: resultat.total };
   });

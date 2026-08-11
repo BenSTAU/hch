@@ -1,17 +1,26 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import sharp from "sharp";
 
+import { FORMATS_ACCEPTES, MAX_OCTETS } from "./quotas";
+
 /// Réception et stockage des photos du tunnel — `US-INTERVENTION-PHOTOS-AJOUTER`.
 ///
 /// **Le strip EXIF n'est pas une option de confort.** Une photo de vélo est
-/// prise au domicile du client, elle porte donc ses coordonnées GPS, et
-/// `uploads/` est servi sur un domaine public (PLAN S4 §4.5). Publier le fichier
-/// tel quel publierait l'adresse de quelqu'un.
+/// prise au domicile du client, elle porte donc les coordonnées GPS de ce
+/// domicile.
+///
+/// ⚠️ **Son motif a changé le 2026-08-11, pas son caractère obligatoire.** PLAN
+/// S4 §4.5 le justifiait par « `uploads/` est servi sur un domaine public » ;
+/// l'arbitrage de T-V3-10 a tranché l'inverse (route de lecture contrôlée, cf.
+/// `src/app/api/intervention-photos/[id]/route.ts`), et §4.5 est amendé en
+/// conséquence côté vault. Ce qui reste : la défense en profondeur, et le fait
+/// que le technicien qui verra cette photo en V2 n'a pas à recevoir l'adresse
+/// du client avec elle.
 ///
 /// La méthode retenue **ré-encode** au lieu de retrancher : l'image entrante est
 /// décodée puis ré-écrite en WebP par `sharp`, qui n'émet aucune métadonnée sauf
@@ -21,23 +30,19 @@ import sharp from "sharp";
 /// Le même geste règle le HEIC, format par défaut des iPhone qu'aucun navigateur
 /// ne sait afficher : il entre en HEIF, il ressort en WebP.
 
-/// Cinq photos par intervention, cinq mégaoctets chacune
-/// ([[module-3-interventions]] §Quotas).
-export const MAX_PHOTOS = 5;
-export const MAX_OCTETS = 5 * 1024 * 1024;
+/// Réexportés depuis `./quotas`, seul module que le navigateur peut aussi
+/// importer : les deux zones de dépôt sont des composants clients, et ce
+/// fichier-ci tire `sharp`. Les appelants serveur continuent de les lire ici.
+export { MAX_OCTETS, MAX_PHOTOS } from "./quotas";
 
-/// Types acceptés à l'entrée. La sortie est toujours du WebP.
+/// Types acceptés à l'entrée, dérivés de la liste que l'attribut `accept`
+/// annonce à l'écran. Une seule source : deux listes finiraient par diverger, et
+/// c'est la plus permissive qui déciderait.
 ///
 /// Le type déclaré par le navigateur ne fait pas foi — il est trivial à
 /// falsifier. Il sert à écarter tôt ce qui n'a pas à monter ; c'est le décodage
 /// par `sharp` qui tranche réellement.
-const TYPES_ACCEPTES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/heic",
-  "image/heif",
-] as const;
+const TYPES_ACCEPTES = FORMATS_ACCEPTES.split(",");
 
 /// Dossier de dépôt. `./uploads` en local, `/app/uploads` dans le conteneur —
 /// c'est le même chemin relatif au répertoire de travail, et c'est le bind mount
@@ -97,9 +102,7 @@ export function messageRefus(
 export async function enregistrerPhoto(
   fichier: File,
 ): Promise<EnregistrementPhoto> {
-  if (
-    !TYPES_ACCEPTES.includes(fichier.type as (typeof TYPES_ACCEPTES)[number])
-  ) {
+  if (!TYPES_ACCEPTES.includes(fichier.type)) {
     return { ok: false, reason: "type_refuse" };
   }
 
@@ -123,4 +126,36 @@ export async function enregistrerPhoto(
   // Chemin relatif, jamais absolu : il part en base dans `photos.url`, et le
   // préfixe change entre le poste de développement et le conteneur.
   return { ok: true, url: `uploads/${nom}` };
+}
+
+/// Motif exact de ce que `enregistrerPhoto` écrit. Il sert deux fois : à la
+/// validation des chemins qui remontent du client
+/// (`src/lib/validations/interventions.ts`) et ci-dessous, à la relecture.
+const CHEMIN_ATTENDU = /^uploads\/[0-9a-f-]{36}\.webp$/;
+
+/// Relit un fichier déposé. `null` s'il a disparu du disque.
+///
+/// **La garde de traversée est ici et non chez l'appelant.** `photos.url` a
+/// beau avoir été validé à l'écriture, c'est une colonne de base : une
+/// migration, un correctif en `psql` ou un chemin d'écriture futur pourraient y
+/// poser autre chose, et cette fonction concatène une valeur de base à un
+/// chemin de système de fichiers. Le motif est revérifié plutôt que supposé -
+/// `path.join` résout `..` sans se plaindre.
+///
+/// L'autorisation, elle, n'est PAS ici : elle vit dans
+/// `chargerPhotoDuClient` (`src/lib/db/queries/photos.ts`), qui décide si ce
+/// client a le droit de voir cette photo. Ce module ne connaît que le disque.
+export async function lirePhoto(url: string): Promise<Buffer | null> {
+  if (!CHEMIN_ATTENDU.test(url)) return null;
+
+  try {
+    // `path.basename` en plus du motif : deux gardes indépendantes pour la même
+    // propriété, parce que celle-ci se paie en lecture de fichier arbitraire.
+    return await readFile(path.join(dossierUploads(), path.basename(url)));
+  } catch {
+    // Fichier absent : ligne en base sans fichier sur le disque. Le cas se
+    // produit après une restauration partielle, ou si le bind mount `uploads/`
+    // n'est pas monté. Ce n'est pas une erreur de l'appelant.
+    return null;
+  }
 }

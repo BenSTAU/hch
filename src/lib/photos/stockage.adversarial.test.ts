@@ -10,8 +10,13 @@
 // convertie, ou dès le premier envoi depuis un navigateur qui ré-encode en WebP
 // avant de poster.
 //
-// `uploads/` est servi sur un domaine public (PLAN S4 §4.5) : ce qui sort d'ici
-// est lisible par n'importe qui.
+// ⚠️ **Le motif du strip a changé le 2026-08-11, pas son caractère
+// obligatoire.** Ce fichier écrivait « `uploads/` est servi sur un domaine
+// public (PLAN S4 §4.5) », et l'arbitrage de T-V3-10 a tranché l'inverse : la
+// lecture passe par une route contrôlée (`/api/intervention-photos/[id]`), et
+// §4.5 est amendé côté vault. Ce qui reste, et qui suffit à tout ce qui suit :
+// la défense en profondeur, et le fait que le technicien qui verra ces photos
+// en V2 n'a pas à recevoir l'adresse du client avec elles.
 import { randomUUID } from "node:crypto";
 import { readFile, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
@@ -19,7 +24,12 @@ import path from "node:path";
 import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { MAX_OCTETS, depouiller, enregistrerPhoto } from "./stockage";
+import {
+  MAX_OCTETS,
+  depouiller,
+  enregistrerPhoto,
+  lirePhoto,
+} from "./stockage";
 
 /// Coordonnées de la place Bellecour, comme toutes les fixtures du dépôt. Aucune
 /// donnée personnelle réelle n'entre ici — le dépôt bascule public.
@@ -468,5 +478,60 @@ describe("enregistrerPhoto — le dossier de dépôt", () => {
 
     expect(path.isAbsolute(resultat.url)).toBe(false);
     expect(resultat.url).not.toMatch(/^[A-Za-z]:/);
+  });
+});
+
+describe("lirePhoto - traversee de repertoire", () => {
+  // `lirePhoto` concatène une valeur de BASE à un chemin de système de
+  // fichiers. `photos.url` a beau être validé à l'écriture, une migration, un
+  // correctif en `psql` ou un chemin d'écriture futur pourraient y poser autre
+  // chose : la garde est donc revérifiée à la lecture, et pas supposée.
+  //
+  // Ce que ça coûterait de ne pas le faire : la lecture d'un fichier arbitraire
+  // du conteneur, servi en 200 par une route authentifiée.
+  it("refuse tout ce qui ne ressemble pas exactement à ce qu'elle écrit", async () => {
+    const hostiles = [
+      "../../etc/passwd",
+      "uploads/../../etc/passwd",
+      "uploads/../.env.local",
+      "/etc/passwd",
+      "C:\\Windows\\win.ini",
+      "uploads/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.webp/../../.env",
+      // Une extension qui n'est pas celle que le ré-encodage produit : rien
+      // d'autre que du WebP ne sort d'`enregistrerPhoto`.
+      "uploads/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.js",
+      "uploads/pas-un-uuid.webp",
+      "",
+    ];
+
+    for (const hostile of hostiles) {
+      await expect(lirePhoto(hostile)).resolves.toBeNull();
+    }
+  });
+
+  it("relit ce qu'`enregistrerPhoto` vient d'écrire", async () => {
+    // L'aller-retour complet : sans lui, le test précédent serait satisfait par
+    // une fonction qui rend `null` en toutes circonstances.
+    const image = await imageAvecGps("jpeg");
+    const resultat = await enregistrerPhoto(fichier(image, "image/jpeg"));
+
+    expect(resultat.ok).toBe(true);
+    if (!resultat.ok) return;
+    ecrits.push(resultat.url);
+
+    const contenu = await lirePhoto(resultat.url);
+
+    expect(contenu).not.toBeNull();
+    // Signature RIFF/WEBP : l'octet à octet prouverait la même chose, mais le
+    // format est ce qui compte pour le `Content-Type` que la route annonce.
+    expect(contenu?.subarray(0, 4).toString("ascii")).toBe("RIFF");
+    expect(contenu?.subarray(8, 12).toString("ascii")).toBe("WEBP");
+  });
+
+  it("rend `null` sur une ligne dont le fichier a disparu", async () => {
+    // Ligne en base sans fichier sur le disque : restauration partielle, ou
+    // bind mount `uploads/` non monté. Ce n'est pas une erreur de l'appelant,
+    // et lever ferait répondre 500 là où 404 est la réponse juste.
+    await expect(lirePhoto(`uploads/${randomUUID()}.webp`)).resolves.toBeNull();
   });
 });

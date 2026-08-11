@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 
 import { SiteNavMobile } from "./site-nav-mobile";
 import { CHEMIN_RESERVATION, NAV_PUBLIQUE } from "./site-navigation";
+import { UserMenu } from "./user-menu";
 
 type UtilisateurAffiche = Pick<CurrentUser, "firstname" | "lastname"> | null;
 
@@ -43,9 +44,16 @@ type UtilisateurAffiche = Pick<CurrentUser, "firstname" | "lastname"> | null;
 /// §Authentication : jamais de check d'autorisation dans un layout partagé, le
 /// Partial Rendering ne le rejoue pas en navigation client).
 ///
-/// Il cohabite avec `AppHeader`, l'en-tête de l'espace connecté posé en T-V3-03.
-/// La fusion appartient à T-V3-10, qui porte le vrai menu utilisateur de
-/// l'écran C7 — avatar, initiales, menu déroulant.
+/// ── En-tête **unique** depuis T-V3-10
+///
+/// Il cohabitait avec `AppHeader`, posé en T-V3-03 pour rendre la déconnexion
+/// atteignable dans l'espace connecté. Les deux ont fusionné ici, comme la DoD
+/// le prévoyait : la coquille publique et l'espace connecté portent désormais la
+/// même barre, et le couple « nom + bouton » a cédé la place au `UserMenu`
+/// (avatar, initiales, menu déroulant). `AppHeader` est supprimé.
+///
+/// Conséquence assumée et hors périmètre client : `/admin/parametres` change
+/// d'en-tête au même geste, `src/app/(app)/layout.tsx` montant celui-ci.
 export function SiteHeader({
   user,
   reservationDisponible,
@@ -132,13 +140,27 @@ function ActionsSession({ user }: { user: UtilisateurAffiche }) {
 
   return (
     <>
-      {/* Ni email ni rôle : le DTO du DAL les porte, l'en-tête n'en a pas
-          besoin, et sur un poste partagé une adresse affichée en permanence est
-          une donnée personnelle exposée sans motif. */}
-      <span className="text-sm font-medium text-muted-foreground">
-        {user.firstname} {user.lastname}
-      </span>
-      <LogoutButton />
+      <UserMenu user={user} />
+
+      {/* ⚠️ **Le repli sans JavaScript, et il n'est pas décoratif.** Un menu
+          déroulant Radix ne s'ouvre pas sans hydratation : y placer la
+          déconnexion la rendrait inatteignable, alors qu'elle l'était depuis
+          T-V3-03 et qu'un E2E le prouve
+          (`tests/e2e/connexion-deconnexion.spec.ts`, « la déconnexion ferme la
+          session sans hydratation »). L'enjeu est celui que ce test écrit : sur
+          un poste partagé, une déconnexion décorative laisse la session ouverte
+          à la personne suivante, qui croit que le bouton a fait son office.
+
+          `<noscript>` est exactement l'outil : son contenu n'est rendu que
+          lorsque le script est absent, et il est masqué par la feuille de style
+          de l'agent utilisateur sinon. Aucun doublon à l'écran, aucun doublon
+          dans l'arbre d'accessibilité.
+
+          `US-COMPTE-DECONNECTER` place l'action dans le menu ; ce repli ne l'en
+          sort pas, il la garde joignable là où le menu n'existe pas. */}
+      <noscript>
+        <LogoutButton />
+      </noscript>
     </>
   );
 }

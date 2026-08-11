@@ -55,6 +55,16 @@ vi.mock("@/lib/rate-limit", async (importOriginal) => ({
   clearRateLimit: (...args: unknown[]) => clearRateLimit(...args),
 }));
 
+// Trace `LOGIN`, ajoutée par T-V3-10 (migration 014, report de T-V3-03).
+// ADR-005 §Flux la code littéralement, ADR-014 §5 en fait le lieu où `GP-01`
+// la vérifie. Non mockée, elle atteindrait le client Prisma neutralisé
+// ci-dessus et ferait échouer toute connexion en `serverError`.
+const writeAuditLog = vi.fn();
+vi.mock("@/lib/audit/log", () => ({
+  writeAuditLog: (entree: unknown) => writeAuditLog(entree),
+  ENTITE_SESSION: "session",
+}));
+
 const { login, loginFormAction } = await import("./login");
 const { LOGIN_REFUSED_MESSAGE, LOGIN_RATE_LIMITED_MESSAGE } =
   await import("@/lib/validations/auth");
@@ -138,6 +148,69 @@ describe("login - succès", () => {
     await expect(login(CREDENTIALS)).rejects.toMatchObject({
       digest: expect.stringContaining("NEXT_REDIRECT"),
     });
+  });
+});
+
+// DoD T-V3-10, reportée de T-V3-03 : la migration 014 étend l'ENUM
+// `audit_logs.action`, et ces écritures sont ce qu'elle rend possible.
+describe("login - audit de connexion", () => {
+  it("trace la connexion sur la session, pas sur l'utilisateur", async () => {
+    // `entity_type = 'session'`, comme ADR-005 l'écrit. Constitution §4.2 vise
+    // « toute action ADMINISTRATIVE sensible » : une connexion n'en est pas
+    // une, c'est un évènement de sécurité. Le corollaire tient toujours -
+    // créer un compte n'est pas administrer, et T-V3-02 n'audite rien.
+    authenticateWithPassword.mockResolvedValue({
+      ok: true,
+      user: { id: "user-1", roles: ["ROLE_ADMIN"] },
+    });
+
+    await login(CREDENTIALS).catch(() => undefined);
+
+    expect(writeAuditLog).toHaveBeenCalledWith({
+      entityType: "session",
+      entityId: "user-1",
+      action: "LOGIN",
+      actorId: "user-1",
+    });
+  });
+
+  it("écrit la trace APRÈS avoir posé la session", async () => {
+    // Une trace de connexion écrite pour une session qui n'a pas été créée est
+    // un journal qui ment, et il n'y a pas de transaction ici pour rattraper
+    // l'ordre inverse : le cookie n'est pas une écriture de base.
+    authenticateWithPassword.mockResolvedValue({
+      ok: true,
+      user: { id: "user-1", roles: ["ROLE_ADMIN"] },
+    });
+
+    await login(CREDENTIALS).catch(() => undefined);
+
+    expect(createSession.mock.invocationCallOrder[0]).toBeLessThan(
+      writeAuditLog.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("ne trace aucun échec", async () => {
+    // `audit_logs.actor_id` est une vraie clé étrangère NOT NULL : une
+    // tentative sur un email inconnu n'a pas d'acteur à nommer. Le plafond
+    // d'échecs, lui, est déjà compté par `rate_limits` (PLAN S4 §11.1).
+    authenticateWithPassword.mockResolvedValue({ ok: false });
+
+    await login(CREDENTIALS).catch(() => undefined);
+
+    expect(writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("ne trace rien quand le plafond d'échecs ferme la porte", async () => {
+    peekLoginLockout.mockResolvedValue({
+      allowed: false,
+      retryAfterMs: 60_000,
+    });
+
+    await login(CREDENTIALS).catch(() => undefined);
+
+    expect(writeAuditLog).not.toHaveBeenCalled();
+    expect(authenticateWithPassword).not.toHaveBeenCalled();
   });
 });
 
@@ -285,10 +358,11 @@ describe("destination post-connexion", () => {
   });
 
   describe("selon le rôle", () => {
-    // DoD T-V3-03, reportée de T-V3-02. Les destinations métier de la SPEC
-    // n'existent pas encore : le client et le technicien vont à l'accueil,
-    // T-V3-10 porte la DoD finale côté client.
-    it("dépose le client sur l'accueil, pas sur le back-office", async () => {
+    // ⚠️ **Oracle déplacé par T-V3-10**, qui livre l'espace client et porte donc
+    // la DoD finale de la destination. T-V3-03 avait posé l'accueil en
+    // provisoire, refusant de créer une coquille vide (leçon T-T2-16 d'Argo).
+    // Le TECHNICIEN reste sur l'accueil : son espace n'existe toujours pas.
+    it("dépose le client sur son espace, pas sur le back-office", async () => {
       authenticateWithPassword.mockResolvedValue({
         ok: true,
         user: { id: "client-1", roles: ["ROLE_CLIENT"] },
@@ -296,7 +370,7 @@ describe("destination post-connexion", () => {
 
       await login(CREDENTIALS).catch(() => undefined);
 
-      expect(redirect).toHaveBeenCalledWith("/");
+      expect(redirect).toHaveBeenCalledWith("/mes-interventions/a-venir");
     });
 
     it("dépose le technicien sur l'accueil", async () => {
@@ -661,7 +735,7 @@ describe("loginFormAction - adaptateur de formulaire", () => {
       champs({ email: "admin@homecyclhome.fr", password: "bon", next: "" }),
     ).catch(() => undefined);
 
-    expect(redirect).toHaveBeenCalledWith("/");
+    expect(redirect).toHaveBeenCalledWith("/mes-interventions/a-venir");
   });
 
   it("refiltre un `next` hostile posé dans le champ caché", async () => {
@@ -689,7 +763,7 @@ describe("loginFormAction - adaptateur de formulaire", () => {
         }),
       ).catch(() => undefined);
 
-      expect(redirect).toHaveBeenCalledWith("/");
+      expect(redirect).toHaveBeenCalledWith("/mes-interventions/a-venir");
     }
   });
 

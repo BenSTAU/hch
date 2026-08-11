@@ -15,6 +15,20 @@ const instantSchema = z
   .refine((valeur) => !Number.isNaN(Date.parse(valeur)), "Créneau invalide.")
   .transform((valeur) => new Date(valeur));
 
+/// Un chemin rendu par `POST /api/upload-intervention-photo`.
+///
+/// La forme est vérifiée **strictement** : c'est une valeur qui vient du client
+/// et qui finit dans `photos.url`. Sans ce motif, un appelant direct y écrirait
+/// `../../etc/passwd` ou l'URL d'un tiers, et la route de lecture servirait ce
+/// qu'il aurait choisi.
+///
+/// Un seul motif pour les deux moments du dépôt - la validation du tunnel (T=0)
+/// et l'ajout depuis l'espace client (T+n). Deux copies finiraient par diverger,
+/// et c'est la plus permissive des deux qui déciderait.
+const cheminPhotoSchema = z
+  .string()
+  .regex(/^uploads\/[0-9a-f-]{36}\.webp$/, "Photo inconnue.");
+
 /// Lecture de la grille de créneaux.
 ///
 /// `zoneId` vient du client, et c'est assumé : une grille de créneaux n'est pas
@@ -43,15 +57,8 @@ export const reserverSchema = z.object({
   debut: instantSchema,
   /// Chemins rendus par `POST /api/upload-intervention-photo`, renvoyés tels
   /// quels par l'écran.
-  ///
-  /// La forme est vérifiée **strictement** : c'est une valeur qui vient du
-  /// client et qui finit dans `photos.url`. Sans ce motif, un appelant direct y
-  /// écrirait `../../etc/passwd` ou l'URL d'un tiers, et la galerie servirait
-  /// ce qu'il aurait choisi.
   photos: z
-    .array(
-      z.string().regex(/^uploads\/[0-9a-f-]{36}\.webp$/, "Photo inconnue."),
-    )
+    .array(cheminPhotoSchema)
     .max(MAX_PHOTOS, "Cinq photos au maximum.")
     .default([]),
   /// Panier composé pendant le tunnel (T=0). Il ne porte que des identifiants
@@ -61,3 +68,14 @@ export const reserverSchema = z.object({
 });
 
 export type ReserverInput = z.infer<typeof reserverSchema>;
+
+/// Dépôt d'une photo sur une intervention déjà planifiée (T+n) -
+/// `US-INTERVENTION-PHOTOS-AJOUTER`, versant espace client.
+///
+/// Une photo à la fois, et non un tableau : au T+n l'intervention existe, donc
+/// chaque ligne s'écrit immédiatement. Grouper l'envoi ferait échouer les cinq
+/// pour une seule qui franchit le quota.
+export const ajouterPhotoSchema = z.object({
+  interventionId: z.number().int().positive(),
+  url: cheminPhotoSchema,
+});
