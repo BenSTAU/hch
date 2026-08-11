@@ -27,7 +27,8 @@ vi.mock("@/lib/audit/log", () => ({
     writeAuditLog(entry, client),
 }));
 
-const { listAppSettings, updateAppSettings } = await import("./parametres");
+const { listAppSettings, lireContactSociete, updateAppSettings } =
+  await import("./parametres");
 
 const CURRENT = [
   {
@@ -422,5 +423,53 @@ describe("updateAppSettings — signature de l'écriture", () => {
       expect.objectContaining({ entityType: "app_settings" }),
       tx,
     );
+  });
+});
+
+describe("lireContactSociete", () => {
+  // Premier lecteur de `company.phone` et `company.email` hors du back-office :
+  // elles etaient seedees depuis le jalon 0 et n'etaient affichees nulle part.
+  // C'est `US-INTERVENTION-ANNULER-CLIENT` §Cas d'erreur qui les fait sortir,
+  // en renvoyant le client vers l'atelier passe la fenetre H-24.
+  it("rend les deux coordonnees telles que l'administrateur les tient", async () => {
+    findMany.mockResolvedValue([
+      { key: "company.phone", value: "+33639980000" },
+      { key: "company.email", value: "contact@homecyclhome.fr" },
+    ]);
+
+    await expect(lireContactSociete()).resolves.toEqual({
+      telephone: "+33639980000",
+      email: "contact@homecyclhome.fr",
+    });
+  });
+
+  it("ne lit QUE ces deux cles", async () => {
+    // La table porte aussi le SIRET, l'adresse postale et les horaires : les
+    // charger pour en afficher deux serait une lecture large sur un ecran
+    // client.
+    findMany.mockResolvedValue([]);
+
+    await lireContactSociete();
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { key: { in: ["company.phone", "company.email"] } },
+      }),
+    );
+  });
+
+  it("rend null sur une valeur absente, vide ou faite d'espaces", async () => {
+    // `app_settings.value` est NULLable et l'administrateur peut vider le champ.
+    // Une chaine vide qui traverserait produirait un `tel:` sans numero, donc
+    // un lien qui ne fait rien - l'ecran doit pouvoir ne rien rendre.
+    findMany.mockResolvedValue([
+      { key: "company.phone", value: "   " },
+      { key: "company.email", value: null },
+    ]);
+
+    await expect(lireContactSociete()).resolves.toEqual({
+      telephone: null,
+      email: null,
+    });
   });
 });

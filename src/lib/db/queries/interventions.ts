@@ -2,10 +2,12 @@ import "server-only";
 
 import { Prisma } from "@prisma/client";
 
+import { writeAuditLog } from "@/lib/audit/log";
 import { ROLE_TECH } from "@/lib/auth/permissions";
 import type { TechnicienCharge } from "@/lib/creneaux/derivation";
 import { db } from "@/lib/db/client";
 import { creerAdresse, resoudreCommune } from "@/lib/db/queries/adresses";
+import { annulationOuverte } from "@/lib/interventions/annulation";
 import {
   vendreProduits,
   type EchecStock,
@@ -520,6 +522,152 @@ export async function compterInterventionsClient(params: {
   ]);
 
   return { aVenir, passees };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Annulation par le client - `US-INTERVENTION-ANNULER-CLIENT` (T-V3-11).
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Ce que l'action a besoin de savoir pour notifier le technicien. Lu dans la
+/// transaction, avec le reste : relire après coup rouvrirait la course.
+export type AnnulationReussie = {
+  ok: true;
+  technicien: { email: string; firstname: string };
+  appointmentAt: Date;
+  durationSnapshot: number;
+  forfait: string;
+  adresse: string;
+  motif: string;
+};
+
+export type ResultatAnnulation =
+  | AnnulationReussie
+  /// Intervention inconnue **ou** appartenant à quelqu'un d'autre : une seule
+  /// réponse pour les deux. L'US §Cas d'erreur écrit 403 pour le
+  /// non-propriétaire, mais `interventions.id` est un `SERIAL` : un refus
+  /// distinct du « introuvable » confirmerait l'existence du rendez-vous d'un
+  /// tiers à qui incrémente. Même régime que les deux mutations produits et que
+  /// la route de lecture des photos.
+  | { ok: false; reason: "introuvable" }
+  /// Statut autre que `PLANNED` - déjà commencée, terminée, ou déjà annulée.
+  | { ok: false; reason: "non_annulable" }
+  /// Moins de 24 heures avant le rendez-vous. Passé ce délai, il n'existe
+  /// **aucune** US v1 côté administration pour annuler à la place du client :
+  /// SPEC §7.2 assume un traitement hors système, et interdit donc d'ouvrir ici
+  /// une porte dérobée.
+  | { ok: false; reason: "fenetre_depassee" };
+
+/// Passe une intervention planifiée en `CANCELLED` -
+/// `US-INTERVENTION-ANNULER-CLIENT`.
+///
+/// ── Le créneau se libère tout seul
+///
+/// Il n'y a **rien à réécrire** : le pool des disponibilités se dérive à la
+/// volée (Constitution §2.1) et la contrainte `no_double_booking` de la
+/// migration 010 filtre sur `status IN ('PLANNED','IN_PROGRESS')`. Une
+/// intervention annulée sort des deux au même instant. Une table de créneaux
+/// aurait ici une ligne à supprimer, et c'est précisément ce que le modèle
+/// s'interdit.
+///
+/// ── Le verrou n'est pas décoratif
+///
+/// Deux annulations concurrentes de la même intervention passeraient toutes
+/// les deux la lecture de statut sous READ COMMITTED, écriraient **deux**
+/// entrées d'audit et enverraient **deux** emails au technicien. Le second
+/// `UPDATE` est inoffensif, la trace ne l'est pas : `audit_logs` est la pièce
+/// qu'on produit en cas de contestation. Même mécanisme que le quota de photos
+/// et que le stock, et pris **après** la garde de propriété pour qu'un appelant
+/// qui incrémente des identifiants ne verrouille pas le rendez-vous d'un tiers.
+export async function annulerInterventionDuClient(params: {
+  interventionId: number;
+  clientId: string;
+  motif: string;
+  maintenant: Date;
+}): Promise<ResultatAnnulation> {
+  return db.$transaction(async (tx) => {
+    const intervention = await tx.intervention.findFirst({
+      where: { id: params.interventionId, clientId: params.clientId },
+      select: {
+        status: true,
+        appointmentAt: true,
+        durationSnapshot: true,
+        service: { select: { label: true } },
+        tech: { select: { email: true, firstname: true } },
+        address: {
+          select: {
+            street: true,
+            city: { select: { zipCode: true, city: true } },
+          },
+        },
+      },
+    });
+
+    if (!intervention)
+      return { ok: false as const, reason: "introuvable" as const };
+
+    // `PLANNED` seul. `IN_PROGRESS → CANCELLED` existe au cycle de vie
+    // (Constitution §2.4) mais appartient au technicien, en repli de refus de
+    // paiement (`US-PAIEMENT-ENREGISTRER`) : l'ouvrir au client lui permettrait
+    // d'annuler un rendez-vous pendant que le technicien est chez lui.
+    if (intervention.status !== "PLANNED") {
+      return { ok: false as const, reason: "non_annulable" as const };
+    }
+
+    if (!annulationOuverte(intervention.appointmentAt, params.maintenant)) {
+      return { ok: false as const, reason: "fenetre_depassee" as const };
+    }
+
+    await tx.$queryRaw`
+      SELECT "id" FROM "interventions"
+      WHERE "id" = ${params.interventionId}
+      FOR UPDATE
+    `;
+
+    // Relu SOUS le verrou : la première lecture a servi aux gardes, celle-ci
+    // décide. Entre les deux, une transaction voisine a pu commiter son propre
+    // passage en `CANCELLED`.
+    const sousVerrou = await tx.intervention.findUniqueOrThrow({
+      where: { id: params.interventionId },
+      select: { status: true },
+    });
+
+    if (sousVerrou.status !== "PLANNED") {
+      return { ok: false as const, reason: "non_annulable" as const };
+    }
+
+    await tx.intervention.update({
+      where: { id: params.interventionId },
+      data: { status: "CANCELLED", cancellationReason: params.motif },
+    });
+
+    // Dans la transaction, comme toute trace qui accompagne une mutation : une
+    // trace écrite à côté survit à un rollback, ou manque alors que l'écriture
+    // a eu lieu (`src/lib/audit/log.ts`).
+    await writeAuditLog(
+      {
+        entityType: "interventions",
+        entityId: String(params.interventionId),
+        action: "UPDATE",
+        actorId: params.clientId,
+        details: {
+          statutAvant: "PLANNED",
+          statutApres: "CANCELLED",
+          motif: params.motif,
+        },
+      },
+      tx,
+    );
+
+    return {
+      ok: true as const,
+      technicien: intervention.tech,
+      appointmentAt: intervention.appointmentAt,
+      durationSnapshot: intervention.durationSnapshot,
+      forfait: intervention.service.label,
+      adresse: `${intervention.address.street}, ${intervention.address.city.zipCode} ${intervention.address.city.city}`,
+      motif: params.motif,
+    };
+  });
 }
 
 // ⚠️ `chargerInterventionDuClient` a été écrite ici puis **retirée** au

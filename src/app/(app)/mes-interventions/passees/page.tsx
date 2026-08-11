@@ -14,10 +14,10 @@ import { InterventionsVue } from "../_components/interventions-vue";
 import { PaginationPassees } from "../_components/pagination-passees";
 
 export const metadata: Metadata = {
-  title: "Mes interventions passées — HomeCycl'Home",
+  title: "Mes interventions passées - HomeCycl'Home",
 };
 
-/// Onglet « Passées » — `US-INTERVENTIONS-LISTER-CLIENT-PASSEES`, écran **C10**.
+/// Onglet « Passées » - `US-INTERVENTIONS-LISTER-CLIENT-PASSEES`, écran **C10**.
 ///
 /// Même coquille et même panneau que C8 : ce qui change est le filtre de statut
 /// (`DONE`, `CANCELLED`), le tri (`appointment_at DESC`), la pagination et le
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
 ///
 /// Les trois cartes de statistiques, « Exporter historique (PDF) », le
 /// téléchargement de facture, « Réserver à nouveau », les filtres par statut et
-/// par technicien, et le badge « PREMIÈRE INTERVENTION » — aucun critère
+/// par technicien, et le badge « PREMIÈRE INTERVENTION » - aucun critère
 /// d'acceptation ne les demande, et [[maquettage]] §Notes portage classe déjà le
 /// dernier parmi les inventions de la maquette. Le label « Client Premium » de
 /// la barre latérale suit le même sort.
@@ -72,6 +72,11 @@ export default async function InterventionsPasseesPage({
           // terminale, et charger le catalogue produit ici serait une requête
           // pour un bloc que le panneau ne rendra pas.
           produits={[]}
+          // Aucune ligne de cet onglet n'est annulable : le bloc ne se rend
+          // jamais ici, et le contact n'a donc rien à alimenter. Le lire quand
+          // même serait une requête pour un composant que le panneau écarte.
+          contact={{ telephone: null, email: null }}
+          maintenant={new Date()}
           vide={{
             message: "Vous n'avez pas d'historique de rendez-vous.",
             href: CHEMIN_RESERVATION,

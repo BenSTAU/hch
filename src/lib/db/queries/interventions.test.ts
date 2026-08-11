@@ -27,29 +27,99 @@ const serviceFindUniqueOrThrow = vi.fn();
 const addressFindFirst = vi.fn();
 const queryRaw = vi.fn();
 
-const tx = {
-  $queryRaw: (_strings: TemplateStringsArray, ...valeurs: unknown[]) =>
-    queryRaw(valeurs),
-  product: { update: productUpdate },
-  intervention: { create: interventionCreate },
-  interventionProduct: { create: interventionProductCreate },
-  photo: { createMany: photoCreateMany },
-  service: { findUniqueOrThrow: serviceFindUniqueOrThrow },
-  address: { findFirst: addressFindFirst },
-};
+// Annulation (T-V3-11). Elle lit, verrouille, relit puis écrit, le tout dans
+// la transaction : ses quatre appels ont donc leur double ici.
+const txInterventionFindFirst = vi.fn();
+const txInterventionFindUniqueOrThrow = vi.fn();
+const txInterventionUpdate = vi.fn();
+const auditCreate = vi.fn();
+
+/// ⚠️ **Modele de verrouillage etendu par l'agent testeur, 2026-08-11.**
+///
+/// Le faux client etait un objet UNIQUE partage par toutes les transactions, et
+/// son `$queryRaw` ne faisait rien : deux annulations concurrentes s'y
+/// croisaient sans que rien ne s'y oppose. **Aucune assertion n'observait donc
+/// le verrou** - le seul test de concurrence stubbait la relecture au lieu de
+/// faire courir deux appels, et le `SELECT … FOR UPDATE` pouvait disparaitre du
+/// helper sans faire bouger un seul test. Or la relecture SEULE ne protege de
+/// rien : deux transactions la passent toutes les deux avant que l'une ait
+/// commite.
+///
+/// Ce qui est modele ici est le regime reel de PostgreSQL, comme dans
+/// `photos.test.ts` :
+///
+///   · **READ COMMITTED** - la premiere lecture de chaque transaction ne voit
+///     pas l'ecriture non commitee de la voisine ;
+///   · **un verrou de ligne pris par `SELECT … FOR UPDATE`** fait attendre la
+///     transaction suivante jusqu'au commit de la precedente.
+///
+/// Chaque transaction recoit donc son PROPRE client, avec son propre creneau de
+/// verrou libere au commit comme au rollback. Le verrou est **re-entrant** : une
+/// seconde requete brute dans la meme transaction (le verrou de stock de
+/// `vendreProduits` en croiserait une) ne s'attendrait pas elle-meme.
+let fileDesVerrous: Promise<void> = Promise.resolve();
+
+function creerTx() {
+  let liberer: () => void = () => undefined;
+  let detientLeVerrou = false;
+
+  const client = {
+    $queryRaw: async (
+      _strings: TemplateStringsArray,
+      ...valeurs: unknown[]
+    ) => {
+      if (!detientLeVerrou) {
+        detientLeVerrou = true;
+        const precedent = fileDesVerrous;
+        fileDesVerrous = new Promise<void>((resoudre) => {
+          liberer = resoudre;
+        });
+        await precedent;
+      }
+      return queryRaw(valeurs);
+    },
+    product: { update: productUpdate },
+    intervention: {
+      create: interventionCreate,
+      findFirst: (args: unknown) => txInterventionFindFirst(args),
+      findUniqueOrThrow: (args: unknown) =>
+        txInterventionFindUniqueOrThrow(args),
+      update: (args: unknown) => txInterventionUpdate(args),
+    },
+    interventionProduct: { create: interventionProductCreate },
+    photo: { createMany: photoCreateMany },
+    service: { findUniqueOrThrow: serviceFindUniqueOrThrow },
+    address: { findFirst: addressFindFirst },
+    auditLog: { create: (args: unknown) => auditCreate(args) },
+  };
+
+  return {
+    client,
+    relacher: () => {
+      liberer();
+    },
+  };
+}
+
+type FauxTx = ReturnType<typeof creerTx>["client"];
 
 /// Ce que la base fait du rappel : commit s'il rend, rollback s'il lève.
 const commits: string[] = [];
 const rollbacks: string[] = [];
 
-const transaction = vi.fn(async (rappel: (client: typeof tx) => unknown) => {
+const transaction = vi.fn(async (rappel: (client: FauxTx) => unknown) => {
+  const { client, relacher } = creerTx();
   try {
-    const valeur = await rappel(tx);
+    const valeur = await rappel(client);
     commits.push("commit");
     return valeur;
   } catch (erreur) {
     rollbacks.push("rollback");
     throw erreur;
+  } finally {
+    // Le verrou tombe au commit comme au rollback, jamais avant : c'est
+    // exactement la portee d'un verrou de ligne PostgreSQL.
+    relacher();
   }
 });
 
@@ -62,8 +132,7 @@ const interventionCount = vi.fn();
 
 vi.mock("@/lib/db/client", () => ({
   db: {
-    $transaction: (rappel: (client: typeof tx) => unknown) =>
-      transaction(rappel),
+    $transaction: (rappel: (client: FauxTx) => unknown) => transaction(rappel),
     intervention: {
       findMany: (args: unknown) => interventionFindMany(args),
       findFirst: (args: unknown) => interventionFindFirst(args),
@@ -79,6 +148,7 @@ vi.mock("@/lib/db/queries/adresses", () => ({
 
 const {
   abregerNom,
+  annulerInterventionDuClient,
   compterInterventionsClient,
   listerInterventionsAVenir,
   listerInterventionsPassees,
@@ -128,6 +198,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   commits.length = 0;
   rollbacks.length = 0;
+  fileDesVerrous = Promise.resolve();
 
   addressFindFirst.mockResolvedValue({ id: 77 });
   serviceFindUniqueOrThrow.mockResolvedValue({
@@ -551,6 +622,315 @@ describe("compterInterventionsClient", () => {
     });
     expect(interventionCount.mock.calls[1]?.[0]).toMatchObject({
       where: { clientId: CLIENT, status: { in: ["DONE", "CANCELLED"] } },
+    });
+  });
+});
+
+describe("annulerInterventionDuClient", () => {
+  const MOTIF = "Empechement de derniere minute";
+  const RDV = new Date("2026-08-20T08:00:00.000Z");
+
+  /// Une intervention planifiée, telle que la première lecture la rend.
+  function planifiee(surcharge: Record<string, unknown> = {}) {
+    return {
+      status: "PLANNED",
+      appointmentAt: RDV,
+      durationSnapshot: 60,
+      service: { label: "Revision complete" },
+      tech: { email: "tech@exemple.fr", firstname: "Marc" },
+      address: {
+        street: "12 rue de la Republique",
+        city: { zipCode: "69002", city: "Lyon" },
+      },
+      ...surcharge,
+    };
+  }
+
+  function armer(surcharge: Record<string, unknown> = {}) {
+    txInterventionFindFirst.mockResolvedValue(planifiee(surcharge));
+    txInterventionFindUniqueOrThrow.mockResolvedValue({
+      status: (surcharge["status"] as string | undefined) ?? "PLANNED",
+    });
+  }
+
+  it("passe l'intervention en CANCELLED avec son motif", async () => {
+    armer();
+
+    const resultat = await annulerInterventionDuClient({
+      interventionId: 847,
+      clientId: CLIENT,
+      motif: MOTIF,
+      // H-25 : la fenetre est ouverte d'une heure.
+      maintenant: new Date("2026-08-19T07:00:00.000Z"),
+    });
+
+    expect(resultat.ok).toBe(true);
+    expect(txInterventionUpdate).toHaveBeenCalledWith({
+      where: { id: 847 },
+      data: { status: "CANCELLED", cancellationReason: MOTIF },
+    });
+    expect(commits).toHaveLength(1);
+  });
+
+  it("accepte a H-25 et refuse a H-23", async () => {
+    // La DoD nomme ces deux bornes. `> 24 h` est la formulation de l'US, en
+    // miroir de son cas d'erreur `<= 24 h`.
+    armer();
+    const accepte = await annulerInterventionDuClient({
+      interventionId: 847,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T07:00:00.000Z"),
+    });
+    expect(accepte.ok).toBe(true);
+
+    vi.clearAllMocks();
+    armer();
+    const refuse = await annulerInterventionDuClient({
+      interventionId: 847,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T09:00:00.000Z"),
+    });
+    expect(refuse).toEqual({ ok: false, reason: "fenetre_depassee" });
+    expect(txInterventionUpdate).not.toHaveBeenCalled();
+  });
+
+  it("refuse a exactement H-24, l'egalite tombant du cote du refus", async () => {
+    // L'US ecrit le nominal en `> 24 h` et le refus en `<= 24 h` : la borne
+    // exacte appartient au second. Aucune source ne laisse le choix, et c'est
+    // la seule valeur ou les deux formulations pourraient diverger.
+    armer();
+
+    const resultat = await annulerInterventionDuClient({
+      interventionId: 847,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T08:00:00.000Z"),
+    });
+
+    expect(resultat).toEqual({ ok: false, reason: "fenetre_depassee" });
+  });
+
+  it("ne distingue pas l'intervention inconnue de celle d'un tiers", async () => {
+    // La garde de propriete vit dans la clause `where`, pas dans un `if` :
+    // l'intervention d'un tiers ne remonte simplement pas. Une reponse
+    // distincte confirmerait son existence a qui incremente un SERIAL.
+    txInterventionFindFirst.mockResolvedValue(null);
+
+    const resultat = await annulerInterventionDuClient({
+      interventionId: 999_999,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T07:00:00.000Z"),
+    });
+
+    expect(resultat).toEqual({ ok: false, reason: "introuvable" });
+    expect(txInterventionFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 999_999, clientId: CLIENT } }),
+    );
+  });
+
+  it("refuse tout statut autre que PLANNED", async () => {
+    // `IN_PROGRESS → CANCELLED` existe au cycle de vie (Constitution §2.4) mais
+    // appartient au technicien, en repli de refus de paiement. L'ouvrir au
+    // client lui permettrait d'annuler pendant que le technicien est chez lui.
+    for (const status of ["IN_PROGRESS", "DONE", "CANCELLED"]) {
+      vi.clearAllMocks();
+      armer({ status });
+
+      const resultat = await annulerInterventionDuClient({
+        interventionId: 847,
+        clientId: CLIENT,
+        motif: MOTIF,
+        maintenant: new Date("2026-08-19T07:00:00.000Z"),
+      });
+
+      expect(resultat).toEqual({ ok: false, reason: "non_annulable" });
+      expect(txInterventionUpdate).not.toHaveBeenCalled();
+    }
+  });
+
+  it("ecrit l'audit RGPD DANS la transaction", async () => {
+    // Constitution §4.2. Une trace ecrite a cote de sa transaction survit a un
+    // rollback, ou manque alors que l'ecriture a eu lieu : c'est la piece qu'on
+    // produit en cas de contestation.
+    armer();
+
+    await annulerInterventionDuClient({
+      interventionId: 847,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T07:00:00.000Z"),
+    });
+
+    expect(auditCreate).toHaveBeenCalledWith({
+      data: {
+        entityType: "interventions",
+        entityId: "847",
+        action: "UPDATE",
+        actorId: CLIENT,
+        details: {
+          statutAvant: "PLANNED",
+          statutApres: "CANCELLED",
+          motif: MOTIF,
+        },
+      },
+    });
+  });
+
+  it("verrouille la ligne APRES la garde de propriete", async () => {
+    // Un appelant qui incremente des identifiants ne doit pas pouvoir poser un
+    // verrou sur le rendez-vous d'un tiers : le `FOR UPDATE` ne part que si la
+    // lecture filtree a rendu quelque chose.
+    txInterventionFindFirst.mockResolvedValue(null);
+
+    await annulerInterventionDuClient({
+      interventionId: 999_999,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T07:00:00.000Z"),
+    });
+
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("refuse quand une transaction voisine a annule entre la lecture et le verrou", async () => {
+    // Deux annulations concurrentes passent toutes les deux la premiere lecture
+    // sous READ COMMITTED. Sans la relecture SOUS verrou, la seconde ecrirait
+    // une deuxieme entree d'audit et enverrait un deuxieme email au technicien
+    // pour un rendez-vous deja annule.
+    txInterventionFindFirst.mockResolvedValue(planifiee());
+    txInterventionFindUniqueOrThrow.mockResolvedValue({ status: "CANCELLED" });
+
+    const resultat = await annulerInterventionDuClient({
+      interventionId: 847,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T07:00:00.000Z"),
+    });
+
+    expect(resultat).toEqual({ ok: false, reason: "non_annulable" });
+    expect(txInterventionUpdate).not.toHaveBeenCalled();
+    expect(auditCreate).not.toHaveBeenCalled();
+  });
+
+  it("prend le verrou sur la BONNE ligne, et AVANT de la relire", async () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
+    //
+    // Le test voisin (« verrouille la ligne APRES la garde de propriete »)
+    // n'affirme que le NEGATIF : aucun verrou quand la lecture filtree ne rend
+    // rien. Rien n'affirmait le positif, et rien n'affirmait l'ordre - le
+    // helper pouvait perdre son `SELECT … FOR UPDATE` sans qu'aucun test ne
+    // bouge, ou le prendre APRES la relecture, ce qui laisserait la fenetre
+    // de course exactement ouverte.
+    armer();
+
+    await annulerInterventionDuClient({
+      interventionId: 847,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T07:00:00.000Z"),
+    });
+
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(queryRaw).toHaveBeenCalledWith([847]);
+
+    const verrou = queryRaw.mock.invocationCallOrder[0] ?? 0;
+    const relecture =
+      txInterventionFindUniqueOrThrow.mock.invocationCallOrder[0] ?? 0;
+    expect(verrou).toBeLessThan(relecture);
+  });
+
+  it("n'annule QU'UNE FOIS sous deux annulations concurrentes", async () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11. Le test que la suite n'avait
+    // pas : celui qui fait REELLEMENT courir deux transactions.
+    //
+    // Le module s'attribue la propriete en toutes lettres (`interventions.ts`
+    // §« Le verrou n'est pas decoratif ») : deux annulations concurrentes
+    // « ecriraient DEUX entrees d'audit et enverraient DEUX emails au
+    // technicien ». C'est le journal qui est en cause, pas l'`UPDATE` - et
+    // `audit_logs` est la piece qu'on produit en cas de contestation.
+    //
+    // Le scenario n'est pas theorique : deux onglets ouverts sur la meme
+    // intervention suffisent, et l'action est un endpoint POST public
+    // (ADR-006 v2) que rien n'empeche d'appeler deux fois.
+    //
+    // Chaque double de lecture porte un `await` : c'est le point
+    // d'entrelacement. Sans lui les deux transactions se derouleraient l'une
+    // apres l'autre par construction, et le faux client rendrait vert un code
+    // sans aucun verrou.
+    const enBase = { status: "PLANNED" };
+
+    txInterventionFindFirst.mockImplementation(async () => {
+      await Promise.resolve();
+      return planifiee({ status: enBase.status });
+    });
+    txInterventionFindUniqueOrThrow.mockImplementation(async () => {
+      await Promise.resolve();
+      return { status: enBase.status };
+    });
+    txInterventionUpdate.mockImplementation(async () => {
+      await Promise.resolve();
+      enBase.status = "CANCELLED";
+      return { id: 847 };
+    });
+
+    const maintenant = new Date("2026-08-19T07:00:00.000Z");
+    const resultats = await Promise.all([
+      annulerInterventionDuClient({
+        interventionId: 847,
+        clientId: CLIENT,
+        motif: MOTIF,
+        maintenant,
+      }),
+      annulerInterventionDuClient({
+        interventionId: 847,
+        clientId: CLIENT,
+        motif: "Doublon",
+        maintenant,
+      }),
+    ]);
+
+    expect(resultats.filter((resultat) => resultat.ok)).toHaveLength(1);
+    expect(resultats).toContainEqual({
+      ok: false,
+      reason: "non_annulable",
+    });
+    expect(txInterventionUpdate).toHaveBeenCalledTimes(1);
+    // Une seule trace, et une seule notification a envoyer derriere.
+    expect(auditCreate).toHaveBeenCalledTimes(1);
+
+    // Ce que cette derniere assertion certifie : la fenetre de course etait
+    // bien OUVERTE. La seconde transaction avait deja lu `PLANNED` avant que
+    // la premiere n'ecrive - sans le verrou, sa relecture aurait lu la meme
+    // chose au meme moment et les deux auraient annule. Sans elle, le test
+    // pourrait passer sur deux transactions serialisees par hasard, donc ne
+    // rien mesurer.
+    const secondeLecture = txInterventionFindFirst.mock.invocationCallOrder[1];
+    const premiereEcriture = txInterventionUpdate.mock.invocationCallOrder[0];
+    expect(secondeLecture).toBeDefined();
+    expect(secondeLecture ?? 0).toBeLessThan(premiereEcriture ?? 0);
+  });
+
+  it("rend au technicien de quoi etre prevenu, sans relire la base", async () => {
+    armer();
+
+    const resultat = await annulerInterventionDuClient({
+      interventionId: 847,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T07:00:00.000Z"),
+    });
+
+    expect(resultat).toEqual({
+      ok: true,
+      technicien: { email: "tech@exemple.fr", firstname: "Marc" },
+      appointmentAt: RDV,
+      durationSnapshot: 60,
+      forfait: "Revision complete",
+      adresse: "12 rue de la Republique, 69002 Lyon",
+      motif: MOTIF,
     });
   });
 });

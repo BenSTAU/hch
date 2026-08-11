@@ -18,6 +18,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatDelaiRelatif,
   formatDuree,
   formatPrixEuros,
   multiplierEuros,
@@ -102,5 +103,99 @@ describe("sommeEuros", () => {
 
   it("accumule les centimes isolés sans les perdre", () => {
     expect(sommeEuros(["0.10", "0.20", "0.30"])).toBe("0.60");
+  });
+});
+
+describe("formatDelaiRelatif", () => {
+  // Chip « Dans X jours » des cartes de C8, divergence de portage attribuee a
+  // T-V3-11. Toutes les bornes sont exprimees en heures locales Europe/Paris :
+  // c'est le fuseau d'exploitation, et le jour calendaire s'y calcule.
+  const MIDI = new Date("2026-08-11T10:00:00.000Z");
+
+  it("nomme le jour meme plutot que de compter zero", () => {
+    expect(formatDelaiRelatif(new Date("2026-08-11T16:00:00.000Z"), MIDI)).toBe(
+      "Aujourd'hui",
+    );
+  });
+
+  it("nomme le lendemain plutot que d'ecrire « Dans 1 jours »", () => {
+    expect(formatDelaiRelatif(new Date("2026-08-12T06:00:00.000Z"), MIDI)).toBe(
+      "Demain",
+    );
+  });
+
+  it("compte en jours dans la quinzaine", () => {
+    expect(formatDelaiRelatif(new Date("2026-08-18T10:00:00.000Z"), MIDI)).toBe(
+      "Dans 7 jours",
+    );
+  });
+
+  it("bascule en semaines au-dela de la quinzaine", () => {
+    // « Dans 23 jours » se compte, « Dans 3 semaines » se lit. La maquette
+    // ecrit « Dans X jours/semaines » sans dire ou passe la bascule.
+    expect(formatDelaiRelatif(new Date("2026-09-01T10:00:00.000Z"), MIDI)).toBe(
+      "Dans 3 semaines",
+    );
+  });
+
+  it("compte en jours CALENDAIRES, pas en ecart d'heures", () => {
+    // C'est la propriete qui protege de la divergence d'hydratation : un
+    // rendez-vous demain a 9 h est « demain », qu'on le lise a 8 h ou a 23 h.
+    // Un ecart en millisecondes dirait « aujourd'hui » le soir meme, et
+    // changerait de reponse entre le rendu serveur et l'hydratation.
+    const tardLeSoir = new Date("2026-08-11T21:00:00.000Z");
+    const demainMatin = new Date("2026-08-12T05:00:00.000Z");
+
+    // Huit heures les separent, moins d'une journee, et c'est pourtant demain.
+    expect(formatDelaiRelatif(demainMatin, tardLeSoir)).toBe("Demain");
+  });
+
+  it("bascule EXACTEMENT au quatorzieme jour", () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11. La bascule jours/semaines
+    // n'etait eprouvee qu'a 21 jours, loin de sa borne : elle pouvait glisser
+    // d'un jour dans les deux sens sans qu'un test bouge. La valeur ne vient
+    // d'aucune source (la maquette C8 ecrit « Dans X jours/semaines » sans dire
+    // ou), elle est arbitree - raison de plus pour l'ecrire noir sur blanc.
+    expect(formatDelaiRelatif(new Date("2026-08-24T10:00:00.000Z"), MIDI)).toBe(
+      "Dans 13 jours",
+    );
+    expect(formatDelaiRelatif(new Date("2026-08-25T10:00:00.000Z"), MIDI)).toBe(
+      "Dans 2 semaines",
+    );
+  });
+
+  it("compte le jour du FUSEAU D'EXPLOITATION, pas le jour UTC", () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
+    //
+    // Minuit et demi a Lyon, le 12 aout : le rendez-vous du 12 a 9 h est
+    // « Aujourd'hui ». Compte en jours UTC, il serait « Demain » - le client
+    // lirait la veille de son rendez-vous qu'il a lieu le lendemain. Aucun
+    // test ne separait les deux lectures, les fixtures existantes tombant
+    // toutes du meme cote de minuit.
+    const minuitPasse = new Date("2026-08-11T22:30:00.000Z");
+    const memeJournee = new Date("2026-08-12T07:00:00.000Z");
+
+    expect(formatDelaiRelatif(memeJournee, minuitPasse)).toBe("Aujourd'hui");
+  });
+
+  it("ne compte pas l'heure gagnee au passage a l'heure d'hiver", () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11. Le 25 octobre 2026 dure
+    // 25 heures a Paris. Un ecart en millisecondes divise par 86 400 000
+    // rendrait 2,04 jours ici : arrondi, il retombe sur ses pieds, mais un
+    // `Math.floor` ou un decalage horaire moins favorable ne le ferait pas.
+    // La borne de jour calendaire, elle, ne bouge qu'a minuit.
+    const avant = new Date("2026-10-24T12:00:00.000Z");
+    const apres = new Date("2026-10-26T12:00:00.000Z");
+
+    expect(formatDelaiRelatif(apres, avant)).toBe("Dans 2 jours");
+  });
+
+  it("ne rend RIEN sur une date passee", () => {
+    // L'onglet « A venir » retient `PLANNED` sans borne de date (arbitrage du
+    // 2026-08-11) : un rendez-vous non cloture y reste, et « Dans -2 jours » ne
+    // veut rien dire. Aucune source ne dit quoi afficher a la place.
+    expect(
+      formatDelaiRelatif(new Date("2026-08-09T10:00:00.000Z"), MIDI),
+    ).toBeNull();
   });
 });

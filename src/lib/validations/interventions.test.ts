@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { listerCreneauxSchema, reserverSchema } from "./interventions";
+import {
+  annulerInterventionSchema,
+  listerCreneauxSchema,
+  reserverSchema,
+} from "./interventions";
 
 /// Schémas du domaine `interventions`.
 ///
@@ -216,5 +220,90 @@ describe("listerCreneauxSchema", () => {
         String(valeur),
       ).toBe(false);
     }
+  });
+});
+
+describe("annulerInterventionSchema", () => {
+  const VALIDE = { interventionId: 847, motif: "Empechement" };
+
+  it("accepte un motif renseigne", () => {
+    expect(annulerInterventionSchema.safeParse(VALIDE).success).toBe(true);
+  });
+
+  it("refuse un motif vide, absent ou fait d'espaces", () => {
+    // « Motif d'annulation requis » est un cas d'erreur de l'US. Le `trim`
+    // precede le `min` : sans lui, une suite d'espaces satisfait la longueur et
+    // s'ecrit en base comme un motif vide - le technicien lirait une chaine
+    // blanche la ou l'US lui promet une explication.
+    for (const motif of ["", "   ", "  \n\t ", undefined]) {
+      expect(
+        annulerInterventionSchema.safeParse({ ...VALIDE, motif }).success,
+        JSON.stringify(motif),
+      ).toBe(false);
+    }
+  });
+
+  it("rogne les espaces autour du motif retenu", () => {
+    const lecture = annulerInterventionSchema.safeParse({
+      ...VALIDE,
+      motif: "   Report   ",
+    });
+
+    expect(lecture.success && lecture.data.motif).toBe("Report");
+  });
+
+  it("refuse un motif au-dela du plafond", () => {
+    // Le plafond ne vient d'aucune source - `cancellation_reason` est un TEXT
+    // sans contrainte. Il est arbitre, et le test le rend explicite plutot que
+    // de laisser une colonne sans borne recevoir ce qu'un appelant direct
+    // voudrait y ecrire.
+    expect(
+      annulerInterventionSchema.safeParse({ ...VALIDE, motif: "x".repeat(501) })
+        .success,
+    ).toBe(false);
+    expect(
+      annulerInterventionSchema.safeParse({ ...VALIDE, motif: "x".repeat(500) })
+        .success,
+    ).toBe(true);
+  });
+
+  it("refuse un identifiant qui n'est pas un entier positif", () => {
+    for (const valeur of [0, -3, 2.5, "847", null]) {
+      expect(
+        annulerInterventionSchema.safeParse({
+          ...VALIDE,
+          interventionId: valeur,
+        }).success,
+        String(valeur),
+      ).toBe(false);
+    }
+  });
+});
+
+describe("annulerInterventionSchema - le message distingue vide et trop court", () => {
+  // 🐛 Releve par l'agent testeur : un `min(3)` seul renvoyait « Motif
+  // d'annulation requis. » pour deux caracteres, libelle que l'US §Cas d'erreur
+  // reserve au champ VIDE. Dire « requis » a qui vient d'ecrire quelque chose
+  // est une reponse fausse, et c'est le genre d'ecart qu'on ne voit qu'a
+  // l'usage.
+  function messageMotif(motif: string): string | undefined {
+    const lecture = annulerInterventionSchema.safeParse({
+      interventionId: 847,
+      motif,
+    });
+    return lecture.success
+      ? undefined
+      : lecture.error.issues.find((souci) => souci.path[0] === "motif")
+          ?.message;
+  }
+
+  it("dit « requis » sur un champ vide", () => {
+    expect(messageMotif("")).toBe("Motif d'annulation requis.");
+    expect(messageMotif("   ")).toBe("Motif d'annulation requis.");
+  });
+
+  it("dit « trop court », et non « requis », sur deux caracteres", () => {
+    expect(messageMotif("ok")).not.toBe("Motif d'annulation requis.");
+    expect(messageMotif("ok")).toMatch(/trop court/);
   });
 });

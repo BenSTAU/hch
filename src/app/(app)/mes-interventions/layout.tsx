@@ -3,8 +3,9 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { CHEMIN_ESPACE_CLIENT } from "@/lib/routes";
+import { Toaster } from "@/components/ui/sonner";
 
-/// Coquille de l'espace client — écrans **C8** et **C10**.
+/// Coquille de l'espace client - écrans **C8** et **C10**.
 ///
 /// T-V3-10 en est propriétaire depuis l'arbitrage du 2026-08-10 : trois tâches
 /// revendiquaient C8, et c'est la liste qui est la structure porteuse. T-V3-11
@@ -47,6 +48,16 @@ export default function EspaceClientLayout({
       </nav>
 
       <div className="flex min-w-0 flex-1 flex-col gap-6">{children}</div>
+
+      {/* Monté ICI et non dans le layout racine : c'est le seul espace qui émet
+          des notifications éphémères, et le `Toaster` est un composant client.
+          Le poser à la racine ferait voyager sonner jusqu'à la landing, qui
+          n'en a aucun usage.
+
+          Il vit **hors** du bloc qui rend `children` : la ligne annulée quitte
+          la liste au même instant, donc l'émetteur du message se démonte. Le
+          récepteur, lui, doit rester. */}
+      <Toaster />
     </main>
   );
 }
