@@ -13,7 +13,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 
-import { NAV_PUBLIQUE } from "./site-navigation";
+import { navigationPrincipale } from "./site-navigation";
 
 /// Menu de navigation mobile — le burger de la coquille publique.
 ///
@@ -40,7 +40,16 @@ import { NAV_PUBLIQUE } from "./site-navigation";
 ///
 /// `SheetTitle` n'est pas décoratif : Radix Dialog exige un nom accessible, et
 /// sans lui la console avertit et le lecteur d'écran annonce un dialogue anonyme.
-export function SiteNavMobile({ children }: { children?: React.ReactNode }) {
+export function SiteNavMobile({
+  children,
+  connecte = false,
+}: {
+  children?: React.ReactNode;
+  /// Un booléen, jamais le DTO utilisateur : ce composant décide seulement s'il
+  /// faut afficher l'entrée de l'espace client, il n'a rien à savoir de qui est
+  /// connecté.
+  connecte?: boolean;
+}) {
   // L'état est piloté ici pour pouvoir **refermer au clic sur un lien** : les
   // entrées sont des ancres de la même page, donc aucune navigation ne remonte
   // le composant, et un panneau qui reste ouvert masque la section vers
@@ -69,7 +78,7 @@ export function SiteNavMobile({ children }: { children?: React.ReactNode }) {
 
         <nav aria-label="Navigation principale" className="px-4 py-2">
           <ul className="flex flex-col">
-            {NAV_PUBLIQUE.map((item) => (
+            {navigationPrincipale(connecte).map((item) => (
               <li key={item.href}>
                 <Link
                   href={item.href}

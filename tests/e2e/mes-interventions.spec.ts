@@ -127,6 +127,34 @@ test("la connexion d'un client atterrit sur son espace", async ({ page }) => {
   await expect(page).toHaveURL(/\/mes-interventions\/a-venir$/);
 });
 
+test("on rejoint l'espace depuis la navbar, sans ouvrir de menu", async ({
+  page,
+}) => {
+  // L'entree de navbar double celle du menu utilisateur : le menu doit etre
+  // ouvert pour livrer son contenu, alors que l'espace client est la
+  // destination la plus frequente d'un client connecte.
+  const { email } = await creerClientActive(page, db, "espace-navbar");
+  await seConnecterClient(page, email);
+
+  // Depuis une page PUBLIQUE, pour prouver que l'entree suit la session et pas
+  // la route : la coquille publique et l'espace connecte partagent le meme
+  // en-tete depuis la fusion de T-V3-10.
+  await page.goto("/");
+  await page.getByRole("link", { name: "Mes interventions" }).click();
+
+  await expect(page).toHaveURL(/\/mes-interventions\/a-venir$/);
+});
+
+test("la navbar ne propose pas l'espace a un visiteur anonyme", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  await expect(
+    page.getByRole("link", { name: "Mes interventions" }),
+  ).toHaveCount(0);
+});
+
 test("un visiteur anonyme est renvoye vers la connexion avec son `next`", async ({
   page,
 }) => {
@@ -349,25 +377,50 @@ test("le client joint une photo, et elle n'est servie qu'a lui", async ({
 
   const chemin = `/api/intervention-photos/${String(photo.id)}`;
 
-  // Servie au proprietaire.
-  const miennne = await page.request.get(chemin);
-  expect(miennne.status()).toBe(200);
-  expect(miennne.headers()["content-type"]).toBe("image/webp");
+  // ⚠️ **Tout passe par le NAVIGATEUR, jamais par `page.request`**, et ce n'est
+  // pas un detail de confort.
+  //
+  // Le cookie de session est `secure: true` (ADR-005 v2). L'`APIRequestContext`
+  // de Playwright ne l'envoie pas en clair vers `127.0.0.1`, alors qu'il
+  // l'accepte pour `localhost` - et la barriere CI tape justement
+  // `http://127.0.0.1:3000` quand le poste local tape `http://localhost:3000`.
+  // Chromium, lui, envoie le cookie sur les deux : c'est ce que prouvent les
+  // 100 autres tests de la barriere, dont la connexion elle-meme.
+  //
+  // Consequence, mesuree sur le MEME build en changeant le seul hote : la
+  // premiere version de ce test rendait 200 en local et 404 en CI, sans qu'une
+  // ligne de produit ne differe. L'oracle mesurait a travers un client dont la
+  // politique de cookies n'est pas celle du navigateur, donc il ne mesurait pas
+  // ce que voit un client reel.
+  //
+  // Ce qui suit teste plus fort que le statut : la vignette **se charge**.
+  await expect(vignette).toHaveJSProperty("complete", true);
+  expect(
+    await vignette.evaluate((image: HTMLImageElement) => image.naturalWidth),
+  ).toBeGreaterThan(0);
 
   // ⚠️ **Et 404 pour tout le monde d'autre.** C'est l'arbitrage du 2026-08-11 :
   // `uploads/` n'est pas servi statiquement, parce qu'une photo prise au
   // domicile de quelqu'un ne doit pas dependre du seul caractere non devinable
   // de son URL - une URL voyage dans les journaux nginx, les referents et
   // l'historique de navigation.
+  //
+  // Les deux refus passent par une NAVIGATION, pour la meme raison : un
+  // `request.get` sans cookie rendrait 404 pour le tiers aussi, mais parce
+  // qu'il serait anonyme, pas parce qu'il serait un tiers. Le test ne
+  // prouverait alors rien du cloisonnement.
   const anonyme = await browser.newContext(baseURL ? { baseURL } : {});
-  expect((await anonyme.request.get(chemin)).status()).toBe(404);
+  const pageAnonyme = await anonyme.newPage();
+  expect((await pageAnonyme.goto(chemin))?.status()).toBe(404);
   await anonyme.close();
 
   const tiers = await browser.newContext(baseURL ? { baseURL } : {});
   const pageTiers = await tiers.newPage();
   const voisin = await creerClientActive(pageTiers, db, "espace-photo-tiers");
   await seConnecterClient(pageTiers, voisin.email);
-  expect((await pageTiers.request.get(chemin)).status()).toBe(404);
+  // La session du voisin EST ouverte - `seConnecterClient` vient de l'attester
+  // sur son en-tete. Le 404 ne peut donc venir que de la garde de propriete.
+  expect((await pageTiers.goto(chemin))?.status()).toBe(404);
   await tiers.close();
 });
 

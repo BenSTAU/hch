@@ -1,3 +1,5 @@
+import { CHEMIN_ESPACE_CLIENT } from "@/lib/routes";
+
 /// Navigation de la coquille publique — l'en-tête et le pied de page la
 /// partagent, et les pages légales de T-V3-12 en hériteront.
 ///
@@ -19,6 +21,32 @@ export const NAV_PUBLIQUE = [
   { href: "/#fonctionnement", label: "Comment ça marche" },
   { href: "/#zone", label: "Zone desservie" },
 ] as const;
+
+/// Entrée de l'espace client, ajoutée en T-V3-10.
+///
+/// Elle ne s'affiche **que pour une session ouverte** : proposer « Mes
+/// interventions » à un visiteur anonyme l'enverrait sur le formulaire de
+/// connexion, ce qui est une promesse tenue de travers.
+///
+/// Elle double délibérément l'entrée du menu utilisateur. Le menu est le
+/// chemin que `US-COMPTE-DECONNECTER` §Contexte impose pour la déconnexion, mais
+/// il faut l'ouvrir pour voir ce qu'il contient : l'espace client est la
+/// destination la plus fréquente d'un client connecté, elle mérite d'être
+/// atteignable sans ce geste.
+export const NAV_ESPACE_CLIENT = [
+  { href: CHEMIN_ESPACE_CLIENT, label: "Mes interventions" },
+] as const;
+
+/// La navigation à rendre, selon qu'une session est ouverte ou non.
+///
+/// Une seule fonction pour la barre desktop et le panneau mobile : les deux
+/// surfaces doivent porter les mêmes entrées, et deux listes construites
+/// séparément finiraient par diverger sur celle qu'on oublie.
+export function navigationPrincipale(
+  connecte: boolean,
+): readonly { href: string; label: string }[] {
+  return connecte ? [...NAV_PUBLIQUE, ...NAV_ESPACE_CLIENT] : NAV_PUBLIQUE;
+}
 
 /// Les trois pages d'`US-RGPD`, dans le triplet tranché par [[s4-nf-transverses|
 /// PLAN S4]] §4.2 — celui qui fait foi contre les trois autres qui circulaient.
