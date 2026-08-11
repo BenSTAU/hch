@@ -26,8 +26,12 @@ vi.mock("@/lib/actions/interventions/annuler-intervention", () => ({
 }));
 
 const toastSuccess = vi.fn();
+const toastError = vi.fn();
 vi.mock("sonner", () => ({
-  toast: { success: (message: string) => toastSuccess(message) },
+  toast: {
+    success: (message: string) => toastSuccess(message),
+    error: (message: string) => toastError(message),
+  },
 }));
 
 const { BlocAnnulation } = await import("./bloc-annulation");
@@ -149,6 +153,52 @@ describe("BlocAnnulation - dans la fenetre", () => {
       "Motif d'annulation requis.",
     );
     expect(toastSuccess).not.toHaveBeenCalled();
+    // Un refus de schema ne mute rien, donc rien n'est revalide et ce bloc
+    // reste monte : l'alerte a cote du champ est la bonne surface, et le toast
+    // serait de trop.
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it("annonce un refus METIER par un message qui survit au demontage", async () => {
+    // 🐛 **Rouge de la barriere CI du 2026-08-11, vert en local.**
+    //
+    // `introuvable` et `non_annulable` disent que la ligne n'est plus dans
+    // « A venir » : la Server Action revalide, la liste revient sans elle, et
+    // ce composant SE DEMONTE. Une alerte posee ici part avec lui. Le local a
+    // survecu en `pnpm dev`, ou l'aller-retour RSC est assez lent pour que
+    // l'alerte s'affiche d'abord ; face a l'image de production, le demontage
+    // gagne.
+    //
+    // jsdom ne peut pas reproduire le demontage - il vient de la revalidation
+    // Next, hors de portee d'un test de composant. Ce que ce test verrouille
+    // est donc la DECISION : le message part au `Toaster` du layout, qui reste
+    // monte. La preuve du comportement, elle, est dans `gp-03`.
+    annulerIntervention.mockResolvedValue({
+      data: {
+        ok: false,
+        message: "Intervention introuvable.",
+        fenetreDepassee: false,
+      },
+    });
+    const utilisateur = userEvent.setup();
+    monter(48);
+
+    await utilisateur.click(
+      screen.getByRole("button", { name: /Annuler cette intervention/ }),
+    );
+    await utilisateur.type(
+      screen.getByLabelText(/Motif de l'annulation/),
+      "Report",
+    );
+    await utilisateur.click(
+      screen.getByRole("button", { name: /Confirmer l'annulation/ }),
+    );
+
+    expect(toastError).toHaveBeenCalledWith("Intervention introuvable.");
+    expect(toastSuccess).not.toHaveBeenCalled();
+    // Et la modale se ferme : la laisser ouverte proposerait de reessayer un
+    // geste que le serveur vient de refuser deux fois de suite.
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("n'envoie QU'UNE annulation sur deux clics rapproches", async () => {
