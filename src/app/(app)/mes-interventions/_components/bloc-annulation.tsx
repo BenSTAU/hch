@@ -18,6 +18,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -125,17 +126,17 @@ export function BlocAnnulation({
           if (!prochain) setErreur(null);
         }}
       >
-        <Button
-          type="button"
-          variant="destructive"
-          className="self-start"
-          onClick={() => {
-            setOuvert(true);
-          }}
-        >
-          <CalendarX2 aria-hidden="true" />
-          Annuler cette intervention
-        </Button>
+        {/* 🐛 `DialogTrigger` et non un bouton nu, relevé par l'agent testeur.
+            Radix y pose `aria-haspopup="dialog"`, `aria-expanded` et
+            `aria-controls` : sans eux, un lecteur d'écran annonce un bouton
+            ordinaire là où le geste ouvre une boîte de dialogue modale, et rien
+            ne dit qu'elle est ouverte. `jest-axe` ne le signale pas. */}
+        <DialogTrigger asChild>
+          <Button type="button" variant="destructive" className="self-start">
+            <CalendarX2 aria-hidden="true" />
+            Annuler cette intervention
+          </Button>
+        </DialogTrigger>
 
         <DialogContent>
           <DialogHeader>

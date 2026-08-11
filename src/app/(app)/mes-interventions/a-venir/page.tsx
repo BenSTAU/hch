@@ -14,16 +14,16 @@ import { EnTeteEspace } from "../_components/en-tete-espace";
 import { InterventionsVue } from "../_components/interventions-vue";
 
 export const metadata: Metadata = {
-  title: "Mes interventions à venir — HomeCycl'Home",
+  title: "Mes interventions à venir - HomeCycl'Home",
 };
 
-/// Onglet « À venir » — `US-INTERVENTIONS-LISTER-CLIENT-A-VENIR`, écran **C8**.
+/// Onglet « À venir » - `US-INTERVENTIONS-LISTER-CLIENT-A-VENIR`, écran **C8**.
 ///
 /// Destination post-connexion du client ([[module-1-utilisateurs]] §287), et
 /// c'est la DoD finale de la destination laissée provisoire par T-V3-03.
 ///
-/// **Aucune garde de rôle.** La page exige une session — `getCurrentUser`
-/// redirige sinon — et filtre sur `clientId = user.id`. Un administrateur ou un
+/// **Aucune garde de rôle.** La page exige une session - `getCurrentUser`
+/// redirige sinon - et filtre sur `clientId = user.id`. Un administrateur ou un
 /// technicien qui a réservé pour lui-même y voit ses propres rendez-vous, ce qui
 /// est correct : le cloisonnement de Constitution §3.1 porte sur les actes de
 /// gestion, pas sur le fait d'être client. Même régime que les Server Actions

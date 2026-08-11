@@ -34,13 +34,15 @@ describe("annulationOuverte", () => {
     expect(annulationOuverte(RDV, aMoins(24))).toBe(false);
   });
 
-  it("refuse une seconde avant la borne", () => {
-    // Le voisinage immediat de H-24, du bon cote : une milliseconde de plus que
-    // la fenetre suffit a rouvrir.
-    const uneMsAvantLaBorne = new Date(
-      RDV.getTime() - FENETRE_ANNULATION_MS - 1,
-    );
-    expect(annulationOuverte(RDV, uneMsAvantLaBorne)).toBe(true);
+  it("accepte une milliseconde avant la borne, et refuse une milliseconde apres", () => {
+    // Le voisinage immediat de H-24, des deux cotes. Le titre disait « refuse »
+    // pour une assertion qui vaut `true`, dans le fichier dont c'est tout le
+    // sujet - releve par l'agent testeur.
+    const justeAvant = new Date(RDV.getTime() - FENETRE_ANNULATION_MS - 1);
+    const justeApres = new Date(RDV.getTime() - FENETRE_ANNULATION_MS + 1);
+
+    expect(annulationOuverte(RDV, justeAvant)).toBe(true);
+    expect(annulationOuverte(RDV, justeApres)).toBe(false);
   });
 
   it("refuse un rendez-vous deja passe", () => {

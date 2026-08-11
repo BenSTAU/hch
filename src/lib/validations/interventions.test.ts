@@ -279,3 +279,31 @@ describe("annulerInterventionSchema", () => {
     }
   });
 });
+
+describe("annulerInterventionSchema - le message distingue vide et trop court", () => {
+  // 🐛 Releve par l'agent testeur : un `min(3)` seul renvoyait « Motif
+  // d'annulation requis. » pour deux caracteres, libelle que l'US §Cas d'erreur
+  // reserve au champ VIDE. Dire « requis » a qui vient d'ecrire quelque chose
+  // est une reponse fausse, et c'est le genre d'ecart qu'on ne voit qu'a
+  // l'usage.
+  function messageMotif(motif: string): string | undefined {
+    const lecture = annulerInterventionSchema.safeParse({
+      interventionId: 847,
+      motif,
+    });
+    return lecture.success
+      ? undefined
+      : lecture.error.issues.find((souci) => souci.path[0] === "motif")
+          ?.message;
+  }
+
+  it("dit « requis » sur un champ vide", () => {
+    expect(messageMotif("")).toBe("Motif d'annulation requis.");
+    expect(messageMotif("   ")).toBe("Motif d'annulation requis.");
+  });
+
+  it("dit « trop court », et non « requis », sur deux caracteres", () => {
+    expect(messageMotif("ok")).not.toBe("Motif d'annulation requis.");
+    expect(messageMotif("ok")).toMatch(/trop court/);
+  });
+});

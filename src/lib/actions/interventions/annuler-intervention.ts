@@ -62,6 +62,16 @@ export const annulerIntervention = authActionClient
     });
 
     if (!resultat.ok) {
+      // 🐛 **Les refus revalident aussi**, relevé par l'agent testeur.
+      //
+      // Deux des trois disent que la vue de l'appelant est PÉRIMÉE :
+      // `non_annulable` signifie que le statut a changé sous ses yeux - le
+      // technicien vient de démarrer l'intervention - et `introuvable` qu'elle
+      // ne lui appartient plus. Sans invalidation, l'écran garde « Planifiée »
+      // et son bouton, et le client réessaie indéfiniment contre une liste
+      // fausse. Seul `fenetre_depassee` se corrigeait à l'écran, parce que la
+      // réponse le fait basculer.
+      revalidatePath(CHEMIN_ESPACE_CLIENT);
       return { ok: false as const, ...messageRefus(resultat) };
     }
 

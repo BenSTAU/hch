@@ -82,16 +82,25 @@ describe("annulerIntervention", () => {
     );
   });
 
-  it("fixe l'instant une seule fois et le passe a la transaction", async () => {
+  it("passe a la transaction un instant pris ICI, entre l'appel et le retour", async () => {
     // Les gardes en dependent : le lire deux fois les ferait decider sur deux
     // valeurs differentes, et la borne H-24 est justement l'endroit ou l'ecart
     // se voit.
+    //
+    // ⚠️ Le titre promettait « une seule fois » pour une assertion qui ne
+    // regardait que le TYPE - releve par l'agent testeur. Encadrer l'appel est
+    // ce qui distingue reellement un instant pris ici d'une valeur heritee
+    // d'ailleurs, et il n'existe pas d'autre observable : la fonction ne rend
+    // pas son horloge.
+    const avant = Date.now();
     await annulerIntervention({ interventionId: 847, motif: "Empechement" });
+    const apres = Date.now();
 
     const appel = annulerInterventionDuClient.mock.calls[0]?.[0] as {
       maintenant: Date;
     };
-    expect(appel.maintenant).toBeInstanceOf(Date);
+    expect(appel.maintenant.getTime()).toBeGreaterThanOrEqual(avant);
+    expect(appel.maintenant.getTime()).toBeLessThanOrEqual(apres);
   });
 
   it("invalide LES DEUX onglets, la ligne changeant de liste", async () => {
@@ -129,7 +138,17 @@ describe("annulerIntervention", () => {
     expect(dispatchEmail).toHaveBeenCalledTimes(1);
   });
 
-  it("n'ecrit ni n'envoie rien quand la transaction refuse", async () => {
+  it("n'envoie rien quand la transaction refuse, mais rafraichit la vue perimee", async () => {
+    // ⚠️ **Regle du test rouge, cas 3** - oracle corrige apres le constat de
+    // l'agent testeur, qui a releve le defaut que cet oracle GARDAIT.
+    //
+    // Il assertait `revalidatePath` jamais appelee sur un refus. La propriete
+    // qu'il voulait tenir est « rien n'a ete ecrit, personne n'a ete prevenu »,
+    // et elle reste affirmee ci-dessous. Mais l'absence d'invalidation n'en
+    // faisait pas partie : `non_annulable` signifie precisement que le statut a
+    // change SOUS l'appelant - le technicien vient de demarrer l'intervention -
+    // et sa liste affiche encore « Planifiee » avec son bouton. Le test
+    // protegeait un ecran perime.
     annulerInterventionDuClient.mockResolvedValue({
       ok: false,
       reason: "non_annulable",
@@ -145,8 +164,12 @@ describe("annulerIntervention", () => {
       message: "Cette intervention n'est plus annulable.",
       fenetreDepassee: false,
     });
-    expect(revalidatePath).not.toHaveBeenCalled();
     expect(dispatchEmail).not.toHaveBeenCalled();
+    // La vue de l'appelant est fausse : elle se rafraichit. L'onglet des
+    // passees, lui, n'a pas bouge - rien n'y est entre.
+    expect(revalidatePath).toHaveBeenCalledExactlyOnceWith(
+      "/mes-interventions/a-venir",
+    );
   });
 
   it("signale la fenetre depassee a l'ecran, qui bascule sur le contact", async () => {
@@ -184,6 +207,31 @@ describe("annulerIntervention", () => {
       ok: false,
       message: "Intervention introuvable.",
     });
+  });
+
+  it("refuse l'appelant sans session AVANT toute lecture du schema", async () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
+    //
+    // Rien n'eprouvait la garde d'authentification de cette action : le double
+    // de `getCurrentUser` rendait toujours un utilisateur. Or c'est le seul
+    // rempart - `src/proxy.ts` ne fait qu'un redirect optimiste sur la presence
+    // d'un cookie, et une Server Action exportee reste joignable depuis
+    // n'importe ou (ADR-006 v2).
+    //
+    // La charge utile est volontairement invalide : ce que le test affirme est
+    // l'ORDRE promis par `safe-action.ts` - middleware, PUIS validation Zod,
+    // PUIS corps. Un anonyme ne doit pas pouvoir cartographier le schema en
+    // lisant les messages de refus.
+    getCurrentUser.mockRejectedValue(new Error("NEXT_REDIRECT"));
+
+    const resultat = await annulerIntervention({
+      interventionId: -1,
+      motif: "",
+    });
+
+    expect(resultat?.validationErrors).toBeUndefined();
+    expect(annulerInterventionDuClient).not.toHaveBeenCalled();
+    expect(dispatchEmail).not.toHaveBeenCalled();
   });
 
   it("refuse un motif vide AVANT d'atteindre la transaction", async () => {

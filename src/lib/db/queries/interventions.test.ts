@@ -34,35 +34,92 @@ const txInterventionFindUniqueOrThrow = vi.fn();
 const txInterventionUpdate = vi.fn();
 const auditCreate = vi.fn();
 
-const tx = {
-  $queryRaw: (_strings: TemplateStringsArray, ...valeurs: unknown[]) =>
-    queryRaw(valeurs),
-  product: { update: productUpdate },
-  intervention: {
-    create: interventionCreate,
-    findFirst: (args: unknown) => txInterventionFindFirst(args),
-    findUniqueOrThrow: (args: unknown) => txInterventionFindUniqueOrThrow(args),
-    update: (args: unknown) => txInterventionUpdate(args),
-  },
-  interventionProduct: { create: interventionProductCreate },
-  photo: { createMany: photoCreateMany },
-  service: { findUniqueOrThrow: serviceFindUniqueOrThrow },
-  address: { findFirst: addressFindFirst },
-  auditLog: { create: (args: unknown) => auditCreate(args) },
-};
+/// ⚠️ **Modele de verrouillage etendu par l'agent testeur, 2026-08-11.**
+///
+/// Le faux client etait un objet UNIQUE partage par toutes les transactions, et
+/// son `$queryRaw` ne faisait rien : deux annulations concurrentes s'y
+/// croisaient sans que rien ne s'y oppose. **Aucune assertion n'observait donc
+/// le verrou** - le seul test de concurrence stubbait la relecture au lieu de
+/// faire courir deux appels, et le `SELECT … FOR UPDATE` pouvait disparaitre du
+/// helper sans faire bouger un seul test. Or la relecture SEULE ne protege de
+/// rien : deux transactions la passent toutes les deux avant que l'une ait
+/// commite.
+///
+/// Ce qui est modele ici est le regime reel de PostgreSQL, comme dans
+/// `photos.test.ts` :
+///
+///   · **READ COMMITTED** - la premiere lecture de chaque transaction ne voit
+///     pas l'ecriture non commitee de la voisine ;
+///   · **un verrou de ligne pris par `SELECT … FOR UPDATE`** fait attendre la
+///     transaction suivante jusqu'au commit de la precedente.
+///
+/// Chaque transaction recoit donc son PROPRE client, avec son propre creneau de
+/// verrou libere au commit comme au rollback. Le verrou est **re-entrant** : une
+/// seconde requete brute dans la meme transaction (le verrou de stock de
+/// `vendreProduits` en croiserait une) ne s'attendrait pas elle-meme.
+let fileDesVerrous: Promise<void> = Promise.resolve();
+
+function creerTx() {
+  let liberer: () => void = () => undefined;
+  let detientLeVerrou = false;
+
+  const client = {
+    $queryRaw: async (
+      _strings: TemplateStringsArray,
+      ...valeurs: unknown[]
+    ) => {
+      if (!detientLeVerrou) {
+        detientLeVerrou = true;
+        const precedent = fileDesVerrous;
+        fileDesVerrous = new Promise<void>((resoudre) => {
+          liberer = resoudre;
+        });
+        await precedent;
+      }
+      return queryRaw(valeurs);
+    },
+    product: { update: productUpdate },
+    intervention: {
+      create: interventionCreate,
+      findFirst: (args: unknown) => txInterventionFindFirst(args),
+      findUniqueOrThrow: (args: unknown) =>
+        txInterventionFindUniqueOrThrow(args),
+      update: (args: unknown) => txInterventionUpdate(args),
+    },
+    interventionProduct: { create: interventionProductCreate },
+    photo: { createMany: photoCreateMany },
+    service: { findUniqueOrThrow: serviceFindUniqueOrThrow },
+    address: { findFirst: addressFindFirst },
+    auditLog: { create: (args: unknown) => auditCreate(args) },
+  };
+
+  return {
+    client,
+    relacher: () => {
+      liberer();
+    },
+  };
+}
+
+type FauxTx = ReturnType<typeof creerTx>["client"];
 
 /// Ce que la base fait du rappel : commit s'il rend, rollback s'il lève.
 const commits: string[] = [];
 const rollbacks: string[] = [];
 
-const transaction = vi.fn(async (rappel: (client: typeof tx) => unknown) => {
+const transaction = vi.fn(async (rappel: (client: FauxTx) => unknown) => {
+  const { client, relacher } = creerTx();
   try {
-    const valeur = await rappel(tx);
+    const valeur = await rappel(client);
     commits.push("commit");
     return valeur;
   } catch (erreur) {
     rollbacks.push("rollback");
     throw erreur;
+  } finally {
+    // Le verrou tombe au commit comme au rollback, jamais avant : c'est
+    // exactement la portee d'un verrou de ligne PostgreSQL.
+    relacher();
   }
 });
 
@@ -75,8 +132,7 @@ const interventionCount = vi.fn();
 
 vi.mock("@/lib/db/client", () => ({
   db: {
-    $transaction: (rappel: (client: typeof tx) => unknown) =>
-      transaction(rappel),
+    $transaction: (rappel: (client: FauxTx) => unknown) => transaction(rappel),
     intervention: {
       findMany: (args: unknown) => interventionFindMany(args),
       findFirst: (args: unknown) => interventionFindFirst(args),
@@ -142,6 +198,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   commits.length = 0;
   rollbacks.length = 0;
+  fileDesVerrous = Promise.resolve();
 
   addressFindFirst.mockResolvedValue({ id: 77 });
   serviceFindUniqueOrThrow.mockResolvedValue({
@@ -756,6 +813,104 @@ describe("annulerInterventionDuClient", () => {
     expect(resultat).toEqual({ ok: false, reason: "non_annulable" });
     expect(txInterventionUpdate).not.toHaveBeenCalled();
     expect(auditCreate).not.toHaveBeenCalled();
+  });
+
+  it("prend le verrou sur la BONNE ligne, et AVANT de la relire", async () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
+    //
+    // Le test voisin (« verrouille la ligne APRES la garde de propriete »)
+    // n'affirme que le NEGATIF : aucun verrou quand la lecture filtree ne rend
+    // rien. Rien n'affirmait le positif, et rien n'affirmait l'ordre - le
+    // helper pouvait perdre son `SELECT … FOR UPDATE` sans qu'aucun test ne
+    // bouge, ou le prendre APRES la relecture, ce qui laisserait la fenetre
+    // de course exactement ouverte.
+    armer();
+
+    await annulerInterventionDuClient({
+      interventionId: 847,
+      clientId: CLIENT,
+      motif: MOTIF,
+      maintenant: new Date("2026-08-19T07:00:00.000Z"),
+    });
+
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(queryRaw).toHaveBeenCalledWith([847]);
+
+    const verrou = queryRaw.mock.invocationCallOrder[0] ?? 0;
+    const relecture =
+      txInterventionFindUniqueOrThrow.mock.invocationCallOrder[0] ?? 0;
+    expect(verrou).toBeLessThan(relecture);
+  });
+
+  it("n'annule QU'UNE FOIS sous deux annulations concurrentes", async () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11. Le test que la suite n'avait
+    // pas : celui qui fait REELLEMENT courir deux transactions.
+    //
+    // Le module s'attribue la propriete en toutes lettres (`interventions.ts`
+    // §« Le verrou n'est pas decoratif ») : deux annulations concurrentes
+    // « ecriraient DEUX entrees d'audit et enverraient DEUX emails au
+    // technicien ». C'est le journal qui est en cause, pas l'`UPDATE` - et
+    // `audit_logs` est la piece qu'on produit en cas de contestation.
+    //
+    // Le scenario n'est pas theorique : deux onglets ouverts sur la meme
+    // intervention suffisent, et l'action est un endpoint POST public
+    // (ADR-006 v2) que rien n'empeche d'appeler deux fois.
+    //
+    // Chaque double de lecture porte un `await` : c'est le point
+    // d'entrelacement. Sans lui les deux transactions se derouleraient l'une
+    // apres l'autre par construction, et le faux client rendrait vert un code
+    // sans aucun verrou.
+    const enBase = { status: "PLANNED" };
+
+    txInterventionFindFirst.mockImplementation(async () => {
+      await Promise.resolve();
+      return planifiee({ status: enBase.status });
+    });
+    txInterventionFindUniqueOrThrow.mockImplementation(async () => {
+      await Promise.resolve();
+      return { status: enBase.status };
+    });
+    txInterventionUpdate.mockImplementation(async () => {
+      await Promise.resolve();
+      enBase.status = "CANCELLED";
+      return { id: 847 };
+    });
+
+    const maintenant = new Date("2026-08-19T07:00:00.000Z");
+    const resultats = await Promise.all([
+      annulerInterventionDuClient({
+        interventionId: 847,
+        clientId: CLIENT,
+        motif: MOTIF,
+        maintenant,
+      }),
+      annulerInterventionDuClient({
+        interventionId: 847,
+        clientId: CLIENT,
+        motif: "Doublon",
+        maintenant,
+      }),
+    ]);
+
+    expect(resultats.filter((resultat) => resultat.ok)).toHaveLength(1);
+    expect(resultats).toContainEqual({
+      ok: false,
+      reason: "non_annulable",
+    });
+    expect(txInterventionUpdate).toHaveBeenCalledTimes(1);
+    // Une seule trace, et une seule notification a envoyer derriere.
+    expect(auditCreate).toHaveBeenCalledTimes(1);
+
+    // Ce que cette derniere assertion certifie : la fenetre de course etait
+    // bien OUVERTE. La seconde transaction avait deja lu `PLANNED` avant que
+    // la premiere n'ecrive - sans le verrou, sa relecture aurait lu la meme
+    // chose au meme moment et les deux auraient annule. Sans elle, le test
+    // pourrait passer sur deux transactions serialisees par hasard, donc ne
+    // rien mesurer.
+    const secondeLecture = txInterventionFindFirst.mock.invocationCallOrder[1];
+    const premiereEcriture = txInterventionUpdate.mock.invocationCallOrder[0];
+    expect(secondeLecture).toBeDefined();
+    expect(secondeLecture ?? 0).toBeLessThan(premiereEcriture ?? 0);
   });
 
   it("rend au technicien de quoi etre prevenu, sans relire la base", async () => {

@@ -151,6 +151,45 @@ describe("BlocAnnulation - dans la fenetre", () => {
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 
+  it("n'envoie QU'UNE annulation sur deux clics rapproches", async () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
+    //
+    // Le pendant a l'ecran du verrou de ligne : deux envois pour la meme
+    // intervention ecrivent deux entrees d'audit et deux emails au technicien
+    // (le second `UPDATE` etant, lui, inoffensif). Le serveur les rattrape
+    // desormais, mais un ecran qui les emet reste un ecran qui produit du bruit
+    // dans la piece qu'on produit en cas de contestation.
+    //
+    // `disabled={enCours}` est la garde attendue : `useTransition` passe en
+    // attente des le premier clic et n'en sort qu'a la resolution.
+    let resoudre: (valeur: { data: { ok: true } }) => void = () => undefined;
+    annulerIntervention.mockReturnValue(
+      new Promise<{ data: { ok: true } }>((resolution) => {
+        resoudre = resolution;
+      }),
+    );
+    const utilisateur = userEvent.setup();
+    monter(48);
+
+    await utilisateur.click(
+      screen.getByRole("button", { name: /Annuler cette intervention/ }),
+    );
+    await utilisateur.type(
+      screen.getByLabelText(/Motif de l'annulation/),
+      "Report",
+    );
+
+    const confirmer = screen.getByRole("button", {
+      name: /Confirmer l'annulation/,
+    });
+    await utilisateur.click(confirmer);
+    await utilisateur.click(confirmer);
+
+    expect(annulerIntervention).toHaveBeenCalledTimes(1);
+
+    resoudre({ data: { ok: true } });
+  });
+
   it("bascule sur le contact quand le serveur repond que la fenetre est passee", async () => {
     // L'ecran a ete rendu a H-25 et le client confirme a H-23 : c'est le double
     // filet qui tranche, et sa reponse doit changer l'etat plutot que
@@ -179,9 +218,67 @@ describe("BlocAnnulation - dans la fenetre", () => {
       screen.queryByRole("button", { name: /Annuler cette intervention/ }),
     ).toBeNull();
   });
+
+  it("ne laisse pas la page inerte quand la modale disparait sous elle", async () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
+    //
+    // Ce refus-la est le seul qui DEMONTE la modale au lieu de la fermer : le
+    // composant rend le bandeau de contact, et le `Dialog` ouvert s'en va avec
+    // lui dans le meme rendu. Or une modale Radix pose `pointer-events: none`
+    // sur `<body>` tant qu'elle est ouverte, et c'est son demontage qui le
+    // retire. S'il ne se jouait pas, la page resterait visible et entierement
+    // inerte - un defaut qu'aucune assertion de visibilite ne voit, ni ici ni
+    // en E2E ou `toBeVisible` passerait tout autant.
+    annulerIntervention.mockResolvedValue({
+      data: {
+        ok: false,
+        message: "Annulation impossible à moins de 24 h du rendez-vous.",
+        fenetreDepassee: true,
+      },
+    });
+    const utilisateur = userEvent.setup();
+    monter(25);
+
+    await utilisateur.click(
+      screen.getByRole("button", { name: /Annuler cette intervention/ }),
+    );
+    // Le prealable qui rend l'assertion suivante discriminante : sans cette
+    // ligne, un jour ou Radix cesserait de poser l'attribut, le test passerait
+    // en ne mesurant plus rien.
+    expect(document.body.style.pointerEvents).toBe("none");
+
+    await utilisateur.click(
+      screen.getByRole("button", { name: /Confirmer l'annulation/ }),
+    );
+
+    await screen.findByText(/Annulation impossible en ligne/);
+
+    expect(document.body.style.pointerEvents).not.toBe("none");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });
 
 describe("BlocAnnulation - hors fenetre", () => {
+  it("ferme le self-service a EXACTEMENT H-24, comme le serveur", () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
+    //
+    // La borne exacte est testee dans le module pur et dans la transaction ;
+    // elle ne l'etait sur AUCUNE des deux surfaces d'ecran. C'est pourtant la
+    // seule valeur ou les deux formulations de l'US (`> 24 h` au nominal,
+    // `<= 24 h` au cas d'erreur) pourraient diverger, et un ecran qui
+    // trancherait l'egalite dans l'autre sens proposerait un bouton que la
+    // transaction refuse - exactement l'ecart que la prop `maintenant` et le
+    // module partage cherchent a rendre impossible.
+    monter(24);
+
+    expect(
+      screen.getByText(/Annulation impossible en ligne/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Annuler cette intervention/ }),
+    ).toBeNull();
+  });
+
   it("remplace le bouton par le renvoi vers l'atelier", () => {
     monter(23);
 
@@ -247,6 +344,26 @@ describe("BlocAnnulation - accessibilite", () => {
     // `vue.container` seul ne verrait rien. C'est le document entier qui compte.
     await expect(axe(document.body)).resolves.toHaveNoViolations();
     vue.unmount();
+  });
+
+  it("nomme « Fermer » le bouton de fermeture de la modale", async () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
+    //
+    // `dialog.tsx:78-83` traduit le « Close » du registry shadcn et demande que
+    // le report soit refait si le fichier est regenere - exactement la consigne
+    // qui accompagne le `Sheet` de la coquille publique, et celle-la EST tenue
+    // par un test depuis la PR #21. La modale d'annulation est le premier
+    // usage de `Dialog` dans l'application : sans cet oracle, la regeneration
+    // remettrait un nom accessible anglais sans que rien ne l'attrape.
+    const utilisateur = userEvent.setup();
+    monter(48);
+
+    await utilisateur.click(
+      screen.getByRole("button", { name: /Annuler cette intervention/ }),
+    );
+
+    expect(screen.getByRole("button", { name: "Fermer" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Close$/i })).toBeNull();
   });
 
   it("ne presente aucune violation hors fenetre", async () => {

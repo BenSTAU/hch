@@ -21,7 +21,7 @@ import { BlocAnnulation, type ContactSociete } from "./bloc-annulation";
 import { BlocPhotos } from "./bloc-photos";
 import { BlocProduits } from "./bloc-produits";
 
-/// Liste et panneau de détail — cœur de **C8**, réutilisé par **C10**.
+/// Liste et panneau de détail - cœur de **C8**, réutilisé par **C10**.
 ///
 /// ── Un seul composant pour les deux onglets
 ///
@@ -229,7 +229,7 @@ function CarteIntervention({
   );
 }
 
-/// Panneau de détail — la surface où T-V3-09 et T-V3-11 viennent se poser.
+/// Panneau de détail - la surface où T-V3-09 et T-V3-11 viennent se poser.
 ///
 /// ── Ce qui n'est pas porté de C8
 ///

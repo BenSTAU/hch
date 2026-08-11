@@ -70,15 +70,31 @@ describe("sendAnnulationEmail", () => {
     expect(envoye().text).toMatch(/de nouveau disponible/);
   });
 
-  it("ne divulgue NI le nom du client NI aucun montant", async () => {
+  it("ne divulgue aucun montant", async () => {
     // Le destinataire est un salarie, et l'email transite par un tiers. Il dit
     // ce qui change dans la tournee, rien d'autre : Constitution §4.2 pose la
     // minimisation, et le montant n'aide en rien a se reorganiser.
+    //
+    // ⚠️ Le titre disait aussi « ni le nom du client » - releve par l'agent
+    // testeur : le nom n'est meme pas un parametre de cette fonction, donc
+    // cette moitie ne mesurait rien. Ce qui la GARANTIT est la signature, et
+    // c'est la ligne ci-dessous qui l'affirme.
     await sendAnnulationEmail(PARAMS);
 
     const { text, html } = envoye();
     expect(text).not.toMatch(/€/);
     expect(html).not.toMatch(/€/);
+    // Aucun champ d'identite ne traverse : ajouter un `client` a la signature
+    // ferait echouer ce test, et c'est le but.
+    expect(Object.keys(PARAMS).sort()).toEqual([
+      "adresse",
+      "debut",
+      "dureeMinutes",
+      "forfait",
+      "motif",
+      "prenom",
+      "to",
+    ]);
   });
 
   it("echappe le motif, qui vient d'une saisie libre", async () => {

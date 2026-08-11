@@ -69,12 +69,12 @@ const DATE_COURTE = new Intl.DateTimeFormat("fr-FR", {
   minute: "2-digit",
 });
 
-/// « vendredi 8 août 2026 à 10:00 » — titre du panneau de détail.
+/// « vendredi 8 août 2026 à 10:00 » - titre du panneau de détail.
 export function formatDateLongue(instant: Date): string {
   return DATE_LONGUE.format(instant);
 }
 
-/// « ven. 8 août, 10:00 » — cartes de la liste.
+/// « ven. 8 août, 10:00 » - cartes de la liste.
 export function formatDateCourte(instant: Date): string {
   return DATE_COURTE.format(instant);
 }

@@ -432,6 +432,62 @@ describe("InterventionsVue - le statut gouverne les actions", () => {
     ).toBeInTheDocument();
   });
 
+  it("monte le bloc d'annulation sur une planifiee dans la fenetre", () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
+    //
+    // La DoD 6 de T-V3-11 dit « le bloc annulation est **monte** dans la
+    // coquille de C8 ». Apres la reecriture de l'oracle « ne porte NI bouton
+    // d'annulation NI reference inventee », plus AUCUN test unitaire ne le
+    // disait : le fichier proprietaire du bloc le monte seul, hors de la vue,
+    // et seuls les E2E traversaient les deux. Une prop `contact` ou
+    // `maintenant` oubliee au montage passait donc la barriere unitaire.
+    render(
+      <Enveloppe>
+        <Vue interventions={[intervention()]} produits={PRODUITS} vide={VIDE} />
+      </Enveloppe>,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Annuler cette intervention/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("ne propose NI bouton NI bandeau d'annulation hors du statut PLANNED", () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
+    //
+    // `US-INTERVENTION-ANNULER-CLIENT` §Cas d'erreur : « le bouton "Annuler"
+    // n'est pas affiche sur la liste » des que le statut n'est plus `PLANNED`.
+    // Le test voisin ne couvrait que les produits et les photos, et la moitie
+    // « bouton d'annulation » de l'oracle reecrit portait cette propriete par
+    // accident - elle a disparu avec lui.
+    //
+    // Le bandeau de contact ne doit pas s'y substituer non plus : sur une
+    // terminee ou une annulee il n'y a rien a annuler, donc rien a renvoyer
+    // vers l'atelier.
+    for (const status of ["IN_PROGRESS", "DONE", "CANCELLED"]) {
+      const { unmount } = render(
+        <Enveloppe>
+          <Vue
+            interventions={[intervention({ status })]}
+            produits={PRODUITS}
+            vide={VIDE}
+          />
+        </Enveloppe>,
+      );
+
+      expect(
+        screen.queryByRole("button", { name: /Annuler cette intervention/ }),
+        status,
+      ).toBeNull();
+      expect(
+        screen.queryByText(/Annulation impossible en ligne/),
+        status,
+      ).toBeNull();
+
+      unmount();
+    }
+  });
+
   it("retire les deux blocs de mutation des que l'intervention est demarree", () => {
     for (const status of ["IN_PROGRESS", "DONE", "CANCELLED"]) {
       const { unmount } = render(

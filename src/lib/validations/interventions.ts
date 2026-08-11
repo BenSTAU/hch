@@ -97,7 +97,12 @@ export const annulerInterventionSchema = z.object({
   motif: z
     .string()
     .trim()
-    .min(3, "Motif d'annulation requis.")
+    // Deux bornes, deux messages. 🐛 Relevé par l'agent testeur : un motif de
+    // deux caractères renvoyait « Motif d'annulation requis. », libellé que
+    // l'US §Cas d'erreur réserve au champ VIDE. Dire « requis » à qui vient
+    // d'écrire quelque chose est une réponse fausse.
+    .min(1, "Motif d'annulation requis.")
+    .min(3, "Motif trop court : décrivez brièvement la raison.")
     .max(
       MOTIF_ANNULATION_MAX,
       `Motif trop long (${MOTIF_ANNULATION_MAX} caractères maximum).`,

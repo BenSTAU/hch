@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
 
@@ -327,6 +328,64 @@ test("un client ne peut pas annuler le rendez-vous d'un autre", async ({
   expect(apres.status).toBe("PLANNED");
 });
 
+test("le serveur refuse l'intervention d'un tiers, meme modale ouverte", async ({
+  page,
+}) => {
+  // ⚠️ Ajout de l'agent testeur, 2026-08-11.
+  //
+  // Le scenario voisin (« un client ne peut pas annuler le rendez-vous d'un
+  // autre ») prouve que l'ECRAN ne fuit rien : la vue retombe sur la liste de
+  // l'intrus, le bouton n'existe pas. Il ne dit rien de la garde SERVEUR, parce
+  // qu'il n'atteint jamais l'action - et c'est precisement ce que Constitution
+  // §3.2 demande de tenir. Le cloisonnement n'etait donc eprouve que par un
+  // double de Prisma, sur la forme de la clause `where`.
+  //
+  // Comme pour la fenetre H-24, aucune requete n'est forgee : le rendez-vous
+  // CHANGE de proprietaire pendant que la modale est ouverte, et l'appel part
+  // par le meme chemin qu'un client normal. La reponse doit etre indifferenciee
+  // - « introuvable », jamais « ce n'est pas a vous ».
+  const beneficiaire = await creerClientActive(page, db, "gp03-transfert-b");
+  const { email, userId } = await creerClientActive(page, db, "gp03-transfert");
+  const interventionId = await semerIntervention({
+    clientId: userId,
+    heuresAvant: 72,
+  });
+
+  await seConnecterClient(page, email);
+  await page.goto(`/mes-interventions/a-venir?intervention=${interventionId}`);
+
+  await page
+    .getByRole("button", { name: "Annuler cette intervention" })
+    .click();
+  const modale = page.getByRole("dialog");
+  await modale.getByLabel(/Motif de l'annulation/).fill("Tentative croisee");
+
+  await db.intervention.update({
+    where: { id: interventionId },
+    data: { clientId: beneficiaire.userId },
+  });
+
+  await modale.getByRole("button", { name: /Confirmer l'annulation/ }).click();
+
+  await expect(modale.getByRole("alert")).toHaveText(
+    "Intervention introuvable.",
+  );
+
+  const apres = await db.intervention.findUniqueOrThrow({
+    where: { id: interventionId },
+    select: { status: true, cancellationReason: true },
+  });
+  expect(apres.status).toBe("PLANNED");
+  expect(apres.cancellationReason).toBeNull();
+
+  // Aucune trace non plus : un refus n'est pas une mutation, et `audit_logs`
+  // est la piece qu'on produit en cas de contestation.
+  const traces = await db.auditLog.count({
+    where: { entityType: "interventions", entityId: String(interventionId) },
+  });
+  expect(traces).toBe(0);
+});
+
 test("une intervention deja annulee ne propose plus rien", async ({ page }) => {
   // §2.4, cycle de vie garde : les actions terminales sont irreversibles cote
   // serveur. L'ecran ne doit pas non plus proposer de les rejouer.
@@ -344,4 +403,120 @@ test("une intervention deja annulee ne propose plus rien", async ({ page }) => {
     page.getByRole("button", { name: "Annuler cette intervention" }),
   ).toHaveCount(0);
   await expect(page.getByText("Annulation impossible en ligne")).toHaveCount(0);
+});
+
+test.describe("l'ecran d'annulation, mesure au navigateur", () => {
+  /// ⚠️ **Ajoute apres le rapport de l'agent testeur**, qui a releve que la
+  /// DoD 6 (« responsive, RGAA A ») etait **declaree et non prouvee** :
+  /// `@axe-core/playwright` ne tournait sur AUCUN ecran de l'espace client, et
+  /// aucune mesure a 375 px n'existait dessus.
+  ///
+  /// C'est exactement l'ecart que `jest-axe` ne peut pas combler : axe-core en
+  /// jsdom **ne calcule aucun contraste**, et le bandeau hors fenetre est du
+  /// `text-destructive` sur `bg-destructive/10`, la teinte la plus a risque de
+  /// l'ecran. Les tags AA sont passes pour cette seule raison, comme sur la
+  /// landing : le niveau exige reste A (SPEC §6.3.1).
+  const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
+
+  test("aucune violation, modale d'annulation ouverte", async ({ page }) => {
+    const { email, userId } = await creerClientActive(page, db, "gp03-axe");
+    const interventionId = await semerIntervention({
+      clientId: userId,
+      heuresAvant: 72,
+    });
+
+    await seConnecterClient(page, email);
+    await page.goto(
+      `/mes-interventions/a-venir?intervention=${interventionId}`,
+    );
+    await page
+      .getByRole("button", { name: "Annuler cette intervention" })
+      .click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+
+    const resultats = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+    expect(resultats.violations).toEqual([]);
+  });
+
+  test("aucune violation sur le bandeau de renvoi vers l'atelier", async ({
+    page,
+  }) => {
+    const { email, userId } = await creerClientActive(
+      page,
+      db,
+      "gp03-axe-hors",
+    );
+    const interventionId = await semerIntervention({
+      clientId: userId,
+      heuresAvant: 6,
+    });
+
+    await seConnecterClient(page, email);
+    await page.goto(
+      `/mes-interventions/a-venir?intervention=${interventionId}`,
+    );
+    await expect(
+      page.getByText("Annulation impossible en ligne"),
+    ).toBeVisible();
+
+    const resultats = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+    expect(resultats.violations).toEqual([]);
+  });
+
+  test("la modale et le bandeau tiennent dans le cadre a 375 px", async ({
+    page,
+  }) => {
+    // Regle 2 du portage : les maquettes sont en 1920x1080 seulement, et le
+    // parcours client est mobile-first (`US-RGPD` §Criteres). Le debordement
+    // horizontal est le defaut qu'un telephone reel a revele sur le tunnel le
+    // 2026-08-10, apres que la DoD « responsive verifie » ait ete cochee sur la
+    // foi d'un navigateur de bureau redimensionne.
+    const { email, userId } = await creerClientActive(page, db, "gp03-mobile");
+    const interventionId = await semerIntervention({
+      clientId: userId,
+      heuresAvant: 72,
+    });
+
+    // ⚠️ La connexion se joue en LARGEUR DE BUREAU, puis on retrecit. Le
+    // declencheur du menu utilisateur, oracle de `seConnecterClient`, vit dans
+    // un conteneur `hidden md:flex` : sous 768 px il n'existe pas, et le helper
+    // partage echoue sur une connexion pourtant reussie. C'est la dette mobile
+    // ouverte par T-V3-10 (le repli `<noscript>` ne couvre que le bureau), pas
+    // un defaut de cette tache - mais elle mord ici, et la contourner en
+    // silence l'aurait rendue invisible une fois de plus.
+    await seConnecterClient(page, email);
+    await page.setViewportSize({ width: 375, height: 812 });
+
+    await page.goto(
+      `/mes-interventions/a-venir?intervention=${interventionId}`,
+    );
+    await page
+      .getByRole("button", { name: "Annuler cette intervention" })
+      .click();
+
+    const modale = page.getByRole("dialog");
+    await expect(modale).toBeVisible();
+
+    const cadre = await modale.boundingBox();
+    expect(cadre).not.toBeNull();
+    expect(cadre!.x).toBeGreaterThanOrEqual(0);
+    expect(cadre!.x + cadre!.width).toBeLessThanOrEqual(375);
+
+    // Les deux boutons du pied doivent rester entiers : c'est le libelle tronque
+    // et le bouton sortant du cadre qu'on a payes sur la barre du tunnel.
+    for (const nom of [/Confirmer l'annulation/, /Conserver le rendez-vous/]) {
+      const boite = await modale
+        .getByRole("button", { name: nom })
+        .boundingBox();
+      expect(boite).not.toBeNull();
+      expect(boite!.x).toBeGreaterThanOrEqual(0);
+      expect(boite!.x + boite!.width).toBeLessThanOrEqual(375);
+    }
+
+    // Et la page elle-meme ne defile pas horizontalement.
+    const debordement = await page.evaluate(
+      () => document.documentElement.scrollWidth,
+    );
+    expect(debordement).toBeLessThanOrEqual(375);
+  });
 });

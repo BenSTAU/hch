@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { CHEMIN_ESPACE_CLIENT } from "@/lib/routes";
 import { Toaster } from "@/components/ui/sonner";
 
-/// Coquille de l'espace client — écrans **C8** et **C10**.
+/// Coquille de l'espace client - écrans **C8** et **C10**.
 ///
 /// T-V3-10 en est propriétaire depuis l'arbitrage du 2026-08-10 : trois tâches
 /// revendiquaient C8, et c'est la liste qui est la structure porteuse. T-V3-11
