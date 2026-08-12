@@ -198,10 +198,13 @@ export default async function PolitiqueConfidentialitePage() {
           <strong className="text-foreground">Effacement</strong> : vous
           l&apos;exercez vous-même, à tout moment, depuis votre espace. Votre
           compte est alors pseudonymisé, c&apos;est-à-dire que vos informations
-          personnelles sont remplacées par des valeurs anonymes tandis que vos
-          interventions passées restent conservées sous ces identifiants
-          anonymes, pour les obligations comptables rappelées ci-dessus.
-          L&apos;opération est irréversible.
+          personnelles sont remplacées par des valeurs anonymes, à
+          l&apos;exception de la commune de vos adresses, qui est conservée et
+          ne désigne personne à elle seule. Vos interventions passées restent
+          conservées sous ces identifiants anonymes, pour les obligations
+          comptables rappelées ci-dessus. Ces enregistrements permettent encore
+          de vous identifier par recoupement, et la loi nous impose de les
+          conserver. L&apos;opération est irréversible.
         </p>
 
         <div className="my-2">

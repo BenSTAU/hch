@@ -143,6 +143,50 @@ async function pointEstEfface(addressId: number): Promise<boolean> {
   return lignes[0]!.vide;
 }
 
+test.describe("Droit à l'oubli - ce que l'écran déclare avant l'acte", () => {
+  test("annonce que les données conservées restent ré-identifiables", async ({
+    page,
+  }) => {
+    const { email } = await semerClientAvecHistorique(page, "oubli-mention");
+    await seConnecterClient(page, email);
+    await page.goto("/mon-compte/supprimer");
+
+    // C'est l'écran où quelqu'un décide d'un acte irréversible, et la seule
+    // information qui distingue une pseudonymisation d'une anonymisation.
+    // PLAN S2 §T6 l'impose ; S4 §4.4, dont cet écran porte le verbatim, ne le
+    // disait pas - les deux sections se contredisaient depuis le 2026-07-29.
+    const avertissement = page.getByRole("region", {
+      name: "Action irréversible",
+    });
+    await expect(avertissement).toContainText(/identifier par recoupement/i);
+    // Annoncée POSSIBLE, jamais adoucie : une ré-identification présentée comme
+    // théorique ne prévient de rien.
+    await expect(avertissement).not.toContainText(
+      /théoriquement|improbable|peu probable/i,
+    );
+    // Et la mention reste attachée à sa cause, les dix ans de conservation.
+    await expect(avertissement).toContainText(/10 ans/);
+  });
+
+  test("annonce que la commune des adresses est conservée", async ({
+    page,
+  }) => {
+    const { email } = await semerClientAvecHistorique(page, "oubli-commune");
+    await seConnecterClient(page, email);
+    await page.goto("/mon-compte/supprimer");
+
+    // L'écran énumère ce qui part et ce qui reste, en deux colonnes : la commune
+    // survit à la pseudonymisation (`addresses.city_id` pointe une table
+    // partagée), et sans cette ligne les deux colonnes se contrediraient.
+    await expect(
+      page.getByRole("region", { name: "Action irréversible" }),
+    ).toContainText(/commune/i);
+    await expect(
+      page.getByRole("region", { name: "Conservé sous identifiant anonyme" }),
+    ).toContainText(/commune/i);
+  });
+});
+
 test.describe("Droit à l'oubli - ce qui protège", () => {
   test("un visiteur anonyme est renvoyé vers la connexion", async ({
     page,
