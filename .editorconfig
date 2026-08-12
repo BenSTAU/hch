@@ -1,0 +1,23 @@
+# Conventions de fichier, lues par l'editeur avant tout formateur.
+#
+# Pose l'intention la ou elle se decide : au moment de la frappe. Prettier
+# reformate le contenu mais ne dit rien de l'encodage ni de la fin de ligne, et
+# il PRESERVE un BOM existant au lieu de le retirer - c'est ainsi que neuf
+# fichiers en ont porte un jusqu'a l'audit du 2026-08-12.
+#
+# La garde executable est la regle `unicode-bom` d'`eslint.config.mjs` : ce
+# fichier-ci previent, celle-la refuse.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.md]
+# Deux espaces en fin de ligne sont un retour a la ligne en Markdown.
+trim_trailing_whitespace = false

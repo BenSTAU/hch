@@ -1,0 +1,41 @@
+# Hooks Git - DEFAULT de CLAUDE.md §Tooling, pose par l'audit du 2026-08-12.
+#
+# Le depot n'avait AUCUN hook actif : ni lefthook, ni husky, ni rien dans
+# `.git/hooks`. Tout reposait sur la discipline et sur la CI, c'est-a-dire sur
+# un rouge decouvert apres coup.
+#
+# ── Le partage entre les deux hooks n'est pas arbitraire
+#
+# CLAUDE.md pose un MUST NOT explicite : `tsc --noEmit` ne va PAS en
+# `lint-staged`. Il doit voir tout le projet pour rendre un verdict juste, et le
+# restreindre aux fichiers indexes produit des erreurs fantomes autant que des
+# silences - un type casse par un fichier non indexe ne se verrait pas.
+#
+# D'ou : ce qui est par-fichier au commit, ce qui est global au push.
+#
+# ⚠️ `lefthook` doit figurer dans `onlyBuiltDependencies` de
+# `pnpm-workspace.yaml`, sinon pnpm 10 n'execute pas son postinstall et ces
+# hooks ne sont jamais poses - en silence.
+
+pre-commit:
+  parallel: false
+  commands:
+    # Un seul appel, pilote par `lint-staged` : c'est lui qui sait quels
+    # fichiers sont indexes et qui restitue l'index apres correction.
+    lint-staged:
+      run: pnpm exec lint-staged
+
+pre-push:
+  # Les deux sont independants et longs : les paralleliser divise l'attente.
+  parallel: true
+  commands:
+    typecheck:
+      run: pnpm typecheck
+    test:
+      run: pnpm test
+
+  # ⚠️ La barriere E2E n'est PAS ici, et c'est delibere. Elle dure entre huit et
+  # quatorze minutes, elle exige le tunnel SSH vers la base de developpement, et
+  # sa raison d'etre est d'etre une barriere PRE-DEPLOIEMENT (T-J0-09), pas une
+  # gate de push. La mettre la rendrait le push impraticable hors tunnel, donc
+  # elle finirait contournee par `--no-verify` - ce qui vaut moins que rien.

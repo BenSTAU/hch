@@ -10,29 +10,15 @@ import { ONGLETS_TOURNEE, type CleOnglet } from "./onglets";
 
 /// Barre latérale de l'espace technicien - maquette **T1**, `code.html:125-171`.
 ///
-/// ── Trois entrées, et pas six
+/// Cliente pour le seul `usePathname` : un layout ne reçoit pas la route de ses
+/// enfants, donc il ne peut pas marquer l'entrée courante.
 ///
-/// La maquette en dessine six. « Ma zone », « Profil » et « Aide » n'ont aucune
-/// US : les poser produirait trois liens morts dans une navigation permanente,
-/// ce que la leçon `T-T2-16` d'Argo proscrit et que la barre de l'espace client
-/// évite déjà nommément. Le CTA « Nouvelle Intervention » ne se porte pas non
-/// plus, `US-INTERVENTION-CREER` étant **v2 admin**.
+/// ⚠️ Aucun contrôle d'accès ici ni dans le layout. Chaque page appelle
+/// `requireTech()` - le Partial Rendering ne rejoue pas un layout en navigation
+/// client (CLAUDE.md §Authentication).
 ///
-/// L'identité en bas de barre ne se porte pas davantage : `US-COMPTE-DECONNECTER`
-/// §Contexte l'impose « dans le header », où `UserMenu` la rend déjà. La
-/// dupliquer donnerait deux menus pour une seule personne.
-///
-/// ── Pourquoi une feuille cliente
-///
-/// `usePathname` pour marquer l'entrée courante. C'est la seule chose que ce
-/// composant fait de dynamique, et un layout ne peut pas la connaître autrement :
-/// il ne reçoit pas la route de ses enfants. La frontière `"use client"` descend
-/// donc jusqu'ici et pas au layout (CLAUDE.md §Architecture App Router).
-///
-/// ⚠️ Aucun contrôle d'accès ici ni dans le layout qui la monte. C'est chaque
-/// page qui appelle `requireTech()` : le Partial Rendering ne rejoue pas un
-/// layout en navigation client, un contrôle posé là-haut deviendrait obsolète
-/// sans que rien ne le signale.
+/// Trois entrées sur les six de la maquette : motif du retrait des trois autres
+/// dans TASKS T-V2-05.
 const ICONES: Record<CleOnglet, typeof CalendarDays> = {
   "du-jour": CalendarDays,
   "a-venir": CalendarRange,
@@ -43,18 +29,12 @@ export function BarreLateraleTechnicien() {
   const chemin = usePathname();
 
   return (
-    // Masquée sous `md`, exactement comme celle de l'espace client : sur un
-    // téléphone elle mangerait un tiers de l'écran pour redire où l'on est. Ce
-    // sont les onglets en tête de contenu qui portent la navigation réelle - la
-    // maquette, elle, n'a **rien** prévu en mobile (`hidden md:flex`).
+    // Masquée sous `md` : ce sont les onglets en tête de contenu qui portent
+    // la navigation là, et ils sont `md:hidden` en miroir.
     <nav
       aria-label="Espace technicien"
-      // Un PANNEAU, comme T1, et non une liste posée sur le fond de page :
-      // `bg-surface-container-low` dans la maquette, `bg-secondary` dans le
-      // vocabulaire shadcn de la palette. `sticky` plutôt que le `fixed
-      // h-screen` de la maquette - la barre du site est déjà collante, et deux
-      // éléments fixes qui se superposent au zoom 200 % est une régression
-      // RGAA que la même règle avait déjà fait écarter sur `SiteHeader`.
+      // `sticky` et non le `fixed h-screen` de la maquette : la barre du site
+      // est déjà collante, et deux éléments fixes se superposent au zoom 200 %.
       className="hidden w-56 shrink-0 self-start rounded-2xl bg-secondary/60 p-3 md:sticky md:top-24 md:block"
     >
       <ul className="flex flex-col gap-1">
@@ -66,10 +46,8 @@ export function BarreLateraleTechnicien() {
             <li key={onglet.cle}>
               <Link
                 href={onglet.href}
-                // `aria-current="page"` : ce sont des liens de navigation, pas
-                // les onglets d'un widget. Et il ne double pas la couleur, il
-                // la remplace comme information - la teinte seule ne suffit
-                // pas (WCAG 1.4.1, RGAA A).
+                // `aria-current` et non la seule teinte : la couleur seule ne
+                // porte pas l'information (WCAG 1.4.1, RGAA A).
                 aria-current={courant ? "page" : undefined}
                 className={cn(
                   "flex items-center gap-3 rounded-xl px-4 py-3 text-sm transition-colors",

@@ -4,7 +4,7 @@ import { desactiverAdresse } from "@/lib/db/queries/adresses";
 import { authActionClient } from "@/lib/safe-action";
 import { supprimerAdresseSchema } from "@/lib/validations/adresses";
 
-/// Retrait d'une adresse du profil — `US-ADRESSE-SUPPRIMER`.
+/// Retrait d'une adresse du profil - `US-ADRESSE-SUPPRIMER`.
 ///
 /// Soft-delete : `is_active = false`. Une adresse référencée par une
 /// intervention passée doit rester lisible, et casser la clé étrangère est
@@ -15,7 +15,7 @@ import { supprimerAdresseSchema } from "@/lib/validations/adresses";
 
 const MESSAGE_INTROUVABLE = "Cette adresse n'existe plus.";
 const MESSAGE_INTERVENTION_ACTIVE =
-  "Cette adresse est celle d'une intervention à venir — annulez-la d'abord.";
+  "Cette adresse est celle d'une intervention à venir : annulez-la d'abord.";
 
 export const supprimerAdresse = authActionClient
   .inputSchema(supprimerAdresseSchema)

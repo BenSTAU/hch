@@ -22,6 +22,22 @@ const eslintConfig = defineConfig([
     "blob-report/**",
     "playwright/.cache/**",
   ]),
+  {
+    // 🐛 **Neuf fichiers portaient un BOM UTF-8**, en deux lots : le droit à
+    // l'oubli (T-V3-12) et les trois pages légales. Audit de conformité du
+    // 2026-08-12.
+    //
+    // La cause est l'outillage d'écriture, pas la rédaction : sur ce poste
+    // PowerShell écrit en UTF-8 **avec** BOM par défaut (`Out-File`, `>`), et
+    // Prettier **préserve** un BOM existant au lieu de le retirer. Rien dans la
+    // chaîne ne les empêchait ni ne les enlevait, donc ils se propageaient d'un
+    // lot au suivant sans que rien ne le signale.
+    //
+    // `unicode-bom` est une règle du coeur d'ESLint, donc elle tourne déjà en
+    // CI : c'est la garde la moins chère, et elle vaut mieux qu'un nettoyage
+    // qu'il faudrait refaire au prochain lot.
+    rules: { "unicode-bom": ["error", "never"] },
+  },
 ]);
 
 export default eslintConfig;

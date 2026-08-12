@@ -1,4 +1,4 @@
-﻿import { CookieIcon } from "lucide-react";
+import { CookieIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 

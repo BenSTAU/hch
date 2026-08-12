@@ -20,6 +20,14 @@ onlyBuiltDependencies:
   #                  d'installation, pnpm 10 le laisse sans binaire — en
   #                  silence, comme il l'a fait pour bcrypt
   - sharp
+  # lefthook       · POSE les hooks Git au postinstall, c'est tout ce que fait
+  #                  son script. Sans cette ligne, `pnpm add -D lefthook`
+  #                  affiche « Ignored build scripts » et le dépôt se retrouve
+  #                  avec un `lefthook.yml` que rien ne déclenche : la garde
+  #                  serait purement décorative, et personne ne s'en
+  #                  apercevrait avant le premier commit mal formaté.
+  #                  Constaté à l'installation, audit du 2026-08-12
+  - lefthook
 
 ignoredBuiltDependencies:
   - unrs-resolver

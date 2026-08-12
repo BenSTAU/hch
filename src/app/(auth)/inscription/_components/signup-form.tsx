@@ -1,12 +1,12 @@
 "use client";
 
-import { Eye, EyeOff } from "lucide-react";
 import { useActionState, useEffect, useRef, useState } from "react";
 
 import {
   signupFormAction,
   type SignupFormState,
 } from "@/lib/actions/auth/signup";
+import { BasculeMotDePasse } from "@/components/features/auth/bascule-mot-de-passe";
 import { GdprNotice } from "@/components/features/auth/gdpr-notice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -225,27 +225,13 @@ export function SignupForm() {
             )}
             required
           />
-          {/* `type="button"` : sans lui, le bouton hérite du `submit` par défaut
-              et révéler son mot de passe soumettrait le formulaire.
-              `aria-pressed` porte l'état, ce qu'une simple icône ne fait pas. */}
-          <button
-            type="button"
-            onClick={() => setMotDePasseVisible((visible) => !visible)}
-            aria-pressed={motDePasseVisible}
-            aria-controls="password"
-            className="absolute inset-y-0 right-0 flex items-center rounded-none px-3 text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-          >
-            {motDePasseVisible ? (
-              <EyeOff aria-hidden="true" className="size-4" />
-            ) : (
-              <Eye aria-hidden="true" className="size-4" />
-            )}
-            <span className="sr-only">
-              {motDePasseVisible
-                ? "Masquer le mot de passe"
-                : "Afficher le mot de passe"}
-            </span>
-          </button>
+          <BasculeMotDePasse
+            visible={motDePasseVisible}
+            onBascule={() => {
+              setMotDePasseVisible((visible) => !visible);
+            }}
+            controle="password"
+          />
         </div>
         <p id="password-hint" className="text-sm text-muted-foreground">
           {AIDE_MOT_DE_PASSE}
