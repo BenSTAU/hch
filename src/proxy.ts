@@ -63,10 +63,16 @@ export const config = {
   // deux US exigent « redirection vers login avec `next=/mes-interventions/…` »
   // en l'absence de session, et c'est ce `next=` que la ligne ci-dessous
   // fabrique.
+  // `/mon-compte` ajouté par T-V3-12. Même motif que `/mes-interventions` :
+  // routes en français, hors `/client/`, mais protégées au même titre. La
+  // suppression de compte exige une session, et un visiteur anonyme qui suit le
+  // lien de la politique de confidentialité doit atterrir sur `/connexion` avec
+  // son `next=`, pas sur un formulaire qui échouera au premier envoi.
   matcher: [
     "/admin/:path*",
     "/client/:path*",
     "/mes-interventions/:path*",
+    "/mon-compte/:path*",
     "/tech/:path*",
   ],
 };

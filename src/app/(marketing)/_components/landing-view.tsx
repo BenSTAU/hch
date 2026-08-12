@@ -71,9 +71,15 @@ import { ForfaitCard } from "./forfait-card";
 export function LandingView({
   forfaits,
   deconnecte = false,
+  compteSupprime = false,
 }: {
   forfaits: ForfaitPublic[];
   deconnecte?: boolean;
+  /// `US-COMPTE-SUPPRIMER` §Cas nominal : « je suis redirigé vers la page
+  /// publique d'accueil avec message final ». Il atterrit ici et pas sur
+  /// l'écran de suppression parce que celui-ci exige une session, et qu'il n'y
+  /// en a plus - c'est tout le sujet.
+  compteSupprime?: boolean;
 }) {
   // `US-FORFAIT-CONSULTER` §Cas limites : catalogue vide → message explicite,
   // « et aucun appel à l'action de réservation n'est proposé ». Lecture stricte,
@@ -86,12 +92,17 @@ export function LandingView({
       <div className="mx-auto w-full max-w-[1920px] px-5 md:px-16">
         {/* `US-COMPTE-DECONNECTER` §Cas nominal : « un message de confirmation
             “Vous êtes déconnecté” est affiché ». `role="status"` et non
-            `alert` : c'est une confirmation attendue, pas une alerte. */}
+            `alert` : c'est une confirmation attendue, pas une alerte.
+
+            La suppression de compte partage ce bandeau : les deux arrivent au
+            même endroit, par le même geste (fin de session puis redirection),
+            et deux régions `status` concurrentes sur une page en annonceraient
+            une de trop. Elles s'excluent, la plus définitive gagne. */}
         <p
           role="status"
           className="mt-6 rounded-xl bg-primary-fixed px-4 py-3 text-sm text-accent-foreground empty:hidden"
         >
-          {deconnecte ? "Vous êtes déconnecté." : ""}
+          {messageStatut(compteSupprime, deconnecte)}
         </p>
       </div>
 
@@ -395,3 +406,13 @@ const ZONE_REPERES = [
   { Icone: Wallet, texte: "Déplacement compris dans le prix" },
   { Icone: UserRoundCheck, texte: "Sans compte et sans engagement" },
 ] as const;
+
+/// Le bandeau de statut n'en porte qu'un à la fois, et l'ordre n'est pas
+/// arbitraire : une suppression de compte déconnecte aussi, donc les deux
+/// paramètres peuvent arriver ensemble. Annoncer « vous êtes déconnecté » à qui
+/// vient d'effacer son compte serait exact et hors sujet.
+function messageStatut(compteSupprime: boolean, deconnecte: boolean): string {
+  if (compteSupprime) return "Votre compte a été supprimé.";
+  if (deconnecte) return "Vous êtes déconnecté.";
+  return "";
+}

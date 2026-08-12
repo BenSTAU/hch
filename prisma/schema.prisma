@@ -283,7 +283,15 @@ model Address {
   cityId   Int                                   @map("city_id")
   /// Point GPS WGS84 obtenu par géocodage tiers - jamais une saisie libre non
   /// contrôlée (Constitution §2.2). Colonne `Unsupported`, cf. Zone.area.
-  location Unsupported("geography(Point, 4326)")
+  ///
+  /// NULLable depuis la migration 015 (T-V3-12) : le droit à l'oubli met ce
+  /// point à NULL en même temps que `street` devient « Anonymisée ».
+  /// `US-COMPTE-SUPPRIMER` laissait le choix « à trancher PLAN + juriste », et
+  /// le PLAN ne l'a jamais fait ; arbitré par Benjamin le 2026-08-11. Effacer
+  /// la rue en gardant les coordonnées garderait la donnée la PLUS précise et
+  /// effacerait la moins sensible, alors que S4 §4.5 impose le strip EXIF au
+  /// motif exact que le domicile ne doit pas voyager.
+  location Unsupported("geography(Point, 4326)")?
   userId   String?                               @map("user_id") @db.Uuid
   /// Libellé mémo choisi par le client - « Domicile », « Bureau ».
   label    String?                               @db.VarChar(100)

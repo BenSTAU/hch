@@ -20,16 +20,28 @@ import { LandingView } from "./_components/landing-view";
 export default async function AccueilPage({
   searchParams,
 }: {
-  searchParams: Promise<{ deconnecte?: string | string[] }>;
+  searchParams: Promise<{
+    deconnecte?: string | string[];
+    compte?: string | string[];
+  }>;
 }) {
   // Les deux lectures sont indépendantes : en parallèle, jamais en cascade
   // (CLAUDE.md §Data fetching). `listForfaitsPublics` est enveloppée dans
   // `cache()` — le layout l'a déjà appelée dans ce rendu, il n'y a qu'une
   // requête.
-  const [{ deconnecte }, forfaits] = await Promise.all([
+  const [{ deconnecte, compte }, forfaits] = await Promise.all([
     searchParams,
     listForfaitsPublics(),
   ]);
 
-  return <LandingView forfaits={forfaits} deconnecte={deconnecte === "1"} />;
+  return (
+    <LandingView
+      forfaits={forfaits}
+      deconnecte={deconnecte === "1"}
+      // `US-COMPTE-SUPPRIMER` §Cas nominal. Comparaison stricte, comme pour
+      // `deconnecte` : `?compte=` répété rend un tableau, qui ne vaut aucun des
+      // deux littéraux et ne déclenche donc aucun message.
+      compteSupprime={compte === "supprime"}
+    />
+  );
 }

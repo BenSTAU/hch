@@ -135,18 +135,38 @@ describe("proxy — Server Actions", () => {
 });
 
 describe("proxy — périmètre du matcher", () => {
-  it("garde les quatre espaces connectés", () => {
+  it("garde les cinq espaces connectés", () => {
     // `/mes-interventions` ajouté par T-V3-10. Il ne vit pas sous `/client/` —
     // les routes sont en français et c'est le chemin que la SPEC nomme — mais
     // les deux US exigent la même redirection vers la connexion avec un
     // `next=`. Sans cette entrée, l'espace client serait la seule surface
     // connectée que le proxy laisse passer.
+    //
+    // ⚠️ **`/mon-compte` ajouté par T-V3-12, et l'oracle est passé de quatre à
+    // cinq** (règle du test rouge, cas 3 : le test disait vrai jusqu'à ce que
+    // le produit gagne une surface). Le préfixe est tranché ici pour tout
+    // l'espace compte : T-V3-07 y posera la fiche client, et sans arbitrage
+    // elle aurait pu poser `/profil` - deux racines pour un seul espace.
     expect(config.matcher).toEqual([
       "/admin/:path*",
       "/client/:path*",
       "/mes-interventions/:path*",
+      "/mon-compte/:path*",
       "/tech/:path*",
     ]);
+  });
+
+  it("renvoie vers la connexion la suppression de compte d'un anonyme", () => {
+    // `US-COMPTE-SUPPRIMER` exige une session, et le lien y menant est posé sur
+    // une page PUBLIQUE - la politique de confidentialité. Sans cette entrée au
+    // matcher, un visiteur anonyme atterrirait sur un formulaire de suppression
+    // qui échouerait à l'envoi, au lieu d'être invité à se connecter.
+    const reponse = proxy(request("/mon-compte/supprimer"));
+
+    expect(reponse.status).toBe(307);
+    expect(reponse.headers.get("location")).toContain(
+      `next=${encodeURIComponent("/mon-compte/supprimer")}`,
+    );
   });
 
   it("fabrique le `next=` que les deux US de l'espace client écrivent", () => {
