@@ -8,16 +8,19 @@
 //
 // ⚠️ **Trois oracles déplacés par T-V3-10**, qui porte la DoD finale côté
 // client : `/mes-interventions/a-venir` existe désormais, et le client y va.
-// T-V3-03 l'avait posée en provisoire faute d'espace à atteindre, en refusant
-// de créer une coquille vide (leçon T-T2-16 d'Argo). La destination du
-// TECHNICIEN, elle, reste provisoire : `/interventions/du-jour` n'existe
-// toujours pas, et sa vague la portera.
+//
+// ⚠️ **Et l'oracle du TECHNICIEN bascule à son tour avec T-V2-01.** Il
+// affirmait `AFTER_LOGIN_DEFAULT`, l'accueil public, faute d'écran à atteindre —
+// T-V3-03 refusait de poser une coquille vide (leçon T-T2-16 d'Argo).
+// `/interventions/du-jour` existe désormais, et c'est ce que
+// [[module-1-utilisateurs]] §250 nomme depuis le début.
 import { describe, expect, it } from "vitest";
 
 const {
   AFTER_LOGIN_ADMIN,
   AFTER_LOGIN_CLIENT,
   AFTER_LOGIN_DEFAULT,
+  AFTER_LOGIN_TECH,
   afterLoginPath,
 } = await import("./after-login");
 
@@ -32,13 +35,23 @@ describe("afterLoginPath", () => {
     expect(AFTER_LOGIN_CLIENT).toBe("/mes-interventions/a-venir");
   });
 
-  it("envoie le technicien sur l'accueil, et surtout pas dans l'espace client", () => {
-    // Son espace n'existe pas. L'envoyer sur `/mes-interventions/a-venir` lui
-    // montrerait la liste vide de ses propres rendez-vous EN TANT QUE CLIENT,
-    // et non sa tournée : un écran vide qui ressemble à son métier est plus
-    // trompeur qu'un accueil neutre. C'est le motif du test, pas la valeur.
-    expect(afterLoginPath(["ROLE_TECH"])).toBe(AFTER_LOGIN_DEFAULT);
+  it("envoie le technicien sur sa tournée, et surtout pas dans l'espace client", () => {
+    // [[module-1-utilisateurs]] §250 : « technicien → `/interventions/du-jour` ».
+    // Ce que le test protège n'est pas la valeur mais la CONFUSION : l'envoyer
+    // sur `/mes-interventions/a-venir` lui montrerait ses propres rendez-vous
+    // EN TANT QUE CLIENT, un écran qui ressemble à son métier sans l'être.
+    expect(afterLoginPath(["ROLE_TECH"])).toBe(AFTER_LOGIN_TECH);
+    expect(AFTER_LOGIN_TECH).toBe("/interventions/du-jour");
     expect(afterLoginPath(["ROLE_TECH"])).not.toBe(AFTER_LOGIN_CLIENT);
+    // Et plus jamais l'accueil public : c'était le provisoire de T-V3-03.
+    expect(afterLoginPath(["ROLE_TECH"])).not.toBe(AFTER_LOGIN_DEFAULT);
+  });
+
+  it("envoie sur sa tournée un technicien qui porte aussi ROLE_CLIENT", () => {
+    // L'ordre des branches est ce qui le décide. Sans la priorité du rôle
+    // technicien, ce compte tomberait dans le repli client — régression
+    // silencieuse, puisque la destination resterait une page valide.
+    expect(afterLoginPath(["ROLE_CLIENT", "ROLE_TECH"])).toBe(AFTER_LOGIN_TECH);
   });
 
   it("retient le rôle le plus large quand un compte en porte plusieurs", () => {

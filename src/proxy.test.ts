@@ -135,7 +135,7 @@ describe("proxy — Server Actions", () => {
 });
 
 describe("proxy — périmètre du matcher", () => {
-  it("garde les cinq espaces connectés", () => {
+  it("garde les six espaces connectés", () => {
     // `/mes-interventions` ajouté par T-V3-10. Il ne vit pas sous `/client/` —
     // les routes sont en français et c'est le chemin que la SPEC nomme — mais
     // les deux US exigent la même redirection vers la connexion avec un
@@ -147,13 +147,28 @@ describe("proxy — périmètre du matcher", () => {
     // le produit gagne une surface). Le préfixe est tranché ici pour tout
     // l'espace compte : T-V3-07 y posera la fiche client, et sans arbitrage
     // elle aurait pu poser `/profil` - deux racines pour un seul espace.
+    //
+    // ⚠️ **`/interventions` ajouté par T-V2-01, cinq à six**, et celui-là
+    // referme un TROU plutôt que d'accompagner une surface neuve :
+    // `/interventions/du-jour` est la destination post-connexion du technicien
+    // depuis [[module-1-utilisateurs]] §250, et elle n'était couverte par aucune
+    // des cinq entrées. Le cadrage du plancher V2 (D2) l'a trouvée en lisant ce
+    // fichier, pas le vault.
     expect(config.matcher).toEqual([
       "/admin/:path*",
       "/client/:path*",
+      "/interventions/:path*",
       "/mes-interventions/:path*",
       "/mon-compte/:path*",
       "/tech/:path*",
     ]);
+  });
+
+  it("couvre la tournée du jour du technicien", () => {
+    // L'entrée ci-dessus n'a d'intérêt que si elle matche RÉELLEMENT la route
+    // que la SPEC nomme. Un `/interventions` sans `:path*` passerait le test
+    // d'égalité ci-dessus après une retouche et ne couvrirait plus rien.
+    expect(config.matcher).toContain("/interventions/:path*");
   });
 
   it("renvoie vers la connexion la suppression de compte d'un anonyme", () => {

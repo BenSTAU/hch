@@ -26,17 +26,27 @@ export const metadata: Metadata = {
 ///
 /// ── Ce qu'elle déclare est vérifié, pas recopié
 ///
-/// PLAN S4 §4.2 liste encore « destinataires (Google Maps §6 pour géocodage) ».
-/// Cette ligne est **antérieure à ADR-015 v2** (2026-08-08), qui a retiré la
-/// cartographie du parcours client : il n'y a plus aucun appel Google Maps
-/// côté client, et le back-office qui en garde l'usage n'est pas livré.
+/// PLAN S4 §4.2 liste « destinataires (Google Maps §6 pour **géocodage**) ».
+/// Cette ligne reste fausse *telle qu'écrite* : le géocodage passe par la BAN
+/// depuis ADR-015 v2 (2026-08-08), service public français, sans clé et sans
+/// transfert hors UE.
 ///
-/// Le transfert hors UE réel et actuel est ailleurs, et aucune section RGPD du
-/// vault ne le mentionne : le transport email passe par Gmail (ADR-017,
-/// `src/lib/email/transport.ts`), donc Google LLC traite l'adresse et le
-/// contenu de chaque message transactionnel. C'est lui qui est déclaré ici.
-/// Source matérialisée dans `docs/external/google-dpf.md`. Signalé au
-/// write-back.
+/// ⚠️ **Mais Google Maps est revenu par une autre porte le 2026-08-12.** Le
+/// cadrage du plancher V2 (D5) a tranché une carte Maps JS sur l'écran T1, la
+/// tournée du technicien — ADR-015 v2 ne traitait que le back-office admin et le
+/// tunnel client, et ne disait rien du cas technicien. La section
+/// « Destinataires » ci-dessous le déclare donc, au titre du **fond de carte**
+/// et non du géocodage, et T-V2-01 le porte.
+///
+/// La conséquence-titre d'ADR-015 v2 — « zéro Maps JS, zéro clé, zéro quota et
+/// zéro transfert hors UE sur tout le parcours client » — **reste vraie** : T1
+/// est un écran technicien. L'étendre au tunnel ou à la landing la renverserait,
+/// et c'est un ADR-015 v3 à instruire à part.
+///
+/// Le second transfert hors UE est le transport email, qui passe par Gmail
+/// (ADR-017, `src/lib/email/transport.ts`) : Google LLC traite l'adresse et le
+/// contenu de chaque message transactionnel. Source matérialisée dans
+/// `docs/external/google-dpf.md`. Les deux sont signalés au write-back.
 export default async function PolitiqueConfidentialitePage() {
   const societe = await lireIdentiteSociete();
   const contact = societe.email;
@@ -133,7 +143,7 @@ export default async function PolitiqueConfidentialitePage() {
       <SectionLegale id="destinataires" titre="Destinataires">
         <p>
           Vos données ne sont ni vendues, ni louées, ni transmises à des fins
-          publicitaires. Trois prestataires seulement interviennent.
+          publicitaires. Quatre prestataires seulement interviennent.
         </p>
         <ul className="list-inside list-disc space-y-2">
           <li>
@@ -156,6 +166,15 @@ export default async function PolitiqueConfidentialitePage() {
             contenu du message lui sont donc confiés. Google LLC déclare adhérer
             au cadre de protection des données UE / États-Unis (Data Privacy
             Framework), qui encadre ce transfert.
+          </li>
+          <li>
+            <strong className="text-foreground">Google Maps</strong> (Google
+            LLC, États-Unis) affiche au technicien la carte de sa tournée du
+            jour : les coordonnées géographiques de l&apos;adresse
+            d&apos;intervention sont chargées depuis ses serveurs. Cet affichage
+            n&apos;a lieu que sur l&apos;écran du technicien, jamais sur le
+            vôtre, et repose sur le même cadre de protection des données UE /
+            États-Unis que ci-dessus.
           </li>
         </ul>
       </SectionLegale>

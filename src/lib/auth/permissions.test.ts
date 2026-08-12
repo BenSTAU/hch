@@ -18,8 +18,14 @@ const forbidden = vi.fn(() => {
 });
 vi.mock("next/navigation", () => ({ forbidden: () => forbidden() }));
 
-const { hasRole, requireAdmin, ROLE_ADMIN, ROLE_CLIENT, ROLE_TECH } =
-  await import("./permissions");
+const {
+  hasRole,
+  requireAdmin,
+  requireTech,
+  ROLE_ADMIN,
+  ROLE_CLIENT,
+  ROLE_TECH,
+} = await import("./permissions");
 
 const ADMIN = {
   id: "admin-1",
@@ -91,6 +97,69 @@ describe("requireAdmin", () => {
     getCurrentUser.mockRejectedValue(new Error("NEXT_REDIRECT"));
 
     await expect(requireAdmin()).rejects.toThrow("NEXT_REDIRECT");
+    expect(forbidden).not.toHaveBeenCalled();
+  });
+});
+
+describe("requireTech", () => {
+  const TECH = { ...ADMIN, roles: [ROLE_TECH] };
+
+  it("laisse passer un technicien et renvoie son DTO", async () => {
+    getCurrentUser.mockResolvedValue(TECH);
+
+    await expect(requireTech()).resolves.toEqual(TECH);
+    expect(forbidden).not.toHaveBeenCalled();
+  });
+
+  it("refuse un client par un 403", async () => {
+    // C'est le refus qui protège le carnet d'adresses : la tournée expose le
+    // nom et le TÉLÉPHONE de clients tiers (cadrage plancher V2, D6).
+    getCurrentUser.mockResolvedValue({ ...ADMIN, roles: [ROLE_CLIENT] });
+
+    await expect(requireTech()).rejects.toThrow();
+    expect(forbidden).toHaveBeenCalledOnce();
+  });
+
+  it("refuse un administrateur qui ne porte pas ROLE_TECH", async () => {
+    // Pas une interprétation : `US-INTERVENTIONS-LISTER-TECH-DU-JOUR` §Cas
+    // d'erreur écrit « client OU ADMIN SANS RÔLE TECH → 403 ». La vision
+    // transverse de l'administration est une autre US, un autre écran.
+    getCurrentUser.mockResolvedValue({ ...ADMIN, roles: [ROLE_ADMIN] });
+
+    await expect(requireTech()).rejects.toThrow();
+    expect(forbidden).toHaveBeenCalledOnce();
+  });
+
+  it("laisse passer un compte qui porte les deux rôles", async () => {
+    getCurrentUser.mockResolvedValue({
+      ...ADMIN,
+      roles: [ROLE_ADMIN, ROLE_TECH],
+    });
+
+    await expect(requireTech()).resolves.toBeDefined();
+    expect(forbidden).not.toHaveBeenCalled();
+  });
+
+  it("refuse un compte sans aucun rôle", async () => {
+    getCurrentUser.mockResolvedValue({ ...ADMIN, roles: [] });
+
+    await expect(requireTech()).rejects.toThrow();
+    expect(forbidden).toHaveBeenCalledOnce();
+  });
+
+  it("compare exactement — `ROLE_TECHNICIEN` n'est pas `ROLE_TECH`", async () => {
+    getCurrentUser.mockResolvedValue({ ...ADMIN, roles: ["ROLE_TECHNICIEN"] });
+
+    await expect(requireTech()).rejects.toThrow();
+    expect(forbidden).toHaveBeenCalledOnce();
+  });
+
+  it("laisse la DAL décider quand il n'y a pas de session", async () => {
+    // Même distinction que pour `requireAdmin` : redirection vers /connexion,
+    // pas 403. Un visiteur anonyme peut réparer sa situation en se connectant.
+    getCurrentUser.mockRejectedValue(new Error("NEXT_REDIRECT"));
+
+    await expect(requireTech()).rejects.toThrow("NEXT_REDIRECT");
     expect(forbidden).not.toHaveBeenCalled();
   });
 });

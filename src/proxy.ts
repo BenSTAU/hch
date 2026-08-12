@@ -68,9 +68,21 @@ export const config = {
   // suppression de compte exige une session, et un visiteur anonyme qui suit le
   // lien de la politique de confidentialité doit atterrir sur `/connexion` avec
   // son `next=`, pas sur un formulaire qui échouera au premier envoi.
+  // `/interventions` ajouté par T-V2-01, et le trou qu'il referme mérite d'être
+  // nommé : `/interventions/du-jour` est la destination post-connexion du
+  // technicien depuis [[module-1-utilisateurs]] §250, et elle n'était couverte
+  // par AUCUNE des cinq entrées ci-dessous. Un technicien sans cookie y
+  // arrivait sans redirection ni `next=`, et n'obtenait le refus qu'au rendu de
+  // la page.
+  //
+  // `/tech/:path*` et `/client/:path*` restent, bien que plus aucune route ne
+  // vive sous ces préfixes depuis la suppression des deux dossiers vides : ils
+  // ne coûtent rien et referment la porte si une route y réapparaissait par
+  // inadvertance.
   matcher: [
     "/admin/:path*",
     "/client/:path*",
+    "/interventions/:path*",
     "/mes-interventions/:path*",
     "/mon-compte/:path*",
     "/tech/:path*",

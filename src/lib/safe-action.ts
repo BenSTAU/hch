@@ -3,7 +3,7 @@ import "server-only";
 import { createSafeActionClient } from "next-safe-action";
 
 import { getCurrentUser } from "@/lib/auth/dal";
-import { requireAdmin } from "@/lib/auth/permissions";
+import { requireAdmin, requireTech } from "@/lib/auth/permissions";
 
 /// Client d'action de base. Rappel d'ADR-006 v2 : **chaque Server Action
 /// exportée est un endpoint POST public** — la page qui protège ne protège pas
@@ -26,6 +26,20 @@ export const actionClient = createSafeActionClient({
 export const adminActionClient = actionClient.use(async ({ next }) => {
   const admin = await requireAdmin();
   return next({ ctx: { admin } });
+});
+
+/// Client des actions réservées au technicien — la tournée du jour, et la
+/// machine à états de l'intervention qui suivra.
+///
+/// Même position en middleware et même motif que pour l'administration. Ce qui
+/// le rend nécessaire est écrit dans `src/proxy.ts` : le matcher **laisse
+/// délibérément passer les requêtes portant `Next-Action`**, parce que
+/// rediriger un POST d'action casse le client. Une Server Action exportée est
+/// donc un endpoint POST public qu'aucune route ne protège — la garde de la
+/// page ne couvre pas la `queryFn` qui repolle toutes les 30 secondes.
+export const techActionClient = actionClient.use(async ({ next }) => {
+  const tech = await requireTech();
+  return next({ ctx: { tech } });
 });
 
 /// Client des actions qui exigent une session, **sans exigence de rôle** — la

@@ -146,12 +146,22 @@ vi.mock("@/lib/db/queries/adresses", () => ({
   creerAdresse: () => Promise.resolve(77),
 }));
 
+// La tournee lit `addresses.location`, colonne `Unsupported` que Prisma masque :
+// elle sort d'une SECONDE requete, en SQL brut. Doublee ici parce que ce fichier
+// ne monte aucune base - ce qu'elle rend est deja teste par le fait qu'un point
+// absent produit `point: null`.
+const lirePointsAdresses = vi.fn();
+vi.mock("@/lib/geo/postgis", () => ({
+  lirePointsAdresses: (ids: readonly number[]) => lirePointsAdresses(ids),
+}));
+
 const {
   abregerNom,
   annulerInterventionDuClient,
   compterInterventionsClient,
   listerInterventionsAVenir,
   listerInterventionsPassees,
+  listerTourneeDuJour,
   reserverIntervention,
   TAILLE_PAGE_PASSEES,
 } = await import("./interventions");
@@ -932,5 +942,296 @@ describe("annulerInterventionDuClient", () => {
       adresse: "12 rue de la Republique, 69002 Lyon",
       motif: MOTIF,
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// `listerTourneeDuJour` - T-V2-01, ecran T1.
+// ─────────────────────────────────────────────────────────────────────────
+
+const TECH = "22222222-2222-4222-8222-222222222222";
+
+/// Une ligne telle que Prisma la rend sous `SELECTION_TECH`.
+function ligneTournee(surcharge: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    status: "PLANNED",
+    appointmentAt: new Date("2026-08-13T08:00:00.000Z"),
+    durationSnapshot: 60,
+    service: { label: "Revision complete" },
+    client: {
+      firstname: "Sophie",
+      lastname: "Dumas",
+      phone: "+33612345678",
+    },
+    address: {
+      id: 77,
+      label: null,
+      street: "12 rue de la Republique",
+      city: { zipCode: "69002", city: "Lyon" },
+    },
+    products: [],
+    ...surcharge,
+  };
+}
+
+describe("listerTourneeDuJour - les bornes de la journee", () => {
+  beforeEach(() => {
+    interventionFindMany.mockResolvedValue([]);
+    lirePointsAdresses.mockResolvedValue(new Map());
+  });
+
+  it("borne minuit a minuit en heure de PARIS, pas en UTC", async () => {
+    await listerTourneeDuJour({
+      techId: TECH,
+      jour: { annee: 2026, mois: 8, jour: 13 },
+    });
+
+    // Le 13 aout, Paris est en CEST (+2) : minuit local est 22 h UTC la veille.
+    // Des bornes construites en UTC - `2026-08-13T00:00:00.000Z` - decaleraient
+    // la journee de deux heures, donc rateraient les rendez-vous de 00 h a 02 h
+    // et attraperaient ceux du lendemain matin. C'est exactement le defaut du
+    // filtre de l'ecran C10, releve le 2026-08-11.
+    expect(interventionFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          techId: TECH,
+          appointmentAt: {
+            gte: new Date("2026-08-12T22:00:00.000Z"),
+            lt: new Date("2026-08-13T22:00:00.000Z"),
+          },
+        }),
+      }),
+    );
+  });
+
+  it("couvre les 25 heures de la nuit ou l'heure d'hiver revient", async () => {
+    // Le 25 octobre 2026, dernier dimanche du mois : 03 h CEST redevient 02 h
+    // CET, la journee civile dure 25 heures. Une borne haute calculee en
+    // « debut + 24 h » s'arreterait a 22 h UTC et perdrait la derniere heure -
+    // un rendez-vous de 23 h disparaitrait de la tournee du technicien qui doit
+    // s'y rendre. `ajouterJours` raisonne en jours CIVILS, pas en 24 h.
+    await listerTourneeDuJour({
+      techId: TECH,
+      jour: { annee: 2026, mois: 10, jour: 25 },
+    });
+
+    const { where } = interventionFindMany.mock.calls[0]![0] as {
+      where: { appointmentAt: { gte: Date; lt: Date } };
+    };
+
+    expect(where.appointmentAt.gte).toEqual(
+      new Date("2026-10-24T22:00:00.000Z"),
+    );
+    expect(where.appointmentAt.lt).toEqual(
+      new Date("2026-10-25T23:00:00.000Z"),
+    );
+
+    const heures =
+      (where.appointmentAt.lt.getTime() - where.appointmentAt.gte.getTime()) /
+      3_600_000;
+    expect(heures).toBe(25);
+  });
+
+  it("borne en exclusif a minuit du lendemain, jamais en inclusif", async () => {
+    await listerTourneeDuJour({
+      techId: TECH,
+      jour: { annee: 2026, mois: 8, jour: 13 },
+    });
+
+    const { where } = interventionFindMany.mock.calls[0]![0] as {
+      where: { appointmentAt: Record<string, unknown> };
+    };
+
+    // `lt` et non `lte` : minuit pile appartient au jour SUIVANT, et un `lte`
+    // ferait apparaitre le premier rendez-vous de demain en fin de tournee.
+    expect(where.appointmentAt).toHaveProperty("lt");
+    expect(where.appointmentAt).not.toHaveProperty("lte");
+  });
+});
+
+describe("listerTourneeDuJour - le jour, jamais le statut", () => {
+  beforeEach(() => {
+    lirePointsAdresses.mockResolvedValue(new Map());
+  });
+
+  it("n'applique AUCUN filtre de statut", async () => {
+    interventionFindMany.mockResolvedValue([]);
+
+    await listerTourneeDuJour({
+      techId: TECH,
+      jour: { annee: 2026, mois: 8, jour: 13 },
+    });
+
+    const { where } = interventionFindMany.mock.calls[0]![0] as {
+      where: Record<string, unknown>;
+    };
+
+    // ⚠️ La regle est l'INVERSE de l'onglet « A venir » du client, qui retient
+    // `PLANNED` sans borne de date. Recopier le filtre du voisin par symetrie
+    // ferait disparaitre de la tournee tout ce que le technicien vient de
+    // terminer, alors que la SPEC exige que les statuts terminaux restent
+    // affiches en fin de journee pour la tracabilite.
+    expect(where).not.toHaveProperty("status");
+    expect(Object.keys(where).sort()).toEqual(["appointmentAt", "techId"]);
+  });
+
+  it("rend les quatre statuts, y compris les terminaux", async () => {
+    interventionFindMany.mockResolvedValue([
+      ligneTournee({ id: 1, status: "DONE" }),
+      ligneTournee({ id: 2, status: "IN_PROGRESS" }),
+      ligneTournee({ id: 3, status: "PLANNED" }),
+      ligneTournee({ id: 4, status: "CANCELLED" }),
+    ]);
+
+    const tournee = await listerTourneeDuJour({
+      techId: TECH,
+      jour: { annee: 2026, mois: 8, jour: 13 },
+    });
+
+    expect(tournee.map((ligne) => ligne.status)).toEqual([
+      "DONE",
+      "IN_PROGRESS",
+      "PLANNED",
+      "CANCELLED",
+    ]);
+  });
+
+  it("trie chronologiquement", async () => {
+    interventionFindMany.mockResolvedValue([]);
+
+    await listerTourneeDuJour({
+      techId: TECH,
+      jour: { annee: 2026, mois: 8, jour: 13 },
+    });
+
+    expect(interventionFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { appointmentAt: "asc" } }),
+    );
+  });
+});
+
+describe("listerTourneeDuJour - la projection", () => {
+  beforeEach(() => {
+    lirePointsAdresses.mockResolvedValue(
+      new Map([[77, { lon: 4.83, lat: 45.76 }]]),
+    );
+  });
+
+  it("rend le nom COMPLET du client, jamais abrege", async () => {
+    interventionFindMany.mockResolvedValue([ligneTournee()]);
+
+    const [ligne] = await listerTourneeDuJour({
+      techId: TECH,
+      jour: { annee: 2026, mois: 8, jour: 13 },
+    });
+
+    // `abregerNom` abrege le TECHNICIEN pour le client, au titre de la
+    // minimisation. Le symetrique masquerait le nom du client a la personne qui
+    // va sonner chez lui (Constitution §1.1). La SPEC exige « client (nom ET
+    // telephone) ».
+    expect(ligne?.client.nom).toBe("Sophie Dumas");
+    expect(ligne?.client.nom).not.toBe(abregerNom("Sophie", "Dumas"));
+    expect(ligne?.client.telephone).toBe("+33612345678");
+  });
+
+  it("rend `appointmentAt` en chaine ISO, pas en Date", async () => {
+    interventionFindMany.mockResolvedValue([ligneTournee()]);
+
+    const [ligne] = await listerTourneeDuJour({
+      techId: TECH,
+      jour: { annee: 2026, mois: 8, jour: 13 },
+    });
+
+    // Ce DTO traverse la frontiere par DEUX chemins - `initialData` au rendu et
+    // le retour de la Server Action au polling - et les deux doivent porter la
+    // meme forme. Une `Date` d'un cote et une chaine de l'autre casserait le
+    // formatage apres 30 secondes d'affichage correct.
+    expect(ligne?.appointmentAt).toBe("2026-08-13T08:00:00.000Z");
+    expect(typeof ligne?.appointmentAt).toBe("string");
+  });
+
+  it("survit a un client pseudonymise - telephone absent, point absent", async () => {
+    // Le droit a l'oubli remet `users.phone` a NULL et `addresses.location` a
+    // NULL (queries/users.ts:143 et :182), mais l'intervention SURVIT :
+    // Constitution §4.1 interdit la FK cassee. La ligne doit donc se rendre.
+    lirePointsAdresses.mockResolvedValue(new Map());
+    interventionFindMany.mockResolvedValue([
+      ligneTournee({
+        client: {
+          firstname: "Utilisateur",
+          lastname: "Anonymise",
+          phone: null,
+        },
+      }),
+    ]);
+
+    const [ligne] = await listerTourneeDuJour({
+      techId: TECH,
+      jour: { annee: 2026, mois: 8, jour: 13 },
+    });
+
+    expect(ligne?.client.telephone).toBeNull();
+    expect(ligne?.point).toBeNull();
+    expect(ligne?.client.nom).toBe("Utilisateur Anonymise");
+  });
+
+  it("attache le point GPS de l'adresse quand il existe", async () => {
+    interventionFindMany.mockResolvedValue([ligneTournee()]);
+
+    const [ligne] = await listerTourneeDuJour({
+      techId: TECH,
+      jour: { annee: 2026, mois: 8, jour: 13 },
+    });
+
+    expect(ligne?.point).toEqual({ lon: 4.83, lat: 45.76 });
+    expect(lirePointsAdresses).toHaveBeenCalledWith([77]);
+  });
+
+  it("n'envoie AUCUN prix au navigateur du technicien", async () => {
+    interventionFindMany.mockResolvedValue([
+      ligneTournee({
+        products: [
+          {
+            productId: 2,
+            quantity: 1,
+            product: { label: "Antivol en U" },
+          },
+        ],
+      }),
+    ]);
+
+    const [ligne] = await listerTourneeDuJour({
+      techId: TECH,
+      jour: { annee: 2026, mois: 8, jour: 13 },
+    });
+
+    // La SPEC n'enumere que « produits additionnels attaches » sur les lignes de
+    // la tournee, et la maquette T1 n'affiche qu'un libelle. Le total arrivera
+    // avec l'encaissement, en T-V2-03.
+    expect(ligne?.produits).toEqual([
+      { productId: 2, label: "Antivol en U", quantity: 1 },
+    ]);
+
+    // Aucun MONTANT dans le DTO, a aucune profondeur. `durationSnapshot`, lui,
+    // y est par exigence - la SPEC demande « forfait (nom ET duree) » - donc
+    // chercher « Snapshot » serait un oracle faux : il echouerait sur un champ
+    // que la SPEC impose.
+    const serialise = JSON.stringify(ligne);
+    for (const interdit of ["priceSnapshot", "unitPriceSnapshot", "total"]) {
+      expect(serialise).not.toContain(interdit);
+    }
+  });
+
+  it("rend une liste vide sans interroger les points", async () => {
+    interventionFindMany.mockResolvedValue([]);
+
+    const tournee = await listerTourneeDuJour({
+      techId: TECH,
+      jour: { annee: 2026, mois: 8, jour: 13 },
+    });
+
+    expect(tournee).toEqual([]);
+    expect(lirePointsAdresses).toHaveBeenCalledWith([]);
   });
 });

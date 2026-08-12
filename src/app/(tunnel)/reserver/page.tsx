@@ -4,8 +4,8 @@ import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { getOptionalUser } from "@/lib/auth/dal";
 import { listForfaitsPublics } from "@/lib/db/queries/forfaits";
 import { listProduitsVendables } from "@/lib/db/queries/produits";
+import { QueryProvider } from "@/components/query-provider";
 
-import { QueryProvider } from "./_components/query-provider";
 import { TunnelReservation } from "./_components/tunnel-reservation";
 
 export const metadata: Metadata = {

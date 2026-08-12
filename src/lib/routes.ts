@@ -25,6 +25,18 @@ export const CHEMIN_ESPACE_CLIENT = "/mes-interventions/a-venir";
 /// Historique — `US-INTERVENTIONS-LISTER-CLIENT-PASSEES`, écran C10.
 export const CHEMIN_ESPACE_CLIENT_PASSEES = "/mes-interventions/passees";
 
+/// Tournée du jour du technicien — `US-INTERVENTIONS-LISTER-TECH-DU-JOUR`,
+/// écran T1. Destination post-connexion du `ROLE_TECH`
+/// ([[module-1-utilisateurs]] §250), et fin du provisoire posé par T-V3-03.
+///
+/// **Pas sous `/tech/`**, alors que `src/proxy.ts` matche déjà ce préfixe :
+/// c'est le chemin que la SPEC nomme, les routes sont en français, et le
+/// précédent est `/mes-interventions` côté client (T-V3-10). Les deux dossiers
+/// `(app)/tech/` et `(app)/client/` étaient restés vides derrière un découpage
+/// par rôle abandonné ; ils disparaissent avec cette tâche. Cadrage du plancher
+/// V2, D2.
+export const CHEMIN_TOURNEE_DU_JOUR = "/interventions/du-jour";
+
 /// Racine de l'espace « compte » du client, tranchée par Benjamin le
 /// 2026-08-11 en ouvrant T-V3-12.
 ///

@@ -38,3 +38,30 @@ export async function requireAdmin(): Promise<CurrentUser> {
   if (!hasRole(user.roles, ROLE_ADMIN)) forbidden();
   return user;
 }
+
+/// Garde de rôle de l'espace technicien — symétrique exacte de `requireAdmin`.
+///
+/// Ce module ne portait que la garde admin jusqu'à T-V2-01, et l'espace client
+/// n'en a délibérément aucune : y être connecté suffit, la page filtre sur
+/// `clientId = user.id`. Le technicien est le premier rôle depuis l'admin à
+/// exiger un contrôle, parce que sa tournée expose le **nom et le téléphone de
+/// clients tiers** (cadrage du plancher V2, D6) — un client qui atteindrait
+/// cette page lirait le carnet d'adresses d'un autre.
+///
+/// ⚠️ **Un administrateur sans `ROLE_TECH` reçoit 403**, et ce n'est pas une
+/// interprétation : `US-INTERVENTIONS-LISTER-TECH-DU-JOUR` §Cas d'erreur écrit
+/// « Given je ne suis pas technicien (client **ou admin sans rôle tech**) …
+/// Then je reçois 403 ». La vision transverse de l'administration est
+/// `US-INTERVENTIONS-LISTER-ADMIN`, un autre écran. Un compte portant les deux
+/// rôles passe, comme n'importe quel technicien — la tournée est de toute façon
+/// bornée à `techId = user.id`.
+///
+/// `forbidden()` fonctionne aussi en Server Action
+/// (node_modules/next/dist/docs/01-app/03-api-reference/04-functions/forbidden.md:235-237),
+/// ce qui permet à `techActionClient` de réutiliser cette garde telle quelle
+/// plutôt que d'en écrire une seconde qui pourrait diverger.
+export async function requireTech(): Promise<CurrentUser> {
+  const user = await getCurrentUser();
+  if (!hasRole(user.roles, ROLE_TECH)) forbidden();
+  return user;
+}
