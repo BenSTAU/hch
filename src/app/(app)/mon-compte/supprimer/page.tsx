@@ -73,13 +73,30 @@ export default async function SupprimerComptePage() {
 
               Seule modification : le cadratin du vault devient deux-points.
               CLAUDE.md §Typographie n'accorde aucune exception à un libellé
-              repris mot pour mot d'une source. Signalé au write-back. */}
+              repris mot pour mot d'une source. Signalé au write-back.
+
+              ⚠️ **Deux ajouts au verbatim, 2026-08-12.** PLAN S2 §T6 impose
+              d'informer que les enregistrements conservés restent
+              ré-identifiables par croisement, et S4 §4.4 ne le disait pas : les
+              deux sections se contredisaient depuis le 2026-07-29, S4 a été
+              amendé en faveur de S2. Ce n'est pas une nuance de rédaction, c'est
+              la qualification juridique de l'opération, celle que ce dépôt
+              documente déjà en tête de `src/lib/db/queries/users.ts` pour
+              expliquer pourquoi on écrit « pseudonymisation » et non
+              « anonymisation ». L'interface était en retard sur son propre code.
+
+              Le second ajout est l'exception de la commune : une énumération qui
+              en omet une se lit comme exhaustive. */}
           <p className="text-sm text-destructive">
             Votre compte sera pseudonymisé : vos informations personnelles (nom,
             email, téléphone, adresses) seront remplacées par des valeurs
-            anonymes. Vos factures et interventions passées resteront conservées
-            avec ces identifiants anonymes, pour respecter nos obligations
-            comptables (10 ans). Cette action est irréversible.
+            anonymes, à l&apos;exception de la commune de vos adresses, qui est
+            conservée et ne désigne personne à elle seule. Vos factures et
+            interventions passées resteront conservées avec ces identifiants
+            anonymes, pour respecter nos obligations comptables (10 ans). Ces
+            enregistrements permettent encore de vous identifier par
+            recoupement, et la loi nous impose de les conserver. Cette action
+            est irréversible.
           </p>
         </div>
       </section>
@@ -128,6 +145,10 @@ export default async function SupprimerComptePage() {
             <li>Vos interventions passées et leur montant</li>
             <li>Les photos attachées à ces interventions</li>
             <li>Le journal des actions sensibles sur votre compte</li>
+            {/* La colonne d'en face annonce l'effacement des adresses : sans
+                cette ligne, les deux colonnes se contrediraient sur l'écran qui
+                sert à décider. */}
+            <li>La commune de vos adresses d&apos;intervention</li>
           </ul>
         </section>
       </div>

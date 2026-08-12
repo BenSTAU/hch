@@ -185,6 +185,50 @@ test.describe("Politique de confidentialité - ce qu'elle déclare", () => {
     // exposerait à un rappel CNIL ». L'opération est une pseudonymisation, et
     // c'est ce mot-là qui doit apparaître.
     await expect(page.getByText(/pseudonymis/i).first()).toBeVisible();
+
+    // ⚠️ **La moitié manquante de cet oracle**, relevée par l'agent testeur en
+    // PR #39 : il vérifiait la PRÉSENCE de « pseudonymis », jamais l'ABSENCE
+    // d'une promesse de disparition, alors que son nom promet l'inverse. Les
+    // trois formules ci-dessous sont exactement celles que S4 §4.4 interdit.
+    const droits = page.getByRole("region", { name: "Vos droits" });
+    await expect(droits).not.toContainText(/disparaî/i);
+    await expect(droits).not.toContainText(/définitivement effacé/i);
+    await expect(droits).not.toContainText(/pour de bon/i);
+  });
+
+  test("déclare que les données conservées restent ré-identifiables", async ({
+    page,
+  }) => {
+    await page.goto("/politique-confidentialite");
+
+    // PLAN S2 §T6 : le maintien des clés étrangères vers `interventions` et
+    // `payments` rend la personne identifiable par recoupement, et c'est ce qui
+    // fait de l'opération une PSEUDONYMISATION et non une anonymisation. S4
+    // §4.4 ne le disait pas, les deux sections du PLAN se contredisaient depuis
+    // le 2026-07-29, et le produit se taisait.
+    //
+    // L'assertion porte sur la phrase elle-même : elle échoue si on la retire,
+    // ce que ne faisait aucun oracle de la PR #39.
+    const droits = page.getByRole("region", { name: "Vos droits" });
+    await expect(droits).toContainText(/identifier par recoupement/i);
+    // La ré-identification doit être annoncée POSSIBLE, pas hypothétique : une
+    // formule qui l'adoucirait viderait la déclaration de son objet.
+    await expect(droits).not.toContainText(
+      /théoriquement|improbable|peu probable/i,
+    );
+  });
+
+  test("déclare que la commune des adresses est conservée", async ({
+    page,
+  }) => {
+    await page.goto("/politique-confidentialite");
+
+    // `addresses.city_id` pointe vers une table partagée que la pseudonymisation
+    // ne touche pas, volontairement. L'énumération de ce qui est effacé se lit
+    // comme exhaustive tant que l'exception n'y figure pas.
+    await expect(
+      page.getByRole("region", { name: "Vos droits" }),
+    ).toContainText(/commune/i);
   });
 });
 
