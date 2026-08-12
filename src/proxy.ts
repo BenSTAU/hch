@@ -18,26 +18,14 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 🐛 **Une Server Action n'est pas une navigation, et la rediriger casse le
-  // client.** Une action se poste sur l'URL COURANTE : sans cookie, la
-  // redirection ci-dessous répondait à un POST `Next-Action` par une navigation
-  // vers `/connexion`, que React ne sait pas interpréter — « An unexpected
-  // response was received from the server », écran d'erreur au lieu de l'action
-  // demandée.
+  // ⚠️ **Une Server Action se poste sur l'URL courante : la rediriger casse le
+  // client**, React ne sachant pas interpréter une navigation en réponse à un
+  // POST `Next-Action`.
   //
-  // Le cas se produit dès qu'un cookie expire ou qu'un second onglet ferme la
-  // session, et il touchait déjà `/admin/parametres` sans que rien ne le
-  // signale. Trouvé par l'E2E « reste sans erreur sur une session déjà close »
-  // (T-V3-10), sur la déconnexion : `US-COMPTE-DECONNECTER` §Cas d'erreur exige
-  // un comportement idempotent, pas un écran d'erreur.
-  //
-  // **Rien n'est ouvert en laissant passer.** Ce garde n'a jamais protégé une
-  // Server Action : elles sont exportées, donc joignables depuis n'importe
-  // quelle route — y compris une route publique que ce matcher ne couvre pas
-  // (ADR-006 v2, « chaque Server Action exportée est un endpoint POST
-  // public »). Leur vrai rempart est `authActionClient`, qui passe par le DAL.
-  // Ce qui est retiré ici est un obstacle qui ne gênait que les appelants
-  // légitimes.
+  // Laisser passer n'ouvre rien. Ce garde n'a jamais protégé une Server
+  // Action : elles sont exportées, donc joignables depuis n'importe quelle
+  // route, y compris hors de ce matcher (ADR-006 v2). Leur rempart est
+  // `authActionClient`, qui passe par le DAL.
   if (request.headers.has("Next-Action")) {
     return NextResponse.next();
   }
@@ -53,32 +41,16 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Seules les routes de l'espace connecté. La vitrine, la connexion et
-  // `/api/health` doivent rester joignables sans cookie — le healthcheck du
-  // conteneur n'en présente aucun, et une redirection le ferait échouer.
+  // Seules les routes de l'espace connecté.
   //
-  // `/mes-interventions` ajouté par T-V3-10. Il ne vit pas sous `/client/`
-  // parce que les routes sont en français (CLAUDE.md §Folder structure) et que
-  // c'est le chemin que la SPEC nomme, mais il est protégé au même titre : les
-  // deux US exigent « redirection vers login avec `next=/mes-interventions/…` »
-  // en l'absence de session, et c'est ce `next=` que la ligne ci-dessous
-  // fabrique.
-  // `/mon-compte` ajouté par T-V3-12. Même motif que `/mes-interventions` :
-  // routes en français, hors `/client/`, mais protégées au même titre. La
-  // suppression de compte exige une session, et un visiteur anonyme qui suit le
-  // lien de la politique de confidentialité doit atterrir sur `/connexion` avec
-  // son `next=`, pas sur un formulaire qui échouera au premier envoi.
-  // `/interventions` ajouté par T-V2-01, et le trou qu'il referme mérite d'être
-  // nommé : `/interventions/du-jour` est la destination post-connexion du
-  // technicien depuis [[module-1-utilisateurs]] §250, et elle n'était couverte
-  // par AUCUNE des cinq entrées ci-dessous. Un technicien sans cookie y
-  // arrivait sans redirection ni `next=`, et n'obtenait le refus qu'au rendu de
-  // la page.
+  // ⚠️ **La vitrine, la connexion et `/api/health` doivent rester hors de cette
+  // liste** : le healthcheck du conteneur ne présente aucun cookie, et une
+  // redirection le ferait échouer, donc rollback d'un déploiement pourtant sain.
   //
-  // `/tech/:path*` et `/client/:path*` restent, bien que plus aucune route ne
-  // vive sous ces préfixes depuis la suppression des deux dossiers vides : ils
-  // ne coûtent rien et referment la porte si une route y réapparaissait par
-  // inadvertance.
+  // `/tech/` et `/client/` n'hébergent plus aucune route : entrées mortes
+  // assumées, elles referment la porte si l'une y réapparaissait.
+  //
+  // Historique des ajouts, tâche par tâche : TASKS.
   matcher: [
     "/admin/:path*",
     "/client/:path*",
