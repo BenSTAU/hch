@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Eye, EyeOff } from "lucide-react";
 import { useActionState, useEffect, useRef, useState } from "react";
 
 import { loginFormAction, type LoginFormState } from "@/lib/actions/auth/login";
+import { BasculeMotDePasse } from "@/components/features/auth/bascule-mot-de-passe";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -75,28 +75,16 @@ export function LoginForm({ next }: { next?: string | undefined }) {
             className="pr-11"
             required
           />
-          {/* Bascule d'affichage de la maquette C6, conservée au portage : sur
-              mobile, une faute de frappe invisible est le premier motif
-              d'échec de connexion.
-
-              `type="button"` explicite - un `<button>` sans type vaut
-              `submit`, et révéler son mot de passe enverrait le formulaire.
-              Sans JavaScript il ne fait rien, ce qui est le bon défaut : le
-              champ reste masqué. */}
-          <button
-            type="button"
-            onClick={() => setVisible((etat) => !etat)}
-            aria-label={
-              visible ? "Masquer le mot de passe" : "Afficher le mot de passe"
-            }
-            className="absolute inset-y-0 right-0 flex items-center rounded-xl px-3 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            {visible ? (
-              <EyeOff aria-hidden="true" className="size-4" />
-            ) : (
-              <Eye aria-hidden="true" className="size-4" />
-            )}
-          </button>
+          {/* Bascule de la maquette C6, conservée au portage : sur mobile, une
+              faute de frappe invisible est le premier motif d'échec. */}
+          <BasculeMotDePasse
+            visible={visible}
+            onBascule={() => {
+              setVisible((etat) => !etat);
+            }}
+            controle="password"
+            className="rounded-xl"
+          />
         </div>
       </div>
 
