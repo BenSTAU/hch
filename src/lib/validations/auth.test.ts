@@ -21,8 +21,18 @@ describe("LOGIN_REFUSED_MESSAGE", () => {
     // US-COMPTE-CONNECTER §Cas d'erreur, module-1-utilisateurs.md:255. Le
     // message est un élément de spécification, pas un détail de rédaction :
     // c'est lui qui rend les quatre causes de refus indiscernables.
+    //
+    // ⚠️ **Oracle mis à jour le 2026-08-12 - règle du test rouge, cas 3.** Le
+    // cadratin devient un deux-points, par la règle typographique du
+    // 2026-08-10 dont le MUST couvre explicitement « la copie produit ». Ce que
+    // ce test protège est **l'indiscernabilité des quatre causes de refus**, et
+    // elle est inchangée : c'est la ponctuation qui bouge, pas le message.
+    //
+    // La SPEC porte encore le cadratin. CLAUDE.md §Typographie tranche que
+    // « le cadratin de la SPEC ne voyage pas » et que c'est le write-back qui
+    // aligne l'amont, pas le code. Signalé en PR.
     expect(LOGIN_REFUSED_MESSAGE).toBe(
-      "Identifiants invalides ou compte non activé — vérifiez votre email d'activation si vous venez de créer un compte",
+      "Identifiants invalides ou compte non activé : vérifiez votre email d'activation si vous venez de créer un compte",
     );
   });
 

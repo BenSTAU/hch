@@ -5,7 +5,7 @@ import { z } from "zod";
 /// Toute variation rouvrirait l'énumération des comptes (Constitution §4.2,
 /// SPEC §6.1, US-COMPTE-CONNECTER §Cas d'erreur).
 export const LOGIN_REFUSED_MESSAGE =
-  "Identifiants invalides ou compte non activé — vérifiez votre email d'activation si vous venez de créer un compte";
+  "Identifiants invalides ou compte non activé : vérifiez votre email d'activation si vous venez de créer un compte";
 
 /// `US-COMPTE-CONNECTER` §Cas d'erreur. La durée annoncée est la **constante**
 /// du verrou, pas le délai restant : elle est identique pour tout le monde et
@@ -137,7 +137,7 @@ export const signupSchema = z
       .transform(normaliserTelephoneFr)
       .refine(
         (valeur) => valeur === undefined || /^\+[1-9][0-9]{7,14}$/.test(valeur),
-        "Téléphone invalide — exemple : 06 12 34 56 78",
+        "Téléphone invalide (exemple : 06 12 34 56 78)",
       )
       .optional(),
     /// Destination de retour après activation, posée par le tunnel de

@@ -8,7 +8,7 @@ import sharp from "sharp";
 
 import { FORMATS_ACCEPTES, MAX_OCTETS } from "./quotas";
 
-/// Réception et stockage des photos du tunnel — `US-INTERVENTION-PHOTOS-AJOUTER`.
+/// Réception et stockage des photos du tunnel - `US-INTERVENTION-PHOTOS-AJOUTER`.
 ///
 /// **Le strip EXIF n'est pas une option de confort.** Une photo de vélo est
 /// prise au domicile du client, elle porte donc les coordonnées GPS de ce
@@ -24,8 +24,8 @@ import { FORMATS_ACCEPTES, MAX_OCTETS } from "./quotas";
 ///
 /// La méthode retenue **ré-encode** au lieu de retrancher : l'image entrante est
 /// décodée puis ré-écrite en WebP par `sharp`, qui n'émet aucune métadonnée sauf
-/// demande explicite. L'EXIF disparaît par construction et non par soustraction
-/// — il n'y a pas de segment qu'on aurait pu oublier.
+/// demande explicite. L'EXIF disparaît par construction et non par
+/// soustraction : il n'y a pas de segment qu'on aurait pu oublier.
 ///
 /// Le même geste règle le HEIC, format par défaut des iPhone qu'aucun navigateur
 /// ne sait afficher : il entre en HEIF, il ressort en WebP.
@@ -39,12 +39,12 @@ export { MAX_OCTETS, MAX_PHOTOS } from "./quotas";
 /// annonce à l'écran. Une seule source : deux listes finiraient par diverger, et
 /// c'est la plus permissive qui déciderait.
 ///
-/// Le type déclaré par le navigateur ne fait pas foi — il est trivial à
+/// Le type déclaré par le navigateur ne fait pas foi : il est trivial à
 /// falsifier. Il sert à écarter tôt ce qui n'a pas à monter ; c'est le décodage
 /// par `sharp` qui tranche réellement.
 const TYPES_ACCEPTES = FORMATS_ACCEPTES.split(",");
 
-/// Dossier de dépôt. `./uploads` en local, `/app/uploads` dans le conteneur —
+/// Dossier de dépôt. `./uploads` en local, `/app/uploads` dans le conteneur :
 /// c'est le même chemin relatif au répertoire de travail, et c'est le bind mount
 /// déclaré par PLAN S3 §2 (`./uploads:/app/uploads`). Volontairement HORS de
 /// `public/` : rien ici ne doit être servi par Next sans passer par un contrôle.
@@ -70,7 +70,7 @@ export async function depouiller(entree: Buffer): Promise<Buffer | null> {
   } catch {
     // Décodage impossible : extension mensongère, fichier tronqué, ou HEIC
     // encodé avec un profil que la build de `sharp` ne connaît pas. Refus
-    // explicite — jamais d'écriture d'un contenu qu'on n'a pas su lire.
+    // explicite, jamais d'écriture d'un contenu qu'on n'a pas su lire.
     return null;
   }
 }
@@ -91,7 +91,7 @@ export function messageRefus(
     case "trop_lourde":
       return "Chaque photo doit peser 5 Mo au maximum.";
     case "illisible":
-      return "Cette image n'a pas pu être lue — réessayez avec un autre fichier.";
+      return "Cette image n'a pas pu être lue. Réessayez avec un autre fichier.";
     default: {
       const exhaustive: never = reason;
       return String(exhaustive);

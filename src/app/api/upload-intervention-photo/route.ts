@@ -9,7 +9,7 @@ import {
   uploadRateLimitKey,
 } from "@/lib/rate-limit";
 
-/// Dépôt d'une photo du tunnel — l'un des **trois** Route Handlers que
+/// Dépôt d'une photo du tunnel - l'un des **trois** Route Handlers que
 /// CLAUDE.md autorise, avec le callback OAuth et l'initiation Google.
 ///
 /// Route Handler et non Server Action, parce qu'il reçoit un fichier : une
@@ -19,7 +19,7 @@ import {
 /// **Il exige une session**, et ce n'est pas une contrainte reprise du tunnel
 /// par mimétisme : sans elle, n'importe qui écrirait des fichiers sur le disque
 /// du serveur sans compte ni traçabilité. La règle du 2026-08-09 la rend
-/// naturelle — les photos se déposent au récapitulatif, écran qui n'est
+/// naturelle : les photos se déposent au récapitulatif, écran qui n'est
 /// atteignable qu'une fois connecté.
 ///
 /// Le quota des cinq photos par intervention n'est PAS tenu ici : à ce stade
@@ -39,7 +39,7 @@ export async function POST(requete: Request): Promise<NextResponse> {
 
   // Le quota borne le DISQUE, pas le dossier : celui des cinq photos par
   // intervention ne mord qu'à la validation, et rien ne ramasse les fichiers
-  // d'un tunnel abandonné. Décompté AVANT de lire le corps — accepter cinq
+  // d'un tunnel abandonné. Décompté AVANT de lire le corps. Accepter cinq
   // mégaoctets pour les refuser ensuite ne protégerait rien.
   const verdict = await consumeRateLimit(
     uploadRateLimitKey(utilisateur.id),
@@ -49,7 +49,7 @@ export async function POST(requete: Request): Promise<NextResponse> {
 
   if (!verdict.allowed) {
     return NextResponse.json(
-      { ok: false, message: "Trop de photos envoyées — réessayez plus tard." },
+      { ok: false, message: "Trop de photos envoyées. Réessayez plus tard." },
       {
         status: 429,
         headers: {

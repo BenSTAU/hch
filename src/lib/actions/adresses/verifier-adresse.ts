@@ -23,8 +23,8 @@ import { verifierAdresseSchema } from "@/lib/validations/adresses";
 /// pour mot, et distinguent deux situations que l'utilisateur répare
 /// différemment : réessayer, ou corriger sa saisie.
 const MESSAGE_INDISPONIBLE =
-  "Service de géolocalisation temporairement indisponible — réessayez.";
-const MESSAGE_INTROUVABLE = "Adresse introuvable — vérifiez les informations.";
+  "Service de géolocalisation temporairement indisponible. Réessayez.";
+const MESSAGE_INTROUVABLE = "Adresse introuvable. Vérifiez les informations.";
 const MESSAGE_HORS_ZONE = "Aucun service disponible à cette adresse.";
 
 function messageEchecBan(resultat: Extract<ResultatBan<never>, { ok: false }>) {

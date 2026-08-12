@@ -5,7 +5,7 @@ import { geocoderAdresse } from "@/lib/geo/ban";
 import { authActionClient } from "@/lib/safe-action";
 import { ajouterAdresseSchema } from "@/lib/validations/adresses";
 
-/// Ajout d'une adresse au profil — `US-ADRESSE-AJOUTER`, **hors tunnel**.
+/// Ajout d'une adresse au profil - `US-ADRESSE-AJOUTER`, **hors tunnel**.
 ///
 /// Pas de test `ST_Covers` ici : la vérification de couverture appartient au
 /// tunnel de réservation, pas à l'enregistrement d'une adresse (décision B7
@@ -16,8 +16,8 @@ import { ajouterAdresseSchema } from "@/lib/validations/adresses";
 /// font jamais foi » ne dépend pas de l'usage qu'on fait ensuite du point.
 
 const MESSAGE_INDISPONIBLE =
-  "Service de géolocalisation temporairement indisponible — réessayez.";
-const MESSAGE_INTROUVABLE = "Adresse introuvable — vérifiez les informations.";
+  "Service de géolocalisation temporairement indisponible. Réessayez.";
+const MESSAGE_INTROUVABLE = "Adresse introuvable. Vérifiez les informations.";
 
 export const ajouterAdresse = authActionClient
   .inputSchema(ajouterAdresseSchema)
