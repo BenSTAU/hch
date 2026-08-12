@@ -42,8 +42,13 @@ export type Tournee = {
 /// en paramètre serait la tournée d'autrui pour qui sait poster. Et la journée
 /// se recalcule ici plutôt que d'être reçue : elle n'est donc pas figée au
 /// chargement de l'onglet, et une tournée laissée ouverte bascule d'elle-même
-/// au jour suivant à minuit. Consulter une AUTRE journée est
-/// `US-INTERVENTIONS-LISTER-TECH-A-VENIR`, v2.
+/// au jour suivant à minuit.
+///
+/// ⚠️ **Cette absence de paramètre est une propriété, pas une limite à lever.**
+/// Consulter d'autres journées est `US-INTERVENTIONS-LISTER-TECH-A-VENIR`, que
+/// T-V2-05 livre à `/interventions/a-venir` - en **lecture RSC**, sans Server
+/// Action, précisément pour ne pas ouvrir ici un paramètre de date. Ce
+/// commentaire disait « v2 » : l'US est passée en v1 le 2026-08-12.
 export const listerTournee = techActionClient.action(
   async ({ ctx }): Promise<Tournee> => {
     const jour = jourLocal(new Date());

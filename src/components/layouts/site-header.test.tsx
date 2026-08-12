@@ -18,7 +18,14 @@ vi.mock("@/lib/actions/auth/logout", () => ({ logout: vi.fn() }));
 
 const { SiteHeader } = await import("./site-header");
 
-const CAMILLE = { firstname: "Camille", lastname: "Durand" };
+const CAMILLE = {
+  firstname: "Camille",
+  lastname: "Durand",
+  roles: ["ROLE_CLIENT"],
+};
+/// Le même compte, avec les rôles que T-V2-05 rend décisifs.
+const MARC = { firstname: "Marc", lastname: "Leroy", roles: ["ROLE_TECH"] };
+const ADMIN = { firstname: "Alex", lastname: "Roy", roles: ["ROLE_ADMIN"] };
 
 describe("SiteHeader — visiteur anonyme", () => {
   it("expose un repère d'en-tête", () => {
@@ -132,6 +139,100 @@ describe("SiteHeader — session ouverte", () => {
 
     expect(screen.queryByText(/@/)).not.toBeInTheDocument();
     expect(screen.queryByText(/ROLE_/)).not.toBeInTheDocument();
+  });
+});
+
+describe("SiteHeader - la navigation suit le rôle (T-V2-05)", () => {
+  // 🔴 Le cœur du volet 1. `navigationPrincipale` prenait un booléen, donc
+  // rendait l'entrée de l'espace CLIENT à toute session ouverte. Depuis que cet
+  // espace répond 403 à un technicien (Constitution §3.1, clarification du
+  // 2026-08-12), c'était un lien vers un refus.
+
+  it("mène le technicien à sa tournée, jamais à l'espace client", () => {
+    render(<SiteHeader user={MARC} reservationDisponible />);
+
+    expect(screen.getByRole("link", { name: "Ma tournée" })).toHaveAttribute(
+      "href",
+      "/interventions/du-jour",
+    );
+    expect(
+      screen.queryByRole("link", { name: "Mes interventions" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("mène l'administrateur au back-office", () => {
+    render(<SiteHeader user={ADMIN} reservationDisponible />);
+
+    expect(
+      screen.getByRole("link", { name: "Administration" }),
+    ).toHaveAttribute("href", "/admin/parametres");
+    expect(
+      screen.queryByRole("link", { name: "Mes interventions" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("retire « Réserver » au technicien et à l'administrateur", () => {
+    // ⚠️ La ROUTE reste ouverte - Constitution §3.2 veut le tunnel explorable
+    // sans compte, et un E2E le fige. Ce qui disparaît est l'appel à l'action
+    // dans une navigation d'employé, pas l'accès.
+    const tech = render(<SiteHeader user={MARC} reservationDisponible />);
+    expect(
+      screen.queryByRole("link", { name: "Réserver" }),
+    ).not.toBeInTheDocument();
+    tech.unmount();
+
+    render(<SiteHeader user={ADMIN} reservationDisponible />);
+    expect(
+      screen.queryByRole("link", { name: "Réserver" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("la laisse au client et au visiteur", () => {
+    const client = render(<SiteHeader user={CAMILLE} reservationDisponible />);
+    expect(screen.getByRole("link", { name: "Réserver" })).toBeInTheDocument();
+    client.unmount();
+
+    render(<SiteHeader user={null} reservationDisponible />);
+    expect(screen.getByRole("link", { name: "Réserver" })).toBeInTheDocument();
+  });
+
+  it("fait suivre le menu utilisateur au même rôle", async () => {
+    // `user-menu.tsx` pointait `CHEMIN_ESPACE_CLIENT` en dur pour tout le
+    // monde. La barre et le menu sont côte à côte : deux liens voisins menant
+    // à deux espaces différents est un défaut qu'on ne voit qu'en production.
+    const utilisateur = userEvent.setup();
+    render(<SiteHeader user={MARC} reservationDisponible />);
+
+    await utilisateur.click(
+      screen.getByRole("button", { name: "Ouvrir le menu de Marc Leroy" }),
+    );
+
+    expect(
+      screen.getByRole("menuitem", { name: "Ma tournée" }),
+    ).toHaveAttribute("href", "/interventions/du-jour");
+    expect(
+      screen.queryByRole("menuitem", { name: "Mes interventions" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("porte la même entrée dans le panneau mobile", () => {
+    // Les deux surfaces passent par la même fonction. Ce test est ce qui
+    // rattrapera l'oubli le jour où l'une des deux cessera de le faire.
+    render(<SiteHeader user={MARC} reservationDisponible />);
+
+    expect(
+      screen.getByRole("button", { name: "Ouvrir le menu" }),
+    ).toBeInTheDocument();
+  });
+
+  it("n'affiche toujours ni email ni rôle", () => {
+    // Le menu reçoit une destination déjà résolue, pas les rôles : ils ne
+    // doivent pas se retrouver dans le document parce que la barre les connaît
+    // maintenant.
+    render(<SiteHeader user={MARC} reservationDisponible />);
+
+    expect(screen.queryByText(/ROLE_/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/@/)).not.toBeInTheDocument();
   });
 });
 
@@ -296,5 +397,12 @@ describe("SiteHeader — accessibilité", () => {
       <SiteHeader user={CAMILLE} reservationDisponible />,
     );
     await expect(axe(connecte.container)).resolves.toHaveNoViolations();
+    connecte.unmount();
+
+    // La barre d'un technicien porte une entrée de plus et un bouton de moins
+    // depuis T-V2-05 : c'est une configuration distincte, pas une variante de
+    // la précédente.
+    const technicien = render(<SiteHeader user={MARC} reservationDisponible />);
+    await expect(axe(technicien.container)).resolves.toHaveNoViolations();
   });
 });

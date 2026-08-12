@@ -70,6 +70,20 @@ function afficher(interventions: InterventionTournee[]) {
   );
 }
 
+/// La LISTE, et elle seule.
+///
+/// ⚠️ **Oracles bornes le 2026-08-12 - regle du test rouge, cas 3.** Quatre
+/// d'entre eux interrogeaient tout le document par `screen.getByText`, et sont
+/// devenus ambigus quand la colonne droite a recu le bloc « A VENIR » de T1 :
+/// il redit l'heure et le nom du prochain rendez-vous, deliberement, donc deux
+/// noeuds portent le meme texte. La propriete visee n'a pas bouge - c'est la
+/// LIGNE qui doit porter ces six elements - seule sa portee etait implicite.
+function liste() {
+  return within(
+    screen.getByRole("region", { name: "Mes interventions du jour" }),
+  );
+}
+
 describe("TourneeVue - les six elements de chaque ligne", () => {
   it("affiche heure, statut, forfait, duree, client, telephone, adresse et produits", () => {
     afficher([
@@ -104,7 +118,7 @@ describe("TourneeVue - les six elements de chaque ligne", () => {
 
     // 08 h 00 UTC = 10 h 00 a Paris en aout. Un formatage en UTC afficherait
     // « 08:00 » et enverrait le technicien deux heures trop tot.
-    expect(screen.getByText("10:00")).toBeInTheDocument();
+    expect(liste().getByText("10:00")).toBeInTheDocument();
     expect(screen.queryByText("08:00")).not.toBeInTheDocument();
   });
 
@@ -121,7 +135,7 @@ describe("TourneeVue - les six elements de chaque ligne", () => {
     // `abregerNom` abrege le TECHNICIEN pour le client. L'appliquer ici
     // masquerait le nom du client a la personne qui va sonner chez lui
     // (Constitution §1.1), et la SPEC exige « client (nom ET telephone) ».
-    expect(screen.getByText("Sophie Dumas")).toBeInTheDocument();
+    expect(liste().getByText("Sophie Dumas")).toBeInTheDocument();
     expect(screen.queryByText("Sophie D.")).not.toBeInTheDocument();
   });
 
@@ -145,7 +159,7 @@ describe("TourneeVue - les six elements de chaque ligne", () => {
     ]);
 
     expect(screen.getByText("Téléphone non renseigné")).toBeInTheDocument();
-    expect(screen.getByText("Utilisateur Anonymisé")).toBeInTheDocument();
+    expect(liste().getByText("Utilisateur Anonymisé")).toBeInTheDocument();
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
@@ -315,8 +329,8 @@ describe("TourneeVue - le second chemin du DTO", () => {
     // La forme rendue par l'action se rend exactement comme `initialData` : meme
     // heure de Paris, meme nom complet, meme telephone appelable.
     expect(await screen.findByText("Diagnostic express")).toBeInTheDocument();
-    expect(screen.getByText("Karim Benali")).toBeInTheDocument();
-    expect(screen.getByText("10:00")).toBeInTheDocument();
+    expect(liste().getByText("Karim Benali")).toBeInTheDocument();
+    expect(liste().getByText("10:00")).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "+33700000000" }),
     ).toBeInTheDocument();

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 
-import { getCurrentUser } from "@/lib/auth/dal";
+import { requireEspaceClient } from "@/lib/auth/permissions";
 import {
   compterInterventionsClient,
   listerInterventionsAVenir,
@@ -22,18 +22,26 @@ export const metadata: Metadata = {
 /// Destination post-connexion du client ([[module-1-utilisateurs]] §287), et
 /// c'est la DoD finale de la destination laissée provisoire par T-V3-03.
 ///
-/// **Aucune garde de rôle.** La page exige une session - `getCurrentUser`
-/// redirige sinon - et filtre sur `clientId = user.id`. Un administrateur ou un
-/// technicien qui a réservé pour lui-même y voit ses propres rendez-vous, ce qui
-/// est correct : le cloisonnement de Constitution §3.1 porte sur les actes de
-/// gestion, pas sur le fait d'être client. Même régime que les Server Actions
-/// produits, qui passent par `authActionClient` sans exiger `ROLE_CLIENT`.
+/// ⚠️ **`requireEspaceClient()` depuis T-V2-05 : un technicien et un
+/// administrateur reçoivent 403.**
 ///
-/// `src/proxy.ts` couvre `/mes-interventions/:path*` depuis cette tâche, mais il
-/// ne fait que rediriger sur l'absence de cookie : c'est la lecture ci-dessous
-/// qui refuse réellement.
+/// Cette page portait jusque-là un commentaire affirmant l'inverse, au motif que
+/// « le cloisonnement de Constitution §3.1 porte sur les actes de gestion, pas
+/// sur le fait d'être client ». C'était la lecture **étroite** de l'axiome,
+/// celle de son paragraphe *Conséquence technique*. Sa **première phrase** pose
+/// « trois rôles exclusifs … avec des parcours dédiés », et c'est elle qui fait
+/// foi depuis la clarification datée du 2026-08-12 (Constitution §3.1, tableau
+/// des surfaces), tranchée par Benjamin : « un technicien n'est pas un client ».
+///
+/// Le cloisonnement porte sur les **espaces de travail** : `/mon-compte/*` et
+/// `/reserver` restent ouverts à tous les rôles, et deux tests le figent.
+///
+/// La garde vit dans la page et non dans `layout.tsx`, qui est partagé : le
+/// Partial Rendering ne rejoue pas un layout en navigation client (CLAUDE.md
+/// §Authentication). `src/proxy.ts` ne décide d'aucun rôle non plus - il
+/// redirige sur l'absence de cookie, rien de plus.
 export default async function InterventionsAVenirPage() {
-  const user = await getCurrentUser();
+  const user = await requireEspaceClient();
 
   // Quatre lectures indépendantes, donc en parallèle et jamais en cascade. Le
   // catalogue alimente le bloc T+n du panneau, le contact alimente son bloc

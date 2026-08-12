@@ -1,17 +1,19 @@
 import type { Metadata } from "next";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 
-import { getCurrentUser } from "@/lib/auth/dal";
+import { requireEspaceClient } from "@/lib/auth/permissions";
 import {
   compterInterventionsClient,
   listerInterventionsPassees,
 } from "@/lib/db/queries/interventions";
+import { lireJourCivil, lirePage } from "@/lib/interventions/fenetre";
+import { CHEMIN_ESPACE_CLIENT_PASSEES } from "@/lib/routes";
+import { FiltrePeriode } from "@/components/features/interventions/filtre-periode";
+import { PaginationInterventions } from "@/components/features/interventions/pagination-interventions";
 import { CHEMIN_RESERVATION } from "@/components/layouts/site-navigation";
 
 import { EnTeteEspace } from "../_components/en-tete-espace";
-import { FiltrePeriode } from "../_components/filtre-periode";
 import { InterventionsVue } from "../_components/interventions-vue";
-import { PaginationPassees } from "../_components/pagination-passees";
 
 export const metadata: Metadata = {
   title: "Mes interventions passées - HomeCycl'Home",
@@ -35,22 +37,34 @@ export const metadata: Metadata = {
 ///
 /// `searchParams` est une promesse en Next 16, et il est typé comme tel
 /// (CLAUDE.md §TypeScript).
+///
+/// ⚠️ **`requireEspaceClient()` depuis T-V2-05** : un technicien et un
+/// administrateur reçoivent 403. Motif complet sur la page voisine, `a-venir`.
 export default async function InterventionsPasseesPage({
   searchParams,
 }: {
   searchParams: Promise<{ du?: string; au?: string; page?: string }>;
 }) {
   const [user, parametres] = await Promise.all([
-    getCurrentUser(),
+    requireEspaceClient(),
     searchParams,
   ]);
+
+  // 🐛 `lireJourCivil` remplace un parseur local qui construisait
+  // `new Date(\`${valeur}T00:00:00.000Z\`)`, donc minuit **UTC** : le filtre
+  // « du 11 août » écartait les rendez-vous du 11 entre 00 h 00 et 02 h 00 en
+  // été. C'est le bug UTC de C10 versé dans [[points-ouverts-hch]] le
+  // 2026-08-11, corrigé ici parce que T-V2-05 écrivait le parseur correct à
+  // trois lignes de là, pour l'historique du technicien.
+  const du = lireJourCivil(parametres.du);
+  const au = lireJourCivil(parametres.au);
 
   const [passees, compteurs] = await Promise.all([
     listerInterventionsPassees({
       clientId: user.id,
-      ...(jour(parametres.du) ? { du: jour(parametres.du) } : {}),
-      ...(jour(parametres.au) ? { au: jour(parametres.au) } : {}),
-      page: Number(parametres.page) || 1,
+      ...(du ? { du } : {}),
+      ...(au ? { au } : {}),
+      page: lirePage(parametres.page),
     }),
     compterInterventionsClient({ clientId: user.id }),
   ]);
@@ -85,9 +99,10 @@ export default async function InterventionsPasseesPage({
         />
       </NuqsAdapter>
 
-      <PaginationPassees
+      <PaginationInterventions
         page={passees.page}
         pages={passees.pages}
+        base={CHEMIN_ESPACE_CLIENT_PASSEES}
         periode={{
           ...(parametres.du ? { du: parametres.du } : {}),
           ...(parametres.au ? { au: parametres.au } : {}),
@@ -95,14 +110,4 @@ export default async function InterventionsPasseesPage({
       />
     </>
   );
-}
-
-/// `<input type="date">` rend `AAAA-MM-JJ`, ou une chaîne vide. Tout le reste
-/// est ignoré plutôt que refusé : ces paramètres viennent de l'URL, donc de
-/// n'importe qui, et une date illisible ne doit pas faire échouer la page - elle
-/// doit simplement ne pas filtrer.
-function jour(valeur: string | undefined): Date | undefined {
-  if (!valeur || !/^\d{4}-\d{2}-\d{2}$/.test(valeur)) return undefined;
-  const instant = new Date(`${valeur}T00:00:00.000Z`);
-  return Number.isNaN(instant.getTime()) ? undefined : instant;
 }

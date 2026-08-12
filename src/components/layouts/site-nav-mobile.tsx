@@ -42,13 +42,16 @@ import { navigationPrincipale } from "./site-navigation";
 /// sans lui la console avertit et le lecteur d'écran annonce un dialogue anonyme.
 export function SiteNavMobile({
   children,
-  connecte = false,
+  roles = null,
 }: {
   children?: React.ReactNode;
-  /// Un booléen, jamais le DTO utilisateur : ce composant décide seulement s'il
-  /// faut afficher l'entrée de l'espace client, il n'a rien à savoir de qui est
-  /// connecté.
-  connecte?: boolean;
+  /// Les rôles, jamais le DTO utilisateur : ce composant décide seulement
+  /// quelle entrée d'espace afficher, il n'a rien à savoir de qui est connecté.
+  /// `null` pour un visiteur anonyme.
+  ///
+  /// Ils prennent la place du booléen à T-V2-05 : un technicien voyait
+  /// « Mes interventions » vers un espace qui lui répond désormais 403.
+  roles?: readonly string[] | null;
 }) {
   // L'état est piloté ici pour pouvoir **refermer au clic sur un lien** : les
   // entrées sont des ancres de la même page, donc aucune navigation ne remonte
@@ -78,7 +81,7 @@ export function SiteNavMobile({
 
         <nav aria-label="Navigation principale" className="px-4 py-2">
           <ul className="flex flex-col">
-            {navigationPrincipale(connecte).map((item) => (
+            {navigationPrincipale(roles).map((item) => (
               <li key={item.href}>
                 <Link
                   href={item.href}

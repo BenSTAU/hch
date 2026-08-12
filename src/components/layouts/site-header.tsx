@@ -5,10 +5,22 @@ import { LogoutButton } from "@/components/features/auth/logout-button";
 import { Button } from "@/components/ui/button";
 
 import { SiteNavMobile } from "./site-nav-mobile";
-import { CHEMIN_RESERVATION, navigationPrincipale } from "./site-navigation";
+import {
+  CHEMIN_RESERVATION,
+  espacePrincipal,
+  navigationPrincipale,
+  reservationProposee,
+} from "./site-navigation";
 import { UserMenu } from "./user-menu";
 
-type UtilisateurAffiche = Pick<CurrentUser, "firstname" | "lastname"> | null;
+/// `roles` depuis T-V2-05 : la barre ne se contente plus de savoir qu'une
+/// session est ouverte, elle doit savoir **laquelle**. Ils ne traversent pas la
+/// frontière cliente - `SiteHeader` est un composant serveur, et ce qui descend
+/// au menu est une destination déjà calculée.
+type UtilisateurAffiche = Pick<
+  CurrentUser,
+  "firstname" | "lastname" | "roles"
+> | null;
 
 /// En-tête de la coquille publique — barre partagée de C1 et C13.
 ///
@@ -83,7 +95,7 @@ export function SiteHeader({
             nav-ci est alors hors de l'arbre d'accessibilité. */}
         <nav aria-label="Navigation principale" className="hidden md:block">
           <ul className="flex items-center gap-8">
-            {navigationPrincipale(user !== null).map((item) => (
+            {navigationPrincipale(user?.roles ?? null).map((item) => (
               <li key={item.href}>
                 <Link
                   href={item.href}
@@ -101,7 +113,11 @@ export function SiteHeader({
             <ActionsSession user={user} />
           </div>
 
-          {reservationDisponible ? (
+          {/* Deux conditions distinctes, et elles ne disent pas la même chose :
+              le catalogue peut être vide (`US-FORFAIT-CONSULTER` §Cas limites),
+              et le compte peut être celui d'un employé (T-V2-05). La route,
+              elle, reste ouverte dans les deux cas. */}
+          {reservationDisponible && reservationProposee(user?.roles ?? null) ? (
             <Button
               asChild
               className="h-12 px-4 text-sm font-semibold tracking-[0.05em] shadow-sm md:px-6"
@@ -114,11 +130,13 @@ export function SiteHeader({
               serveur** et descendues en `children`. Les passer en props
               sérialiserait le DTO utilisateur dans la charge envoyée au
               navigateur. */}
-          {/* `connecte` est un booléen, pas le DTO : le panneau doit porter les
-              mêmes entrées que la barre desktop, sans rien apprendre de la
-              personne. Les actions de session, elles, restent des `children`
-              rendus côté serveur. */}
-          <SiteNavMobile connecte={user !== null}>
+          {/* `roles` et non le DTO : le panneau doit porter les mêmes entrées
+              que la barre desktop, sans rien apprendre de la personne. Il
+              recalcule la liste plutôt que de la recevoir, pour que les deux
+              surfaces dépendent de la même fonction et pas d'un tableau qu'un
+              appelant pourrait oublier de mettre à jour. Les actions de
+              session, elles, restent des `children` rendus côté serveur. */}
+          <SiteNavMobile roles={user?.roles ?? null}>
             <ActionsSession user={user} />
           </SiteNavMobile>
         </div>
@@ -144,7 +162,10 @@ function ActionsSession({ user }: { user: UtilisateurAffiche }) {
 
   return (
     <>
-      <UserMenu user={user} />
+      {/* La destination est calculée ICI, côté serveur : le menu reçoit un
+          chemin et un libellé, jamais les rôles. Il pointait
+          `CHEMIN_ESPACE_CLIENT` en dur pour tout le monde jusqu'à T-V2-05. */}
+      <UserMenu user={user} espace={espacePrincipal(user.roles)} />
 
       {/* ⚠️ **Le repli sans JavaScript, et il n'est pas décoratif.** Un menu
           déroulant Radix ne s'ouvre pas sans hydratation : y placer la

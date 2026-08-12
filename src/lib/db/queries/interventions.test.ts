@@ -159,8 +159,10 @@ const {
   abregerNom,
   annulerInterventionDuClient,
   compterInterventionsClient,
+  listerHistoriqueTech,
   listerInterventionsAVenir,
   listerInterventionsPassees,
+  listerTourneeAVenir,
   listerTourneeDuJour,
   reserverIntervention,
   TAILLE_PAGE_PASSEES,
@@ -520,24 +522,55 @@ describe("listerInterventionsPassees", () => {
   });
 
   it("borne la periode de fin au LENDEMAIN, en exclusif", async () => {
-    // Une borne `<= 2026-08-11T00:00Z` ecarterait tout ce qui a eu lieu dans la
-    // journee du 11, ce qui est faux pour qui vient de saisir cette date comme
-    // fin de periode. Le defaut ne se voit que sur la derniere journee choisie.
+    // Une borne `<= le 11` ecarterait tout ce qui a eu lieu dans la journee du
+    // 11, ce qui est faux pour qui vient de saisir cette date comme fin de
+    // periode. Le defaut ne se voit que sur la derniere journee choisie.
+    //
+    // 🐛 **Oracle corrige par T-V2-05, regle du test rouge cas 3 : le test
+    // figeait le BUG.** Il passait des `Date` construites en UTC et attendait
+    // ces memes instants en sortie, ce qui validait exactement le defaut verse
+    // dans [[points-ouverts-hch]] le 2026-08-11 - minuit UTC n'est pas minuit a
+    // Paris, donc le filtre « du 11 aout » perdait les rendez-vous du 11 entre
+    // 00 h et 02 h en ete. Les bornes sont desormais des jours CIVILS, ancres
+    // par `instantUtc` comme la tournee depuis le cadrage D1.
     await listerInterventionsPassees({
       clientId: CLIENT,
-      du: new Date("2026-01-01T00:00:00.000Z"),
-      au: new Date("2026-08-11T00:00:00.000Z"),
+      du: { annee: 2026, mois: 1, jour: 1 },
+      au: { annee: 2026, mois: 8, jour: 11 },
     });
 
     const args = interventionFindMany.mock.calls[0]?.[0] as {
       where: { appointmentAt: { gte: Date; lt: Date } };
     };
 
+    // Le 1er janvier, Paris est en CET (+1) : minuit local est 23 h UTC la
+    // veille. Le 12 aout, en CEST (+2) : 22 h UTC la veille. Deux decalages
+    // differents dans le MEME filtre, ce qu'aucune arithmetique en heures ne
+    // produit.
     expect(args.where.appointmentAt.gte).toEqual(
-      new Date("2026-01-01T00:00:00.000Z"),
+      new Date("2025-12-31T23:00:00.000Z"),
     );
     expect(args.where.appointmentAt.lt).toEqual(
-      new Date("2026-08-12T00:00:00.000Z"),
+      new Date("2026-08-11T22:00:00.000Z"),
+    );
+  });
+
+  it("compte un jour CIVIL et non 24 heures sur la nuit de bascule", async () => {
+    // Le 25 octobre 2026, la journee civile dure 25 heures. Une borne haute en
+    // « + 24 h » - ce que faisait l'appelant avant T-V2-05 - s'arreterait une
+    // heure trop tot et perdrait les rendez-vous de fin de journee.
+    await listerInterventionsPassees({
+      clientId: CLIENT,
+      au: { annee: 2026, mois: 10, jour: 25 },
+    });
+
+    const args = interventionFindMany.mock.calls[0]?.[0] as {
+      where: { appointmentAt: { lt: Date } };
+    };
+
+    // Minuit le 26 octobre est en CET (+1) : 23 h UTC le 25.
+    expect(args.where.appointmentAt.lt).toEqual(
+      new Date("2026-10-25T23:00:00.000Z"),
     );
   });
 
@@ -1334,5 +1367,352 @@ describe("listerTourneeDuJour - la projection", () => {
 
     expect(tournee).toEqual([]);
     expect(lirePointsAdresses).toHaveBeenCalledWith([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// `listerTourneeAVenir` et `listerHistoriqueTech` - T-V2-05, les deux
+// declinaisons de T1. Les deux US ont ete promues de v2 en v1 le 2026-08-12.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("listerTourneeAVenir - la fenetre 7 j / 30 j", () => {
+  beforeEach(() => {
+    interventionFindMany.mockResolvedValue([]);
+    lirePointsAdresses.mockResolvedValue(new Map());
+  });
+
+  function bornes() {
+    const args = interventionFindMany.mock.calls[0]?.[0] as {
+      where: { appointmentAt: { gte: Date; lt: Date } };
+    };
+    return args.where.appointmentAt;
+  }
+
+  it("commence DEMAIN et non maintenant", async () => {
+    // L'US ecrit « les jours SUIVANTS », et aujourd'hui a son propre onglet.
+    // Une fenetre qui partirait de `NOW()` ferait dire deux choses aux deux
+    // onglets sur les memes lignes, et un rendez-vous changerait d'onglet en
+    // cours de journee sans que rien ne se soit passe.
+    await listerTourneeAVenir({
+      techId: TECH,
+      aujourdhui: { annee: 2026, mois: 8, jour: 13 },
+      jours: 7,
+    });
+
+    // Minuit le 14 aout a Paris (CEST, +2) = 22 h UTC le 13.
+    expect(bornes().gte).toEqual(new Date("2026-08-13T22:00:00.000Z"));
+  });
+
+  it("couvre exactement sept jours civils", async () => {
+    await listerTourneeAVenir({
+      techId: TECH,
+      aujourdhui: { annee: 2026, mois: 8, jour: 13 },
+      jours: 7,
+    });
+
+    // Du 14 au 20 inclus, borne haute exclusive a minuit le 21.
+    expect(bornes().lt).toEqual(new Date("2026-08-20T22:00:00.000Z"));
+  });
+
+  it("couvre exactement trente jours civils", async () => {
+    await listerTourneeAVenir({
+      techId: TECH,
+      aujourdhui: { annee: 2026, mois: 8, jour: 13 },
+      jours: 30,
+    });
+
+    expect(bornes().lt).toEqual(new Date("2026-09-12T22:00:00.000Z"));
+  });
+
+  it("compte des jours CIVILS a travers la bascule d'heure", async () => {
+    // Du 26 octobre au 1er novembre : la fenetre franchit le passage a l'heure
+    // d'hiver du 25. Comptee en « 7 x 24 h » depuis une borne basse en CET,
+    // elle finirait une heure a cote.
+    await listerTourneeAVenir({
+      techId: TECH,
+      aujourdhui: { annee: 2026, mois: 10, jour: 24 },
+      jours: 7,
+    });
+
+    // Minuit le 25 octobre est encore en CEST (+2), minuit le 1er novembre est
+    // en CET (+1) : deux decalages differents dans la meme fenetre.
+    expect(bornes().gte).toEqual(new Date("2026-10-24T22:00:00.000Z"));
+    expect(bornes().lt).toEqual(new Date("2026-10-31T23:00:00.000Z"));
+  });
+
+  it("ne retient que les interventions PLANNED", async () => {
+    // ⚠️ Regle INVERSE de la tournee du jour, qui n'a aucun filtre de statut
+    // parce que la SPEC exige que les terminaux restent visibles en fin de
+    // journee. L'ancre de `US-INTERVENTIONS-LISTER-TECH-A-VENIR` pose
+    // `status = PLANNED`. Ne pas recopier le filtre du voisin.
+    await listerTourneeAVenir({
+      techId: TECH,
+      aujourdhui: { annee: 2026, mois: 8, jour: 13 },
+      jours: 7,
+    });
+
+    const args = interventionFindMany.mock.calls[0]?.[0] as {
+      where: { status: { in: string[] } };
+    };
+
+    expect(args.where.status.in).toEqual(["PLANNED"]);
+  });
+
+  it("borne au technicien de la session et trie chronologiquement", async () => {
+    await listerTourneeAVenir({
+      techId: TECH,
+      aujourdhui: { annee: 2026, mois: 8, jour: 13 },
+      jours: 7,
+    });
+
+    expect(interventionFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ techId: TECH }),
+        orderBy: { appointmentAt: "asc" },
+      }),
+    );
+  });
+
+  it("rend le meme DTO que la tournee du jour", async () => {
+    // Les trois vues partagent `SELECTION_TECH` et `projeterTournee`, donc le
+    // meme composant de ligne. Une divergence de forme casserait l'une des
+    // trois sans que rien ne l'annonce.
+    interventionFindMany.mockResolvedValue([ligneTournee()]);
+    lirePointsAdresses.mockResolvedValue(new Map());
+
+    const [intervention] = await listerTourneeAVenir({
+      techId: TECH,
+      aujourdhui: { annee: 2026, mois: 8, jour: 13 },
+      jours: 7,
+    });
+
+    expect(intervention).toMatchObject({
+      appointmentAt: "2026-08-13T08:00:00.000Z",
+      client: { nom: "Sophie Dumas", telephone: "+33612345678" },
+      point: null,
+    });
+    // Le libelle que le client redige pour lui-meme ne traverse pas : retire du
+    // `select` par l'agent testeur en T-V2-01, minimisation.
+    expect(JSON.stringify(intervention)).not.toContain("label");
+  });
+});
+
+describe("la frontiere entre « Aujourd'hui » et « Cette semaine »", () => {
+  // 🔴 **Ajout de l'agent testeur, et rien ne tenait cette propriete.**
+  //
+  // Les deux fenetres sont eprouvees separement, chacune contre des litteraux
+  // ISO ecrits a la main. Rien ne les relie : deux oracles justes pris un a un
+  // laisseraient passer un trou d'une heure entre les deux onglets - un
+  // rendez-vous de 00 h 30 qui ne serait NI dans la journee, NI dans la semaine -
+  // ou un recouvrement, ou la meme ligne s'afficherait deux fois. Le trou est le
+  // plus probable des deux : c'est exactement ce que produirait un « +24 h » sur
+  // l'une des deux bornes, les deux nuits de bascule.
+  //
+  // La propriete est une EGALITE, pas deux valeurs recopiees : elle reste vraie
+  // sans etre reecrite le jour ou l'une des deux fonctions change de fuseau, de
+  // helper ou de convention d'inclusivite.
+  beforeEach(() => {
+    interventionFindMany.mockResolvedValue([]);
+    lirePointsAdresses.mockResolvedValue(new Map());
+  });
+
+  async function bornesDe(
+    appel: () => Promise<unknown>,
+  ): Promise<{ gte: Date; lt: Date }> {
+    interventionFindMany.mockClear();
+    await appel();
+    const { where } = interventionFindMany.mock.calls[0]![0] as {
+      where: { appointmentAt: { gte: Date; lt: Date } };
+    };
+    return where.appointmentAt;
+  }
+
+  it.each([
+    { titre: "un jour ordinaire", jour: { annee: 2026, mois: 8, jour: 13 } },
+    {
+      titre: "la veille du passage a l'heure d'hiver",
+      jour: { annee: 2026, mois: 10, jour: 24 },
+    },
+    {
+      titre: "le jour meme du passage a l'heure d'hiver",
+      jour: { annee: 2026, mois: 10, jour: 25 },
+    },
+    {
+      titre: "la veille du passage a l'heure d'ete",
+      jour: { annee: 2026, mois: 3, jour: 28 },
+    },
+    {
+      titre: "le jour meme du passage a l'heure d'ete",
+      jour: { annee: 2026, mois: 3, jour: 29 },
+    },
+    {
+      titre: "le dernier jour de l'annee",
+      jour: { annee: 2026, mois: 12, jour: 31 },
+    },
+    {
+      titre: "le 28 fevrier d'une annee bissextile",
+      jour: { annee: 2028, mois: 2, jour: 28 },
+    },
+  ])(
+    "$titre : la semaine commence exactement ou la journee finit",
+    async ({ jour }) => {
+      const journee = await bornesDe(() =>
+        listerTourneeDuJour({ techId: TECH, jour }),
+      );
+      const semaine = await bornesDe(() =>
+        listerTourneeAVenir({ techId: TECH, aujourdhui: jour, jours: 7 }),
+      );
+
+      // Ni trou, ni recouvrement : la borne haute d'« Aujourd'hui » est
+      // exclusive, celle de « Cette semaine » est inclusive, et les deux
+      // designent le MEME instant.
+      expect(semaine.gte).toEqual(journee.lt);
+      // Et la journee precede bien la semaine - un jour civil de large.
+      expect(journee.gte.getTime()).toBeLessThan(semaine.gte.getTime());
+    },
+  );
+
+  it("compte 7 puis 30 jours CIVILS a partir de demain, a travers le passage a l'heure d'ete", async () => {
+    // Le pendant de la nuit d'octobre deja couverte. Le 29 mars 2026 est le
+    // dernier dimanche du mois : la journee ne dure que 23 heures, et minuit du
+    // 29 est encore en CET (+1) quand minuit du 5 avril est en CEST (+2). Deux
+    // decalages dans une meme fenetre, dans le sens INVERSE d'octobre.
+    const aujourdhui = { annee: 2026, mois: 3, jour: 28 };
+
+    const sept = await bornesDe(() =>
+      listerTourneeAVenir({ techId: TECH, aujourdhui, jours: 7 }),
+    );
+    expect(sept.gte).toEqual(new Date("2026-03-28T23:00:00.000Z"));
+    expect(sept.lt).toEqual(new Date("2026-04-04T22:00:00.000Z"));
+
+    const trente = await bornesDe(() =>
+      listerTourneeAVenir({ techId: TECH, aujourdhui, jours: 30 }),
+    );
+    expect(trente.gte).toEqual(sept.gte);
+    expect(trente.lt).toEqual(new Date("2026-04-27T22:00:00.000Z"));
+  });
+
+  it("franchit le changement d'ANNEE sans deborder", async () => {
+    // `ajouterJours` passe par `Date.UTC(annee, mois - 1, jour + n)`, qui roule
+    // de lui-meme. Le cas est deja couvert pour la journee ; il ne l'etait pas
+    // pour la fenetre, ou le report se fait sur deux additions successives -
+    // `aujourdhui + 1` puis `demain + jours`.
+    const bornes = await bornesDe(() =>
+      listerTourneeAVenir({
+        techId: TECH,
+        aujourdhui: { annee: 2026, mois: 12, jour: 31 },
+        jours: 7,
+      }),
+    );
+
+    expect(bornes.gte).toEqual(new Date("2026-12-31T23:00:00.000Z"));
+    expect(bornes.lt).toEqual(new Date("2027-01-07T23:00:00.000Z"));
+  });
+
+  it("ne laisse AUCUNE des deux vues consulter le passe", async () => {
+    // La propriete que la DoD nomme autrement (« la fenetre part de demain ») :
+    // aucune borne basse de « Cette semaine » n'est anterieure a maintenant, et
+    // aucun parametre d'URL ne permet de la reculer. Le seul levier est `jours`,
+    // qui est enumere et n'agit que sur la borne HAUTE.
+    const aujourdhui = { annee: 2026, mois: 8, jour: 13 };
+
+    const sept = await bornesDe(() =>
+      listerTourneeAVenir({ techId: TECH, aujourdhui, jours: 7 }),
+    );
+    const trente = await bornesDe(() =>
+      listerTourneeAVenir({ techId: TECH, aujourdhui, jours: 30 }),
+    );
+
+    expect(trente.gte).toEqual(sept.gte);
+    expect(trente.lt.getTime()).toBeGreaterThan(sept.lt.getTime());
+  });
+});
+
+describe("listerHistoriqueTech", () => {
+  beforeEach(() => {
+    interventionCount.mockResolvedValue(0);
+    interventionFindMany.mockResolvedValue([]);
+    lirePointsAdresses.mockResolvedValue(new Map());
+  });
+
+  it("ne retient que les statuts terminaux, du plus recent au plus ancien", async () => {
+    await listerHistoriqueTech({ techId: TECH });
+
+    const args = interventionFindMany.mock.calls[0]?.[0] as {
+      where: { status: { in: string[] }; techId: string };
+      orderBy: unknown;
+    };
+
+    expect(args.where.status.in).toEqual(["DONE", "CANCELLED"]);
+    expect(args.where.techId).toBe(TECH);
+    expect(args.orderBy).toEqual({ appointmentAt: "desc" });
+  });
+
+  it("pagine, et compte le TOTAL du filtre et non celui de la page", async () => {
+    interventionCount.mockResolvedValue(25);
+
+    const page = await listerHistoriqueTech({ techId: TECH, page: 3 });
+
+    expect(interventionFindMany.mock.calls[0]?.[0]).toMatchObject({
+      skip: 2 * TAILLE_PAGE_PASSEES,
+      take: TAILLE_PAGE_PASSEES,
+    });
+    expect(page.total).toBe(25);
+    expect(page.pages).toBe(3);
+  });
+
+  it("durcit un numero de page bricole", async () => {
+    // Meme famille de defaut que celle relevee par l'agent testeur sur C10 :
+    // `?page=2.3` traversait `Math.max` intact et produisait un `skip`
+    // fractionnaire que Prisma refuse - 500 sur un parametre d'URL.
+    for (const [demandee, attendu] of [
+      [-4, 0],
+      [2.3, TAILLE_PAGE_PASSEES],
+      [Number.NaN, 0],
+      [Number.POSITIVE_INFINITY, 0],
+    ] as const) {
+      interventionFindMany.mockClear();
+      await listerHistoriqueTech({ techId: TECH, page: demandee });
+
+      expect(interventionFindMany.mock.calls[0]?.[0]).toMatchObject({
+        skip: attendu,
+      });
+    }
+  });
+
+  it("ancre le filtre de periode sur Paris, comme l'espace client", async () => {
+    await listerHistoriqueTech({
+      techId: TECH,
+      du: { annee: 2026, mois: 8, jour: 1 },
+      au: { annee: 2026, mois: 8, jour: 11 },
+    });
+
+    const args = interventionFindMany.mock.calls[0]?.[0] as {
+      where: { appointmentAt: { gte: Date; lt: Date } };
+    };
+
+    expect(args.where.appointmentAt.gte).toEqual(
+      new Date("2026-07-31T22:00:00.000Z"),
+    );
+    expect(args.where.appointmentAt.lt).toEqual(
+      new Date("2026-08-11T22:00:00.000Z"),
+    );
+  });
+
+  it("n'ajoute aucune borne quand aucune periode n'est demandee", async () => {
+    await listerHistoriqueTech({ techId: TECH });
+
+    const args = interventionFindMany.mock.calls[0]?.[0] as { where: object };
+
+    expect(args.where).not.toHaveProperty("appointmentAt");
+  });
+
+  it("rend au moins une page, meme vide", async () => {
+    // `Math.ceil(0 / 10)` vaut zero : sans plancher, la pagination afficherait
+    // « page 1 sur 0 ».
+    const page = await listerHistoriqueTech({ techId: TECH });
+
+    expect(page.pages).toBe(1);
+    expect(page.interventions).toEqual([]);
   });
 });

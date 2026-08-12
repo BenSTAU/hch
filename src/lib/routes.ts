@@ -1,12 +1,17 @@
 /// Chemins d'application partagés entre le serveur et le navigateur.
 ///
 /// **Module pur** : aucun import, aucun `server-only`, aucune dépendance. C'est
-/// sa raison d'être. `src/lib/auth/after-login.ts`, où vivaient ces constantes,
-/// tire `permissions.ts` qui est marqué `server-only` : un composant client qui
-/// l'importerait ferait échouer le build. Or ces chemins sont exactement ce que
-/// les deux côtés doivent partager - la destination post-connexion, la cible du
-/// `revalidatePath` des Server Actions, le lien du menu utilisateur et celui de
-/// l'écran de confirmation du tunnel.
+/// sa raison d'être. Ces constantes vivaient dans `src/lib/auth/after-login.ts`,
+/// qui tirait alors `permissions.ts` marqué `server-only` : un composant client
+/// qui l'importait faisait échouer le build. Or ces chemins sont exactement ce
+/// que les deux côtés doivent partager - la destination post-connexion, la
+/// cible du `revalidatePath` des Server Actions, les entrées de navigation, le
+/// lien du menu utilisateur et celui de l'écran de confirmation du tunnel.
+///
+/// T-V2-05 a déplacé le vocabulaire des rôles dans `src/lib/auth/roles.ts`, pur
+/// lui aussi, pour la même raison et sur le même précédent : `after-login.ts`
+/// ne tire donc plus `server-only`. Le motif de ce module-ci est inchangé, la
+/// frontière s'est simplement déplacée d'un cran.
 ///
 /// L'alternative était de recopier le littéral dans chaque composant client.
 /// Une route recopiée est une route qui diverge : le tunnel visait
@@ -36,6 +41,25 @@ export const CHEMIN_ESPACE_CLIENT_PASSEES = "/mes-interventions/passees";
 /// par rôle abandonné ; ils disparaissent avec cette tâche. Cadrage du plancher
 /// V2, D2.
 export const CHEMIN_TOURNEE_DU_JOUR = "/interventions/du-jour";
+
+/// Les deux autres vues de l'espace technicien - `US-INTERVENTIONS-LISTER-TECH-
+/// A-VENIR` et `US-INTERVENTIONS-LISTER-TECH-PASSEES`, promues en v1 le
+/// 2026-08-12 et portées par T-V2-05.
+///
+/// ⚠️ **Les chemins suivent l'identifiant de l'US, pas le libellé de l'onglet.**
+/// La maquette T1 nomme ses onglets « Cette semaine » et « Historique », et les
+/// deux le restent à l'écran. Mais la règle du produit est celle qui a donné
+/// `/mes-interventions/a-venir` à `US-INTERVENTIONS-LISTER-CLIENT-A-VENIR` -
+/// coïncidence de libellé côté client, qui avait masqué la règle. Argument qui
+/// tranche : « semaine » deviendrait un mensonge dès `?jours=30`.
+export const CHEMIN_TOURNEE_A_VENIR = "/interventions/a-venir";
+export const CHEMIN_TOURNEE_PASSEES = "/interventions/passees";
+
+/// Back-office - destination post-connexion de l'administrateur, livrée par
+/// T-J0-05. Elle vivait en littéral dans `src/lib/auth/after-login.ts` ;
+/// T-V2-05 l'amène ici parce que la navigation principale y pose une entrée, et
+/// que cette navigation est calculée pour une feuille cliente.
+export const CHEMIN_ADMIN_PARAMETRES = "/admin/parametres";
 
 /// Racine de l'espace « compte » du client, tranchée par Benjamin le
 /// 2026-08-11 en ouvrant T-V3-12.

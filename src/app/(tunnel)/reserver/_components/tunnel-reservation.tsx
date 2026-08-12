@@ -18,7 +18,13 @@ import { reserver } from "@/lib/actions/interventions/reserver";
 import type { ForfaitPublic } from "@/lib/db/queries/forfaits";
 import type { LignePanier, ProduitVendable } from "@/lib/db/queries/produits";
 import { formatPrixEuros } from "@/lib/format";
-import { CHEMIN_ESPACE_CLIENT } from "@/lib/routes";
+import { espacePrincipal } from "@/components/layouts/site-navigation";
+
+/// Repli quand l'appelant ne descend pas de destination : l'espace client, qui
+/// est celle d'un visiteur anonyme - l'inscription de fin de tunnel crée un
+/// `ROLE_CLIENT`. La prop reste facultative pour que les tests co-localisés,
+/// qui montent le tunnel sans session, n'aient pas à la fournir.
+const ESPACE_CLIENT_PAR_DEFAUT = espacePrincipal([]);
 import type { SuggestionAdresse } from "@/lib/geo/ban";
 import { cn } from "@/lib/utils";
 
@@ -144,10 +150,16 @@ export function TunnelReservation({
   forfaits,
   produits,
   estConnecte,
+  espace = ESPACE_CLIENT_PAR_DEFAUT,
 }: {
   forfaits: ForfaitPublic[];
   produits: ProduitVendable[];
   estConnecte: boolean;
+  /// Destination de la sortie de l'écran de confirmation, calculée au serveur
+  /// depuis les rôles. Elle est facultative et retombe sur l'espace client :
+  /// c'est la destination d'un visiteur anonyme, qui devient `ROLE_CLIENT` en
+  /// s'inscrivant en fin de tunnel.
+  espace?: { href: string; label: string };
 }) {
   const [etape, setEtape] = useQueryState(
     "etape",
@@ -370,7 +382,7 @@ export function TunnelReservation({
   }
 
   if (confirmation) {
-    return <EcranConfirmation confirmation={confirmation} />;
+    return <EcranConfirmation confirmation={confirmation} espace={espace} />;
   }
 
   return (
@@ -585,7 +597,13 @@ const DATE_COMPLETE = new Intl.DateTimeFormat("fr-FR", {
 /// confirmation automatique). Aucune maquette ne la dessine - C9 couvre
 /// l'activation, pas la réservation -, la géométrie suit donc celle des dalles
 /// du tunnel.
-function EcranConfirmation({ confirmation }: { confirmation: Confirmation }) {
+function EcranConfirmation({
+  confirmation,
+  espace,
+}: {
+  confirmation: Confirmation;
+  espace: { href: string; label: string };
+}) {
   return (
     <main className={cn(CONTENEUR, "flex flex-grow flex-col py-20")}>
       <div className="mx-auto flex w-full max-w-2xl flex-col items-center gap-6 rounded-2xl border border-border bg-card p-6 text-center shadow-sm md:p-12">
@@ -614,8 +632,13 @@ function EcranConfirmation({ confirmation }: { confirmation: Confirmation }) {
               `/client/interventions`, route qui n'a jamais été créée et que
               `src/proxy.ts` aurait de toute façon renvoyée vers `/connexion` :
               dernier geste du parcours de démonstration, et il tombait dans le
-              vide. Relevé par Benjamin à la passe manuelle du 2026-08-10. */}
-          <Link href={CHEMIN_ESPACE_CLIENT}>Voir mes interventions</Link>
+              vide. Relevé par Benjamin à la passe manuelle du 2026-08-10.
+
+              🐛 Depuis T-V2-05 elle **suit le rôle** : `/reserver` reste
+              ouverte à tous (Constitution §3.2), donc un technicien peut
+              atteindre cet écran, et l'espace client lui répond désormais 403.
+              Second lien mort de la même famille, trouvé par l'agent testeur. */}
+          <Link href={espace.href}>{espace.label}</Link>
         </Button>
       </div>
     </main>

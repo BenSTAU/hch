@@ -1,6 +1,10 @@
-import { CHEMIN_ESPACE_CLIENT, CHEMIN_TOURNEE_DU_JOUR } from "@/lib/routes";
+import {
+  CHEMIN_ADMIN_PARAMETRES,
+  CHEMIN_ESPACE_CLIENT,
+  CHEMIN_TOURNEE_DU_JOUR,
+} from "@/lib/routes";
 
-import { ROLE_ADMIN, ROLE_TECH, hasRole } from "./permissions";
+import { ROLE_ADMIN, ROLE_TECH, hasRole } from "./roles";
 
 /// Destination post-connexion selon le rôle — `US-COMPTE-CONNECTER` §Cas
 /// nominal ([[module-1-utilisateurs]] §287).
@@ -13,7 +17,11 @@ import { ROLE_ADMIN, ROLE_TECH, hasRole } from "./permissions";
 /// Avant T-V3-03, la destination était `/admin/parametres` pour tout le monde :
 /// un client fraîchement activé se connectait, puis se voyait refuser l'accès
 /// par `requireAdmin()`.
-export const AFTER_LOGIN_ADMIN = "/admin/parametres";
+/// Réexporté depuis `src/lib/routes.ts` comme ses deux voisins, et depuis
+/// T-V2-05 : `navigationPrincipale()` pose une entrée « Administration » vers
+/// cette même page. Deux littéraux qui doivent rester égaux finissent par
+/// diverger, et c'est déjà arrivé une fois sur `/client/interventions`.
+export const AFTER_LOGIN_ADMIN = CHEMIN_ADMIN_PARAMETRES;
 /// Réexporté depuis `src/lib/routes.ts`, seul module que le navigateur peut
 /// aussi importer : le menu utilisateur et l'écran de confirmation du tunnel
 /// visent la même destination, et une seconde copie du littéral finirait par

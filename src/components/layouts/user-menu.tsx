@@ -1,10 +1,15 @@
 "use client";
 
-import { CalendarDays, ChevronDown, LogOut } from "lucide-react";
+import {
+  CalendarDays,
+  ChevronDown,
+  LogOut,
+  Route,
+  Settings,
+} from "lucide-react";
 import Link from "next/link";
 
 import { logout } from "@/lib/actions/auth/logout";
-import { CHEMIN_ESPACE_CLIENT } from "@/lib/routes";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -15,7 +20,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-/// Menu utilisateur de l'en-tête — `US-COMPTE-DECONNECTER` §Contexte, qui place
+import type { EspacePrincipal } from "./site-navigation";
+
+/// Icône de l'entrée d'espace. Une table locale, parce qu'une référence de
+/// composant ne traverse pas la frontière serveur → client : le chemin et le
+/// libellé arrivent en props, le pictogramme se choisit ici.
+const ICONES: Record<EspacePrincipal, typeof CalendarDays> = {
+  client: CalendarDays,
+  tech: Route,
+  admin: Settings,
+};
+
+/// Menu utilisateur de l'en-tête - `US-COMPTE-DECONNECTER` §Contexte, qui place
 /// l'action « dans le menu utilisateur (avatar / initiales dans le header) ».
 ///
 /// Il remplace le couple « nom + bouton Se déconnecter » posé en T-V3-03, et
@@ -42,14 +58,28 @@ import {
 ///     décorative »). Un menu déroulant ne s'ouvre pas sans JS. C'est la SPEC
 ///     qui l'y place ; l'écart est signalé en PR, il n'est pas absorbé.
 ///
+/// ── L'entrée d'espace suit le rôle depuis T-V2-05
+///
+/// Elle pointait `CHEMIN_ESPACE_CLIENT` en dur pour tout le monde. Depuis que
+/// cet espace répond 403 à un technicien et à un administrateur (Constitution
+/// §3.1, clarification du 2026-08-12), c'était un lien vers un refus.
+///
+/// La destination est **calculée côté serveur** par `espacePrincipal()` et
+/// descendue déjà résolue : ce composant reçoit un chemin et un libellé, pas
+/// les rôles. Seule l'icône se choisit ici, une référence de composant ne
+/// traversant pas la frontière serveur → client.
+///
 /// Feuille cliente : la frontière `"use client"` descend jusqu'ici et pas plus
 /// haut. `SiteHeader` reste un composant serveur.
 export function UserMenu({
   user,
+  espace,
 }: {
   user: { firstname: string; lastname: string };
+  espace: { espace: EspacePrincipal; href: string; label: string };
 }) {
   const nom = `${user.firstname} ${user.lastname}`;
+  const IconeEspace = ICONES[espace.espace];
 
   return (
     <DropdownMenu>
@@ -88,9 +118,9 @@ export function UserMenu({
         <DropdownMenuSeparator />
 
         <DropdownMenuItem asChild>
-          <Link href={CHEMIN_ESPACE_CLIENT}>
-            <CalendarDays aria-hidden="true" />
-            Mes interventions
+          <Link href={espace.href}>
+            <IconeEspace aria-hidden="true" />
+            {espace.label}
           </Link>
         </DropdownMenuItem>
 
