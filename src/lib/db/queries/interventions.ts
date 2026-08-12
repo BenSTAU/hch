@@ -574,8 +574,12 @@ export type InterventionTournee = {
     /// pas de FK cassée), donc la ligne existe et doit se rendre.
     telephone: string | null;
   };
+  /// ⚠️ **Sans `label`**, contrairement à `InterventionClient`. C'est un libellé
+  /// que le client rédige pour lui-même — « Domicile », « Chez ma mère » — et
+  /// aucun composant de cet écran ne le lit. Il traversait jusqu'au navigateur
+  /// du technicien sans consommateur : relevé par l'agent testeur, et c'est
+  /// exactement la minimisation dont ce module se réclame ailleurs.
   adresse: {
-    label: string | null;
     street: string;
     zipCode: string;
     city: string;
@@ -598,9 +602,10 @@ const SELECTION_TECH = {
   service: { select: { label: true } },
   client: { select: { firstname: true, lastname: true, phone: true } },
   address: {
+    // Pas de `label` : il n'a aucun lecteur sur cet écran, et ne pas le
+    // SÉLECTIONNER est plus sûr que ne pas l'afficher.
     select: {
       id: true,
-      label: true,
       street: true,
       city: { select: { zipCode: true, city: true } },
     },
@@ -635,7 +640,6 @@ function projeterTournee(
       telephone: ligne.client.phone,
     },
     adresse: {
-      label: ligne.address.label,
       street: ligne.address.street,
       zipCode: ligne.address.city.zipCode,
       city: ligne.address.city.city,

@@ -8,7 +8,7 @@
 //     ici et nulle part ailleurs, la requete les rendant tous ;
 //   · **aucune ligne n'est cliquable** - la route de detail appartient a
 //     T-V2-02, et un lien pose maintenant menerait a un 404.
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { axe } from "jest-axe";
 import type { ReactNode } from "react";
@@ -49,7 +49,6 @@ function intervention(
     forfait: "Révision complète",
     client: { nom: "Sophie Dumas", telephone: "+33612345678" },
     adresse: {
-      label: null,
       street: "12 rue de la République",
       zipCode: "69002",
       city: "Lyon",
@@ -282,6 +281,69 @@ describe("TourneeVue - ce que T-V2-01 ne pose pas", () => {
     expect(
       screen.queryByText(/Chargement de la carte/),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("TourneeVue - le second chemin du DTO", () => {
+  // ⚠️ **Ajout de l'agent testeur, 2026-08-12.** Tous les tests ci-dessus ne
+  // rendent que `initialData`, le PREMIER des deux chemins par lesquels ce DTO
+  // traverse la frontiere. Le second - le retour de la Server Action au polling -
+  // n'etait rendu nulle part : la `queryFn` est doublee sur un `{ data:
+  // undefined }` qui fait toujours lever. Or c'est precisement le chemin dont le
+  // module dit qu'une divergence « ne se verrait qu'apres 30 secondes
+  // d'affichage correct ».
+
+  it("remplace la liste affichee par ce que rend la Server Action", async () => {
+    const { listerTournee } =
+      await import("@/lib/actions/interventions/lister-tournee");
+
+    vi.mocked(listerTournee).mockResolvedValue({
+      data: {
+        interventions: [
+          intervention({
+            id: 99,
+            forfait: "Diagnostic express",
+            client: { nom: "Karim Benali", telephone: "+33700000000" },
+          }),
+        ],
+        debutJournee: DEBUT_JOURNEE,
+      },
+    } as never);
+
+    afficher([intervention({ id: 1, forfait: "Révision complète" })]);
+
+    // La forme rendue par l'action se rend exactement comme `initialData` : meme
+    // heure de Paris, meme nom complet, meme telephone appelable.
+    expect(await screen.findByText("Diagnostic express")).toBeInTheDocument();
+    expect(screen.getByText("Karim Benali")).toBeInTheDocument();
+    expect(screen.getByText("10:00")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "+33700000000" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Révision complète")).not.toBeInTheDocument();
+  });
+
+  it("CONSERVE la liste affichee quand le rafraichissement echoue", async () => {
+    // Session expiree, panne reseau, action refusee : la tournee deja affichee
+    // ne doit pas se vider sous le technicien en pleine journee.
+    //
+    // ⚠️ L'echec est **silencieux** - `useQuery` n'expose ici que `data`, jamais
+    // `isError`, et rien a l'ecran ne dit que la liste a cesse de se rafraichir.
+    // Constate, pas prescrit : aucune DoD ni US ne demande d'indicateur. Remonte
+    // dans le rapport.
+    const { listerTournee } =
+      await import("@/lib/actions/interventions/lister-tournee");
+
+    vi.mocked(listerTournee).mockRejectedValue(new Error("réseau coupé"));
+
+    afficher([intervention({ forfait: "Révision complète" })]);
+
+    await waitFor(() => {
+      expect(listerTournee).toHaveBeenCalled();
+    });
+
+    expect(screen.getByText("Révision complète")).toBeInTheDocument();
+    expect(screen.getByRole("listitem")).toBeInTheDocument();
   });
 });
 

@@ -966,7 +966,6 @@ function ligneTournee(surcharge: Record<string, unknown> = {}) {
     },
     address: {
       id: 77,
-      label: null,
       street: "12 rue de la Republique",
       city: { zipCode: "69002", city: "Lyon" },
     },
@@ -1031,6 +1030,66 @@ describe("listerTourneeDuJour - les bornes de la journee", () => {
       (where.appointmentAt.lt.getTime() - where.appointmentAt.gte.getTime()) /
       3_600_000;
     expect(heures).toBe(25);
+  });
+
+  it("couvre les 23 heures de la nuit ou l'heure d'ete arrive", async () => {
+    // ⚠️ **Ajout de l'agent testeur, 2026-08-12.** La DoD nomme « les deux nuits
+    // de bascule » et la suite n'en eprouvait qu'UNE, celle d'octobre. Les deux
+    // ne se prouvent pas l'une l'autre : la journee de 25 heures ne casse
+    // qu'une borne haute calculee en « + 24 h », la journee de 23 heures casse
+    // en plus la SECONDE passe d'`instantUtc` - c'est le seul jour ou le
+    // decalage estime (+1) et le decalage reel de la borne haute (+2) different.
+    //
+    // Le 29 mars 2026, dernier dimanche du mois : 02 h CET devient 03 h CEST.
+    // Minuit local est 23 h UTC la veille (+1), minuit du 30 est 22 h UTC le 29
+    // (+2), et la journee civile ne dure que 23 heures. Une borne haute en
+    // « debut + 24 h » irait jusqu'a 23 h UTC le 29, donc **avalerait la
+    // premiere heure du 30 mars** : le premier rendez-vous du lendemain matin
+    // apparaitrait dans la tournee de la veille.
+    await listerTourneeDuJour({
+      techId: TECH,
+      jour: { annee: 2026, mois: 3, jour: 29 },
+    });
+
+    const { where } = interventionFindMany.mock.calls[0]![0] as {
+      where: { appointmentAt: { gte: Date; lt: Date } };
+    };
+
+    expect(where.appointmentAt.gte).toEqual(
+      new Date("2026-03-28T23:00:00.000Z"),
+    );
+    expect(where.appointmentAt.lt).toEqual(
+      new Date("2026-03-29T22:00:00.000Z"),
+    );
+
+    const heures =
+      (where.appointmentAt.lt.getTime() - where.appointmentAt.gte.getTime()) /
+      3_600_000;
+    expect(heures).toBe(23);
+  });
+
+  it("passe le changement de MOIS et d'ANNEE sans deborder", async () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-12. `ajouterJours` fabrique la borne
+    // haute ; un incrementeur naif sur le champ `jour` produirait un « 32
+    // decembre » que `Date.UTC` normalise silencieusement - ou pas, selon
+    // l'implementation. Le 31 decembre est aussi le jour ou une tournee mal
+    // bornee glisserait d'une annee entiere.
+    await listerTourneeDuJour({
+      techId: TECH,
+      jour: { annee: 2026, mois: 12, jour: 31 },
+    });
+
+    const { where } = interventionFindMany.mock.calls[0]![0] as {
+      where: { appointmentAt: { gte: Date; lt: Date } };
+    };
+
+    // Hiver : Paris est en CET (+1) des deux cotes du reveillon.
+    expect(where.appointmentAt.gte).toEqual(
+      new Date("2026-12-30T23:00:00.000Z"),
+    );
+    expect(where.appointmentAt.lt).toEqual(
+      new Date("2026-12-31T23:00:00.000Z"),
+    );
   });
 
   it("borne en exclusif a minuit du lendemain, jamais en inclusif", async () => {
@@ -1221,6 +1280,48 @@ describe("listerTourneeDuJour - la projection", () => {
     for (const interdit of ["priceSnapshot", "unitPriceSnapshot", "total"]) {
       expect(serialise).not.toContain(interdit);
     }
+  });
+
+  it("ne rend QUE des valeurs stables a la serialisation", async () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-12. Le module s'attribue en toutes
+    // lettres la propriete « les deux chemins portent exactement la meme
+    // forme » - `initialData` au rendu, retour de la Server Action au polling -
+    // et le seul oracle existant ne couvrait qu'`appointmentAt`.
+    //
+    // La propriete generale est plus large que ce champ : **aucune** valeur du
+    // DTO ne doit changer de type en traversant la frontiere. Un `Decimal`
+    // Prisma oublie dans un `select` ressortirait en objet cote serveur et en
+    // chaine apres serialisation ; un `undefined` disparaitrait d'un cote et pas
+    // de l'autre. Le defaut ne se verrait qu'apres 30 secondes d'affichage
+    // correct, ce qu'aucune revue n'attrape.
+    interventionFindMany.mockResolvedValue([
+      ligneTournee({
+        products: [
+          { productId: 2, quantity: 3, product: { label: "Antivol en U" } },
+        ],
+      }),
+      ligneTournee({
+        id: 2,
+        status: "CANCELLED",
+        client: {
+          firstname: "Utilisateur",
+          lastname: "Anonymise",
+          phone: null,
+        },
+        address: {
+          id: 78,
+          street: "Adresse supprimee",
+          city: { zipCode: "69002", city: "Lyon" },
+        },
+      }),
+    ]);
+
+    const tournee = await listerTourneeDuJour({
+      techId: TECH,
+      jour: { annee: 2026, mois: 8, jour: 13 },
+    });
+
+    expect(JSON.parse(JSON.stringify(tournee))).toEqual(tournee);
   });
 
   it("rend une liste vide sans interroger les points", async () => {

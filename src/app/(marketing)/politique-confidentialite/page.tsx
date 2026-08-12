@@ -170,11 +170,12 @@ export default async function PolitiqueConfidentialitePage() {
           <li>
             <strong className="text-foreground">Google Maps</strong> (Google
             LLC, États-Unis) affiche au technicien la carte de sa tournée du
-            jour : les coordonnées géographiques de l&apos;adresse
-            d&apos;intervention sont chargées depuis ses serveurs. Cet affichage
-            n&apos;a lieu que sur l&apos;écran du technicien, jamais sur le
-            vôtre, et repose sur le même cadre de protection des données UE /
-            États-Unis que ci-dessus.
+            jour. Pour la dessiner, son navigateur{" "}
+            <strong className="text-foreground">transmet</strong> à Google la
+            zone géographique affichée, donc la localisation de votre adresse
+            d&apos;intervention. Cet affichage n&apos;a lieu que sur
+            l&apos;écran du technicien, jamais sur le vôtre, et repose sur le
+            même cadre de protection des données UE / États-Unis que ci-dessus.
           </li>
         </ul>
       </SectionLegale>

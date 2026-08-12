@@ -307,6 +307,81 @@ test("un client authentifie recoit un 403", async ({ page }) => {
   await expect(page.locator("body")).not.toContainText("+33612345678");
 });
 
+test("la Server Action de rafraichissement refuse un client authentifie", async ({
+  page,
+  browser,
+}) => {
+  // ⚠️ **Ajout de l'agent testeur, 2026-08-12.** La DoD case 9 exige que la
+  // Server Action de polling porte sa PROPRE garde, « verifiee par test ». Elle
+  // l'etait - mais uniquement dans `lister-tournee.test.ts`, ou `getCurrentUser`
+  // ET `forbidden` sont doubles. Ce test-la prouve que le CORPS de l'action lit
+  // la session ; il ne prouve rien de la chaine reelle, ou trois pieces
+  // independantes doivent s'aligner : `src/proxy.ts` laisse deliberement passer
+  // `Next-Action`, `techActionClient` pose la garde en middleware, et
+  // `forbidden()` doit remonter sans etre avale par `handleServerError`.
+  //
+  // Le scenario est celui d'ADR-006 v2 mot pour mot : une Server Action exportee
+  // est un endpoint POST public. On ne l'INVENTE pas - on capture l'appel reel
+  // du polling, identifiant d'action compris (c'est un hash de build, il ne se
+  // devine pas), puis on le REJOUE avec les cookies d'un client.
+  //
+  // ⚠️ Le controle POSITIF n'est pas decoratif : sans lui, un rejeu malforme
+  // ferait passer le test pour la mauvaise raison - une reponse vide ne contient
+  // aucun telephone, et l'assertion de fuite serait vraie par accident.
+  test.setTimeout(120_000);
+
+  await seConnecterTechnicien(page, techPlein.email);
+  const origine = new URL(page.url()).origin;
+
+  // Le polling est a 30 s (PLAN S1 §6.1) et `initialData` est fraiche : le
+  // premier POST d'action n'arrive donc pas avant.
+  const appel = await page.waitForRequest(
+    (requete) =>
+      requete.method() === "POST" &&
+      requete.headers()["next-action"] !== undefined,
+    { timeout: 60_000 },
+  );
+
+  const enTetes = {
+    "Next-Action": appel.headers()["next-action"] ?? "",
+    "Content-Type":
+      appel.headers()["content-type"] ?? "text/plain;charset=UTF-8",
+  };
+  const corps = appel.postData() ?? "[]";
+
+  // Controle positif : le rejeu fonctionne, et il rend bien de la donnee client.
+  const legitime = await page.request.post(`${origine}/interventions/du-jour`, {
+    headers: enTetes,
+    data: corps,
+  });
+  expect(legitime.status()).toBe(200);
+  expect(await legitime.text()).toContain("+33612345678");
+
+  // Le meme appel, a la lettre, avec la session d'un CLIENT.
+  const client = await creerCompte(db, "action", ["ROLE_CLIENT"]);
+  utilisateursCreees.push(client.id);
+
+  const contexte = await browser.newContext({ baseURL: origine });
+  try {
+    await seConnecterCompte(await contexte.newPage(), client.email);
+
+    const usurpation = await contexte.request.post(
+      `${origine}/interventions/du-jour`,
+      { headers: enTetes, data: corps },
+    );
+    const rendu = await usurpation.text();
+
+    // L'oracle porte sur la DONNEE, pas sur le code de statut : ce qui est en
+    // jeu est le carnet d'adresses d'un technicien - nom, telephone et adresse
+    // complete de clients tiers (cadrage plancher V2, D6).
+    expect(rendu).not.toContain("+33612345678");
+    expect(rendu).not.toContain("Sophie Dumas");
+    expect(rendu).not.toContain("8 rue Tres Reconnaissable");
+  } finally {
+    await contexte.close();
+  }
+});
+
 test("un visiteur anonyme est renvoye vers la connexion avec son `next`", async ({
   page,
 }) => {

@@ -131,6 +131,49 @@ describe("listerTournee", () => {
     );
   });
 
+  it("IGNORE une charge utile qui designerait un autre technicien", async () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-12. Le module ecrit « le technicien
+    // vient de la SESSION, jamais de la charge utile - un `techId` en parametre
+    // serait la tournee d'autrui pour qui sait poster », et le test voisin
+    // n'affirme que la moitie de la propriete : que la session est bien lue.
+    //
+    // Ce qu'il ne dit pas, c'est ce qui se passe quand un appelant POSTE quand
+    // meme des arguments. L'action est declaree sans `inputSchema`, donc rien
+    // ne rejette la charge utile - la seule chose qui protege est qu'aucun
+    // parametre n'est LU. C'est une propriete du corps de l'action, pas de la
+    // bibliotheque, et elle se perdrait au premier ajout de signature.
+    //
+    // Un endpoint POST public (ADR-006 v2) se poste avec ce qu'on veut.
+    getCurrentUser.mockResolvedValue(TECHNICIEN);
+
+    const forge = listerTournee as unknown as (
+      charge: unknown,
+    ) => Promise<unknown>;
+    await forge({ techId: AUTRE_ID, jour: { annee: 2020, mois: 1, jour: 1 } });
+
+    expect(listerTourneeDuJour).toHaveBeenCalledWith({
+      techId: TECH_ID,
+      jour: jourLocal(new Date()),
+    });
+  });
+
+  it("rend EXACTEMENT les deux champs du contrat, sans champ surnumeraire", async () => {
+    // ⚠️ Ajout de l'agent testeur, 2026-08-12. Le DTO traverse la frontiere par
+    // DEUX chemins qui doivent porter la meme forme : `initialData`, fabrique
+    // par `page.tsx`, et le retour de cette action au polling. `page.tsx` compose
+    // `{ interventions, debutJournee }` a la main ; un troisieme champ ajoute
+    // ici et pas la-bas ne se verrait qu'apres 30 secondes d'affichage correct,
+    // au moment ou `data` change de forme sous le composant.
+    getCurrentUser.mockResolvedValue(TECHNICIEN);
+
+    const resultat = await listerTournee();
+
+    expect(Object.keys(resultat?.data ?? {}).sort()).toEqual([
+      "debutJournee",
+      "interventions",
+    ]);
+  });
+
   it("refuse un client authentifie, et ne lit jamais la base", async () => {
     // Le coeur de la DoD. Sans cette garde, un client qui poste cette action
     // recoit le nom, le telephone et l'adresse des clients d'un technicien.

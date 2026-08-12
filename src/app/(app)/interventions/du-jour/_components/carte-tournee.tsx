@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { InterventionTournee } from "@/lib/db/queries/interventions";
+import { formatHeure } from "@/lib/format";
 
 /// Carte de la tournée — colonne droite de l'écran **T1**.
 ///
@@ -66,11 +67,24 @@ function chargerMaps(cle: string): Promise<void> {
   if (chargement) return chargement;
 
   chargement = new Promise<void>((resoudre, rejeter) => {
-    const existant = document.getElementById(ID_SCRIPT);
-    if (existant) {
+    // 🐛 **On interroge le GLOBAL, pas la présence de la balise.** Cette garde
+    // testait `document.getElementById(ID_SCRIPT)` et résolvait aussitôt : après
+    // un échec, la balise morte restait dans le `<head>`, la tentative suivante
+    // la retrouvait, résolvait sans rien recharger, et `new google.maps.Map`
+    // s'exécutait sur un global inexistant — « google is not defined », onglet
+    // bloqué sur « Chargement de la carte… » jusqu'au F5. Le commentaire du
+    // bloc `error` promettait déjà la reprise ; il était faux.
+    //
+    // Trouvé par l'agent testeur (B1) sur du code qu'aucune exécution n'avait
+    // atteint, faute de clé.
+    if (typeof google !== "undefined" && google.maps) {
       resoudre();
       return;
     }
+
+    // Reliquat d'une tentative échouée : il n'a jamais rien exposé, et le
+    // laisser ferait rejouer exactement le même faux positif.
+    document.getElementById(ID_SCRIPT)?.remove();
 
     const script = document.createElement("script");
     script.id = ID_SCRIPT;
@@ -82,9 +96,10 @@ function chargerMaps(cle: string): Promise<void> {
       resoudre();
     });
     script.addEventListener("error", () => {
-      // Rejouable : on oublie la promesse échouée, sinon un incident réseau
-      // ponctuel condamnerait la carte pour toute la durée de l'onglet.
+      // Rejouable : la promesse échouée est oubliée **et** la balise morte
+      // retirée. Sans le second, le premier ne sert à rien.
       chargement = undefined;
+      script.remove();
       rejeter(new Error("Script Google Maps injoignable."));
     });
     document.head.append(script);
@@ -134,15 +149,27 @@ export function CarteTournee({
         const carte = new google.maps.Map(conteneur.current, {
           center: LYON,
           zoom: ZOOM_POINT_UNIQUE,
-          // Le technicien lit une position, il ne navigue pas : les contrôles
-          // de Street View et de type de carte n'ajoutent que du bruit.
+          // ⚠️ **Aucune commande, et c'est une exigence d'accessibilité, pas une
+          // préférence esthétique.** L'API injecte sinon dans ce conteneur des
+          // boutons de zoom et de plein écran, le lien du logo et « Raccourcis
+          // clavier » — tous FOCUSABLES, tous sous le `aria-hidden` du wrapper.
+          // C'est `aria-hidden-focus` (axe, wcag2a, SC 4.1.2) : atteignable au
+          // clavier, muet au lecteur d'écran, donc un arrêt sans annonce dans
+          // l'ordre de tabulation.
+          //
+          // Le technicien lit une position, il ne navigue pas. Constat de
+          // l'agent testeur (B2) ; le `inert` du wrapper est la seconde moitié
+          // du correctif, parce que cette liste d'options n'est pas exhaustive
+          // et que l'API peut en ajouter.
+          disableDefaultUI: true,
+          keyboardShortcuts: false,
           streetViewControl: false,
           mapTypeControl: false,
         });
 
         const bornes = new google.maps.LatLngBounds();
 
-        for (const [index, intervention] of points.entries()) {
+        for (const intervention of points) {
           const point = intervention.point;
           if (!point) continue;
 
@@ -151,12 +178,20 @@ export function CarteTournee({
           new google.maps.Marker({
             position,
             map: carte,
-            // Numérotés dans l'ordre de la tournée, qui est l'ordre
-            // chronologique. La maquette les numérote ; [[maquettage]] §Notes
-            // portage relève « pins carte sans numéros » comme la divergence à
-            // corriger, donc on les numérote bien.
-            label: String(index + 1),
-            title: `${intervention.forfait} — ${intervention.adresse.street}`,
+            // 🐛 **Numéroté sur la tournée ENTIÈRE, pas sur les points
+            // retenus.** L'index du tableau filtré était corrélable à rien : une
+            // intervention sans point — client pseudonymisé — était sautée sans
+            // laisser de trou, et le pin « 2 » désignait alors le TROISIÈME
+            // rendez-vous de la journée. Constat de l'agent testeur (B3).
+            //
+            // La maquette numérote les pins et [[maquettage]] §Notes portage
+            // relève « pins carte sans numéros » comme la divergence à corriger,
+            // donc on les numérote — mais un numéro qui ment est pire qu'aucun.
+            label: String(interventions.indexOf(intervention) + 1),
+            // L'HEURE en tête : c'est le seul repère que la liste affiche aussi,
+            // donc le seul par lequel le technicien relie un pin à une ligne.
+            // La liste ne porte pas d'ordinal, la maquette n'en met pas.
+            title: `${formatHeure(new Date(intervention.appointmentAt))} — ${intervention.forfait}, ${intervention.adresse.street}`,
           });
 
           bornes.extend(position);
@@ -193,6 +228,12 @@ export function CarteTournee({
   return (
     <div
       aria-hidden="true"
+      // `inert` est la seconde moitié du correctif de `aria-hidden-focus` :
+      // `disableDefaultUI` retire les commandes que l'API connaît, `inert`
+      // rend le sous-arbre entier inatteignable au clavier quoi qu'elle y
+      // ajoute. Une liste d'options n'est jamais une garantie ; celle-ci en
+      // est une.
+      inert
       className="relative h-64 shrink-0 overflow-hidden rounded-2xl border border-border bg-secondary lg:h-auto lg:min-h-96 lg:w-96"
     >
       <div ref={conteneur} className="absolute inset-0" />
