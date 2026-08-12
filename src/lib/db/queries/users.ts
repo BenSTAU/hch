@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 import { writeAuditLog } from "@/lib/audit/log";
 import { verifyPassword } from "@/lib/auth/password";

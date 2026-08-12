@@ -1,4 +1,4 @@
-﻿import { ArrowLeft, ShieldCheck, TriangleAlert, XCircle } from "lucide-react";
+import { ArrowLeft, ShieldCheck, TriangleAlert, XCircle } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 

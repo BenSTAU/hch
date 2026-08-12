@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { Trash2 } from "lucide-react";
 import { useState, useTransition } from "react";

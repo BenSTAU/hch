@@ -1,4 +1,4 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 
 import { lireIdentiteSociete } from "@/lib/db/queries/parametres";
 import { CHEMIN_ACCESSIBILITE } from "@/components/layouts/site-navigation";

@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import type { IdentiteSociete } from "@/lib/db/queries/parametres";
