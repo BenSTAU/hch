@@ -373,7 +373,13 @@ describe("destination post-connexion", () => {
       expect(redirect).toHaveBeenCalledWith("/mes-interventions/a-venir");
     });
 
-    it("dépose le technicien sur l'accueil", async () => {
+    it("dépose le technicien sur sa tournée du jour", async () => {
+      // ⚠️ **Oracle basculé par T-V2-01** (règle du test rouge, cas 3 : il
+      // disait vrai jusqu'à ce que l'écran existe). Il attendait `/`, la
+      // destination PROVISOIRE que T-V3-03 avait posée faute d'espace
+      // technicien — elle refusait de créer une coquille vide, leçon T-T2-16
+      // d'Argo. `/interventions/du-jour` est ce que [[module-1-utilisateurs]]
+      // §250 nomme depuis le début.
       authenticateWithPassword.mockResolvedValue({
         ok: true,
         user: { id: "tech-1", roles: ["ROLE_TECH"] },
@@ -381,7 +387,8 @@ describe("destination post-connexion", () => {
 
       await login(CREDENTIALS).catch(() => undefined);
 
-      expect(redirect).toHaveBeenCalledWith("/");
+      expect(redirect).toHaveBeenCalledWith("/interventions/du-jour");
+      expect(redirect).not.toHaveBeenCalledWith("/");
     });
 
     it("laisse `next` primer sur la destination de rôle", async () => {

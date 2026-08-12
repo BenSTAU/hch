@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit/log";
 import { ROLE_TECH } from "@/lib/auth/permissions";
 import type { TechnicienCharge } from "@/lib/creneaux/derivation";
+import { ajouterJours, instantUtc } from "@/lib/creneaux/horaires";
 import { db } from "@/lib/db/client";
 import { creerAdresse, resoudreCommune } from "@/lib/db/queries/adresses";
 import { annulationOuverte } from "@/lib/interventions/annulation";
@@ -13,7 +14,7 @@ import {
   type EchecStock,
   type LignePanier,
 } from "@/lib/db/queries/produits";
-import type { PointWgs84 } from "@/lib/geo/postgis";
+import { lirePointsAdresses, type PointWgs84 } from "@/lib/geo/postgis";
 
 /// Accès aux interventions - helpers métier, pas Server Actions.
 ///
@@ -522,6 +523,190 @@ export async function compterInterventionsClient(params: {
   ]);
 
   return { aVenir, passees };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tournée du technicien - `US-INTERVENTIONS-LISTER-TECH-DU-JOUR` (T-V2-01).
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Produit attaché, vu par le TECHNICIEN. Pas de prix, délibérément.
+///
+/// `ProduitAttache` (côté client) porte `unitPriceSnapshot` parce que le client
+/// paie. La SPEC §Cas nominal n'énumère que « produits additionnels attachés »
+/// sur les lignes de la tournée, et la maquette T1 n'affiche qu'un libellé et
+/// un compte (« 1 produit : Pack usure standard »). Envoyer les montants au
+/// navigateur du technicien serait une donnée de plus sans usage - le total lui
+/// arrivera avec l'encaissement, en T-V2-03.
+export type ProduitTournee = {
+  productId: number;
+  label: string;
+  quantity: number;
+};
+
+/// Une ligne de la tournée.
+///
+/// ⚠️ **`appointmentAt` est une chaîne ISO, pas une `Date`.** Ce DTO traverse la
+/// frontière serveur → client par DEUX chemins : `initialData` au rendu, puis le
+/// retour de la Server Action à chaque rafraîchissement de 30 s. Les deux
+/// doivent porter exactement la même forme, sinon le premier `refetch`
+/// remplacerait des `Date` par autre chose et le formatage casserait après 30
+/// secondes d'affichage correct - un défaut qui ne se voit pas en revue. Même
+/// choix que `lister-creneaux.ts`, qui ne sort que des ISO.
+export type InterventionTournee = {
+  id: number;
+  /// PLANNED | IN_PROGRESS | DONE | CANCELLED. Les quatre sont affichés.
+  status: string;
+  appointmentAt: string;
+  durationSnapshot: number;
+  forfait: string;
+  /// ⚠️ **Nom COMPLET et téléphone, sans abréviation.** `abregerNom()` existe
+  /// dans ce module et ne s'applique **pas** ici : il abrège le TECHNICIEN pour
+  /// le client, au titre de la minimisation. Le symétrique masquerait le nom du
+  /// client à la personne qui va sonner chez lui, alors que Constitution §1.1
+  /// fait du technicien celui qui se déplace. La SPEC §Cas nominal écrit
+  /// « client (nom **et** téléphone) ». Cadrage du plancher V2, D6 - la table
+  /// §Écrans de TASKS écrivait la divergence à l'envers, et elle a été retirée.
+  client: {
+    nom: string;
+    /// NULL sur un compte pseudonymisé (`users.phone` remis à NULL par le droit
+    /// à l'oubli, `queries/users.ts:143`). La vue affiche une mention neutre :
+    /// l'intervention survit à l'effacement de son client (Constitution §4.1,
+    /// pas de FK cassée), donc la ligne existe et doit se rendre.
+    telephone: string | null;
+  };
+  /// ⚠️ **Sans `label`**, contrairement à `InterventionClient`. C'est un libellé
+  /// que le client rédige pour lui-même — « Domicile », « Chez ma mère » — et
+  /// aucun composant de cet écran ne le lit. Il traversait jusqu'au navigateur
+  /// du technicien sans consommateur : relevé par l'agent testeur, et c'est
+  /// exactement la minimisation dont ce module se réclame ailleurs.
+  adresse: {
+    street: string;
+    zipCode: string;
+    city: string;
+  };
+  /// `null` quand l'adresse n'a pas de point - pseudonymisation, là encore.
+  /// C'est la garde de pin qu'exige la DoD case 11.
+  point: PointWgs84 | null;
+  produits: ProduitTournee[];
+};
+
+/// Le `select` de la tournée. Distinct de `SELECTION_CLIENT` et pas une
+/// variante : les deux écrans ne montrent ni les mêmes personnes ni les mêmes
+/// champs. Celui-ci lit le CLIENT (l'autre lit le technicien), n'a besoin
+/// d'aucun prix, et remonte `address.id` pour aller chercher le point GPS.
+const SELECTION_TECH = {
+  id: true,
+  status: true,
+  appointmentAt: true,
+  durationSnapshot: true,
+  service: { select: { label: true } },
+  client: { select: { firstname: true, lastname: true, phone: true } },
+  address: {
+    // Pas de `label` : il n'a aucun lecteur sur cet écran, et ne pas le
+    // SÉLECTIONNER est plus sûr que ne pas l'afficher.
+    select: {
+      id: true,
+      street: true,
+      city: { select: { zipCode: true, city: true } },
+    },
+  },
+  products: {
+    select: {
+      productId: true,
+      quantity: true,
+      product: { select: { label: true } },
+    },
+    orderBy: { productId: "asc" },
+  },
+} satisfies Prisma.InterventionSelect;
+
+type LigneTournee = Prisma.InterventionGetPayload<{
+  select: typeof SELECTION_TECH;
+}>;
+
+function projeterTournee(
+  ligne: LigneTournee,
+  points: Map<number, PointWgs84>,
+): InterventionTournee {
+  return {
+    id: ligne.id,
+    status: ligne.status,
+    appointmentAt: ligne.appointmentAt.toISOString(),
+    durationSnapshot: ligne.durationSnapshot,
+    forfait: ligne.service.label,
+    client: {
+      // Pas d'`abregerNom` — cf. le commentaire du type.
+      nom: `${ligne.client.firstname} ${ligne.client.lastname}`,
+      telephone: ligne.client.phone,
+    },
+    adresse: {
+      street: ligne.address.street,
+      zipCode: ligne.address.city.zipCode,
+      city: ligne.address.city.city,
+    },
+    point: points.get(ligne.address.id) ?? null,
+    produits: ligne.products.map((produit) => ({
+      productId: produit.productId,
+      label: produit.product.label,
+      quantity: produit.quantity,
+    })),
+  };
+}
+
+/// Tournée d'un technicien pour une journée civile — l'écran **T1**.
+///
+/// ── La journée se borne en heure locale, jamais en UTC construit à la main
+///
+/// `jour` est une date CIVILE (`jourLocal(maintenant)`), pas un instant. Les
+/// bornes s'obtiennent par `instantUtc`, qui ancre minuit dans
+/// `Europe/Paris` et gère les deux nuits de bascule par une double passe. La
+/// borne haute passe par `ajouterJours(jour, 1)` et non par « +24 h » : les
+/// deux nuits de changement d'heure durent 23 ou 25 heures, et une tournée
+/// bornée en heures perdrait ou dupliquerait un rendez-vous ces jours-là.
+///
+/// C'est exactement le défaut du filtre de l'écran C10, qui construisait
+/// `new Date(\`${valeur}T00:00:00.000Z\`)` en dur (point ouvert du 2026-08-11).
+/// Cadrage du plancher V2, D1 — la note de la SPEC qui renvoie à une clé
+/// `app_settings.timezone` est fausse : cette clé n'existe pas, et PLAN S2 §T5
+/// tranche le stockage tout-UTC.
+///
+/// ── Bornée par le JOUR, pas par le statut
+///
+/// ⚠️ **Aucun filtre de statut, et c'est la règle inverse de l'onglet « À
+/// venir » du client** (`listerInterventionsAVenir`, qui retient `PLANNED` sans
+/// borne de date). La SPEC §Cas nominal exige que « les statuts terminaux
+/// (`DONE`, `CANCELLED`) restent affichés en fin de journée » pour la
+/// traçabilité de la tournée. La symétrie apparente entre les deux écrans est
+/// un piège : ne pas recopier le filtre du voisin.
+///
+/// L'index `@@index([techId, appointmentAt])` de la migration
+/// `init_interventions` couvre ce filtre — il avait été posé pour la dérivation
+/// des créneaux, et c'est exactement celui dont la tournée a besoin. Aucune
+/// migration n'accompagne donc cette tâche.
+export async function listerTourneeDuJour(params: {
+  techId: string;
+  jour: { annee: number; mois: number; jour: number };
+}): Promise<InterventionTournee[]> {
+  const debut = instantUtc(params.jour, 0);
+  const fin = instantUtc(ajouterJours(params.jour, 1), 0);
+
+  const lignes = await db.intervention.findMany({
+    where: {
+      techId: params.techId,
+      appointmentAt: { gte: debut, lt: fin },
+    },
+    select: SELECTION_TECH,
+    orderBy: { appointmentAt: "asc" },
+  });
+
+  // Cascade assumée : les identifiants d'adresses n'existent qu'après la
+  // lecture ci-dessus. Un seul aller-retour supplémentaire pour tout le lot,
+  // pas un par ligne — la base est jointe par un tunnel SSH.
+  const points = await lirePointsAdresses(
+    lignes.map((ligne) => ligne.address.id),
+  );
+
+  return lignes.map((ligne) => projeterTournee(ligne, points));
 }
 
 // ─────────────────────────────────────────────────────────────────────────

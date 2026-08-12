@@ -43,6 +43,42 @@ export function pointGeography(point: PointWgs84): Prisma.Sql {
   )::geography`;
 }
 
+/// Points GPS d'un lot d'adresses, indexés par identifiant.
+///
+/// Prisma masque `addresses.location` même en lecture — `Unsupported`, cf. l'en-
+/// tête de ce module — donc les pins de la carte de la tournée (T-V2-01) ne
+/// peuvent pas sortir du `select` Prisma qui lit les interventions. C'est une
+/// **seconde requête**, et la cascade est inévitable : les identifiants
+/// d'adresses ne sont connus qu'après la première lecture.
+///
+/// ⚠️ **Toute adresse n'a pas de point.** `location` est NULLable depuis la
+/// migration `relax_addresses_location` (T-V3-12) : la pseudonymisation le met
+/// à NULL en SQL brut (`src/lib/db/queries/users.ts:182`), le point GPS partant
+/// avec la rue. Le `WHERE` ci-dessous les écarte, et une adresse absente de la
+/// Map rendue est un pin qui ne se dessine pas — pas une erreur.
+///
+/// Renvoie une `Map` vide sur un lot vide, sans toucher la base : `IN ()` n'est
+/// pas du SQL valide, et Prisma sérialiserait un tableau vide en erreur de
+/// syntaxe plutôt qu'en résultat vide.
+export async function lirePointsAdresses(
+  ids: readonly number[],
+): Promise<Map<number, PointWgs84>> {
+  if (ids.length === 0) return new Map();
+
+  const lignes = await db.$queryRaw<{ id: number; lon: number; lat: number }[]>`
+    SELECT "id",
+           ST_X("location"::geometry) AS lon,
+           ST_Y("location"::geometry) AS lat
+      FROM addresses
+     WHERE "id" IN (${Prisma.join([...ids])})
+       AND "location" IS NOT NULL
+  `;
+
+  return new Map(
+    lignes.map((ligne) => [ligne.id, { lon: ligne.lon, lat: ligne.lat }]),
+  );
+}
+
 /// Zone de service couvrant ce point, s'il en existe une.
 ///
 /// `ST_Covers` et non `ST_Contains` : la frontière est **incluse**. Une zone

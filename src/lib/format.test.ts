@@ -20,6 +20,9 @@ import { describe, expect, it } from "vitest";
 import {
   formatDelaiRelatif,
   formatDuree,
+  formatDureeCumulee,
+  formatHeure,
+  formatJourLong,
   formatPrixEuros,
   multiplierEuros,
   sommeEuros,
@@ -197,5 +200,84 @@ describe("formatDelaiRelatif", () => {
     expect(
       formatDelaiRelatif(new Date("2026-08-09T10:00:00.000Z"), MIDI),
     ).toBeNull();
+  });
+});
+
+describe("formatHeure", () => {
+  it("rend l'heure de PARIS, pas celle d'UTC", () => {
+    // 08 h 00 UTC un 13 aout, c'est 10 h 00 a Paris (CEST). Un formatage en UTC
+    // enverrait le technicien deux heures trop tot sur sa premiere intervention.
+    expect(formatHeure(new Date("2026-08-13T08:00:00.000Z"))).toBe("10:00");
+  });
+
+  it("suit la bascule vers l'heure d'hiver", () => {
+    // Le 1er novembre, Paris est repasse en CET (+1) : le meme instant UTC
+    // n'affiche plus la meme heure murale qu'en aout. Une constante « +2 » en
+    // dur serait juste la moitie de l'annee.
+    expect(formatHeure(new Date("2026-11-01T08:00:00.000Z"))).toBe("09:00");
+  });
+
+  it("rend deux chiffres, meme le matin", () => {
+    expect(formatHeure(new Date("2026-08-13T06:05:00.000Z"))).toBe("08:05");
+  });
+});
+
+describe("formatJourLong", () => {
+  it("rend le jour civil de PARIS, sans l'annee", () => {
+    expect(formatJourLong(new Date("2026-08-12T22:00:00.000Z"))).toBe(
+      "jeudi 13 août",
+    );
+  });
+
+  it("ne bascule pas de jour a cause du fuseau", () => {
+    // 22 h UTC le 12 aout, c'est deja minuit le 13 a Paris. Un formatage en UTC
+    // titrerait « mercredi 12 » au-dessus de la tournee du jeudi 13 - la meme
+    // famille de defaut que le filtre de l'ecran C10.
+    expect(formatJourLong(new Date("2026-08-12T22:00:00.000Z"))).toContain(
+      "13",
+    );
+    expect(formatJourLong(new Date("2026-08-12T21:00:00.000Z"))).toContain(
+      "12",
+    );
+  });
+
+  it("laisse la capitale initiale au CSS", () => {
+    // `first-letter:uppercase` cote vue. Decouper la chaine ici casserait sur
+    // toute locale qui ne commence pas par le jour de la semaine.
+    expect(formatJourLong(new Date("2026-08-12T22:00:00.000Z"))).toMatch(
+      /^[a-z]/,
+    );
+  });
+});
+
+describe("formatDureeCumulee", () => {
+  it("rend les minutes en deca d'une heure", () => {
+    // « 0 h 45 » se lit moins bien que « 45 min ».
+    expect(formatDureeCumulee(45)).toMatch(/^45\smin$/u);
+    expect(formatDureeCumulee(0)).toMatch(/^0\smin$/u);
+  });
+
+  it("rend heures et minutes au-dela", () => {
+    expect(formatDureeCumulee(170)).toMatch(/^2\sh\s50$/u);
+    expect(formatDureeCumulee(65)).toMatch(/^1\sh\s05$/u);
+  });
+
+  it("omet les minutes sur une heure pleine", () => {
+    expect(formatDureeCumulee(120)).toMatch(/^2\sh$/u);
+    expect(formatDureeCumulee(60)).toMatch(/^1\sh$/u);
+  });
+
+  it("complete les minutes a deux chiffres", () => {
+    // « 1 h 5 » se lirait comme une heure et cinquante minutes.
+    expect(formatDureeCumulee(65)).not.toMatch(/^1\sh\s5$/u);
+  });
+
+  it("ne remplace PAS `formatDuree`, qui rend des minutes par exigence", () => {
+    // `US-FORFAIT-CONSULTER` §Cas nominal impose « la duree EN MINUTES » pour un
+    // forfait, unite que partage le moteur de creneaux. Une somme de journee est
+    // autre chose. Les deux coexistent parce qu'elles repondent a deux
+    // exigences differentes - ce test le fige.
+    expect(formatDuree(90)).toMatch(/^90\smin$/u);
+    expect(formatDureeCumulee(90)).toMatch(/^1\sh\s30$/u);
   });
 });

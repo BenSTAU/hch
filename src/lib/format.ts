@@ -127,6 +127,68 @@ export function formatDelaiRelatif(
   return `Dans ${String(Math.round(ecart / 7))} semaines`;
 }
 
+/// « 09:00 » — heure seule, dans le fuseau d'exploitation. Colonne de gauche
+/// des lignes de la tournée technicien (écran **T1**), où la date est déjà dans
+/// le titre de la page et n'a pas à être répétée quinze fois.
+const HEURE = new Intl.DateTimeFormat("fr-FR", {
+  timeZone: FUSEAU_EXPLOITATION,
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+export function formatHeure(instant: Date): string {
+  return HEURE.format(instant);
+}
+
+/// « jeudi 13 août » — titre de la tournée du jour. Sans l'année : la page ne
+/// montre qu'aujourd'hui, et la préciser ferait lire une information sans
+/// usage. Sans capitale initiale non plus — `Intl` rend « jeudi », et la
+/// capitale de la maquette se pose en CSS (`first-letter:uppercase`) plutôt
+/// qu'en découpant la chaîne, ce qui casserait sur d'autres locales.
+const JOUR_LONG = new Intl.DateTimeFormat("fr-FR", {
+  timeZone: FUSEAU_EXPLOITATION,
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+});
+
+export function formatJourLong(instant: Date): string {
+  return JOUR_LONG.format(instant);
+}
+
+/// « 2 h 50 » — charge de travail cumulée d'une journée (écran **T1**).
+///
+/// ⚠️ **Distinct de `formatDuree` ci-dessous, et ce n'est pas une redondance.**
+/// Celui-là rend des minutes parce que `US-FORFAIT-CONSULTER` §Cas nominal
+/// impose « la durée **en minutes** » pour un forfait, unité que partage le
+/// moteur de créneaux. Une SOMME de journée n'est pas une durée de forfait :
+/// « 170 min » ne se lit pas, et la maquette T1 écrit « 2h50 ». Les deux
+/// coexistent parce qu'elles répondent à deux exigences différentes.
+///
+/// Sous l'heure, on retombe sur les minutes : « 0 h 45 » se lit moins bien que
+/// « 45 min ».
+
+/// Espace insécable U+00A0, même séparateur que `formatDuree` — « 2 h 50 » ne se
+/// coupe pas en fin de ligne sur un chip étroit.
+///
+/// ⚠️ Il est INVISIBLE dans un diff comme dans un éditeur, et c'est ce qui rend un
+/// test rouge illisible : celui de cette fonction a d'abord échoué sur « expected
+/// '90 min' to be '90 min' » — deux chaînes identiques à l'œil. La constante
+/// nommée rend le choix relisible là où le caractère semé dans les gabarits ne
+/// se voit pas.
+const INSECABLE = " ";
+
+export function formatDureeCumulee(minutes: number): string {
+  if (minutes < 60) return `${String(minutes)}${INSECABLE}min`;
+
+  const heures = Math.floor(minutes / 60);
+  const reste = minutes % 60;
+
+  return reste === 0
+    ? `${String(heures)}${INSECABLE}h`
+    : `${String(heures)}${INSECABLE}h${INSECABLE}${String(reste).padStart(2, "0")}`;
+}
+
 /// La durée reste **en minutes**, y compris au-delà de l'heure.
 ///
 /// Ce n'est pas un oubli de « 1 h 30 » : `US-FORFAIT-CONSULTER` §Cas nominal

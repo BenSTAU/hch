@@ -1,4 +1,4 @@
-import { CHEMIN_ESPACE_CLIENT } from "@/lib/routes";
+import { CHEMIN_ESPACE_CLIENT, CHEMIN_TOURNEE_DU_JOUR } from "@/lib/routes";
 
 import { ROLE_ADMIN, ROLE_TECH, hasRole } from "./permissions";
 
@@ -6,11 +6,9 @@ import { ROLE_ADMIN, ROLE_TECH, hasRole } from "./permissions";
 /// nominal ([[module-1-utilisateurs]] §287).
 ///
 /// La SPEC nomme trois espaces : client `/mes-interventions/a-venir`,
-/// technicien `/interventions/du-jour`, administrateur back-office. **Deux
-/// existent depuis T-V3-10**, qui livre l'espace client. Le troisième n'est pas
-/// posé en coquille vide — une route qui répond 200 sans rien porter est la
-/// leçon T-T2-16 d'Argo — et l'accueil reste sa destination provisoire jusqu'à
-/// la vague technicien.
+/// technicien `/interventions/du-jour`, administrateur back-office. **Les trois
+/// existent depuis T-V2-01**, qui livre la tournée du jour ; T-V3-10 avait
+/// livré l'espace client.
 ///
 /// Avant T-V3-03, la destination était `/admin/parametres` pour tout le monde :
 /// un client fraîchement activé se connectait, puis se voyait refuser l'accès
@@ -21,6 +19,11 @@ export const AFTER_LOGIN_ADMIN = "/admin/parametres";
 /// visent la même destination, et une seconde copie du littéral finirait par
 /// diverger.
 export const AFTER_LOGIN_CLIENT = CHEMIN_ESPACE_CLIENT;
+/// Réexporté depuis `src/lib/routes.ts` pour la même raison que la destination
+/// client : l'écran T1 et le menu utilisateur visent le même chemin.
+export const AFTER_LOGIN_TECH = CHEMIN_TOURNEE_DU_JOUR;
+/// Repli des rôles inconnus. Il ne sert plus de destination à aucun rôle nommé
+/// depuis que le technicien a son écran.
 export const AFTER_LOGIN_DEFAULT = "/";
 
 /// Destination de la **sortie** de session — `US-COMPTE-DECONNECTER` : « je
@@ -47,12 +50,11 @@ export function afterLoginPath(roles: readonly string[]): string {
   // administrateur, `role_admin` non plus.
   if (hasRole(roles, ROLE_ADMIN)) return AFTER_LOGIN_ADMIN;
 
-  // Le technicien AVANT le client, et l'ordre compte : son espace n'existe
-  // pas, et l'envoyer sur `/mes-interventions/a-venir` lui montrerait la liste
-  // vide de ses propres rendez-vous **en tant que client**, pas sa tournée. Un
-  // écran vide qui ressemble à son métier est pire qu'un accueil neutre. Sa
-  // destination reste provisoire jusqu'à la vague technicien.
-  if (hasRole(roles, ROLE_TECH)) return AFTER_LOGIN_DEFAULT;
+  // Le technicien AVANT le client, et l'ordre compte : sans cette ligne, un
+  // technicien qui porte aussi ROLE_CLIENT tomberait dans le repli ci-dessous
+  // et verrait la liste de ses propres rendez-vous **en tant que client**, pas
+  // sa tournée.
+  if (hasRole(roles, ROLE_TECH)) return AFTER_LOGIN_TECH;
 
   return AFTER_LOGIN_CLIENT;
 }

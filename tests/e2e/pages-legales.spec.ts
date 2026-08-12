@@ -137,7 +137,7 @@ test.describe("Mentions légales - le contenu vient de la base", () => {
 });
 
 test.describe("Politique de confidentialité - ce qu'elle déclare", () => {
-  test("nomme les trois destinataires réels", async ({ page }) => {
+  test("nomme les quatre destinataires réels", async ({ page }) => {
     await page.goto("/politique-confidentialite");
 
     const destinataires = page.getByRole("region", { name: "Destinataires" });
@@ -145,11 +145,22 @@ test.describe("Politique de confidentialité - ce qu'elle déclare", () => {
     // La BAN, que PLAN S4 §4.2 ne listait pas : `verifierAdresse` lui transmet
     // l'adresse saisie.
     await expect(destinataires).toContainText("Base Adresse Nationale");
-    // Google au titre du TRANSPORT EMAIL (ADR-017), pas de Maps : ADR-015 v2 a
-    // retiré la cartographie du parcours client le 2026-08-08.
+    // Google au titre du TRANSPORT EMAIL (ADR-017).
     await expect(destinataires).toContainText("Google LLC");
     await expect(destinataires).toContainText("Data Privacy Framework");
-    await expect(destinataires).not.toContainText("Maps");
+
+    // ⚠️ **Oracle inversé par T-V2-01** (règle du test rouge, cas 3 : il disait
+    // vrai jusqu'à ce que le produit change). Il exigeait l'ABSENCE de « Maps »,
+    // ce qui était juste sous ADR-015 v2 — la cartographie avait quitté le
+    // parcours client le 2026-08-08. Le cadrage du plancher V2 (D5) a rétabli
+    // une carte Maps JS sur l'écran T1, la tournée du technicien, cas dont
+    // l'ADR ne disait rien. Le transfert doit donc être déclaré, et c'est
+    // exactement ce que la DoD case 14 exige : « si la carte part, la mention
+    // part avec elle » — donc si la carte revient, la mention revient.
+    await expect(destinataires).toContainText("Google Maps");
+    // Le fond de carte, PAS le géocodage : celui-ci passe par la BAN, service
+    // public français, sans clé et sans transfert hors UE.
+    await expect(destinataires).not.toContainText("géocodage");
   });
 
   test("mène à la suppression de compte depuis la section Vos droits", async ({
