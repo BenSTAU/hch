@@ -38,6 +38,10 @@ test-results
 .vscode
 tests
 
+# Sources externes matérialisées (CLAUDE.md §Cite or don't claim). Elles
+# documentent le dépôt, elles ne sont lues par aucun module.
+docs
+
 # Compositions : elles pilotent des conteneurs, elles n'entrent pas dedans.
 Dockerfile
 .dockerignore

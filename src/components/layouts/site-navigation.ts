@@ -53,14 +53,23 @@ export function navigationPrincipale(
 /// La maquette C13 écrit « CGV » : c'est `/accessibilite` qui la remplace, elle
 /// porte la déclaration RGAA formelle.
 ///
-/// ⚠️ Ces trois routes **n'existent pas encore** : elles arrivent avec T-V3-12.
-/// Le pied de page les pose parce que la DoD de T-V3-13 l'exige, et parce qu'un
-/// pied de page légal qui apparaît une tâche plus tard est un pied de page qu'on
-/// oublie de câbler.
+/// Les trois routes sont **livrées** par T-V3-12 ; le pied de page les posait
+/// depuis T-V3-13, où elles répondaient encore 404.
+///
+/// Chemins nommés plutôt que littéraux dans les pages : `PageLegale` marque
+/// l'onglet actif en comparant sa route à cette liste, et deux littéraux qui
+/// doivent rester égaux finissent par diverger (cf. `src/lib/routes.ts`).
+export const CHEMIN_MENTIONS_LEGALES = "/mentions-legales";
+export const CHEMIN_POLITIQUE_CONFIDENTIALITE = "/politique-confidentialite";
+export const CHEMIN_ACCESSIBILITE = "/accessibilite";
+
 export const LIENS_LEGAUX = [
-  { href: "/mentions-legales", label: "Mentions légales" },
-  { href: "/politique-confidentialite", label: "Politique de confidentialité" },
-  { href: "/accessibilite", label: "Accessibilité" },
+  { href: CHEMIN_MENTIONS_LEGALES, label: "Mentions légales" },
+  {
+    href: CHEMIN_POLITIQUE_CONFIDENTIALITE,
+    label: "Politique de confidentialité",
+  },
+  { href: CHEMIN_ACCESSIBILITE, label: "Accessibilité" },
 ] as const;
 
 /// Entrée du tunnel de réservation (T-V3-08).

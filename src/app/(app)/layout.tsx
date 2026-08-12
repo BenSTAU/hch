@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { getOptionalUser } from "@/lib/auth/dal";
 import { listForfaitsPublics } from "@/lib/db/queries/forfaits";
+import { SiteFooter } from "@/components/layouts/site-footer";
 import { SiteHeader } from "@/components/layouts/site-header";
 
 /// Layout de l'espace connecté — il porte l'en-tête, donc la déconnexion.
@@ -51,6 +52,23 @@ export default async function EspaceConnecteLayout({
     <div className="flex min-h-dvh flex-col">
       <SiteHeader user={user} reservationDisponible={forfaits.length > 0} />
       {children}
+      {/* 🐛 **Le pied de page manquait, et avec lui les trois liens légaux**
+          (agent testeur T-V3-12, B5). `US-RGPD` §Critères écrit « Given je suis
+          sur n'importe quelle page **publique ou authentifiée** » : le pied de
+          page n'existait que sous `(marketing)`, donc un client connecté
+          n'avait aucun chemin vers la politique de confidentialité sans
+          repasser par l'accueil public.
+
+          Ça mordait sur la propriété que T-V3-12 revendique - le droit à
+          l'oubli reste atteignable même si l'écran C12 n'est jamais livré,
+          justement PAR la politique de confidentialité.
+
+          Le tunnel `(tunnel)` ne le reçoit pas : ses quatre maquettes
+          remplacent la coquille du site par une barre d'étapes ne portant
+          qu'un contrôle de sortie (PR #29 note 1), et y ajouter un pied de page
+          rouvrirait les deux navigations concurrentes que ce portage a
+          fermées. Écart déclaré. */}
+      <SiteFooter />
     </div>
   );
 }

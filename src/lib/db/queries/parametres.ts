@@ -158,6 +158,57 @@ export async function lireContactSociete(): Promise<{
   return { telephone: lire("company.phone"), email: lire("company.email") };
 }
 
+/// Identité de la société, pour les mentions légales - `US-RGPD` §Critères,
+/// « chaque page rappelle : nom entreprise, SIRET, coordonnées ».
+///
+/// Cinq clés d'`app_settings` et non des constantes : la LCEN impose que ces
+/// mentions soient exactes, et c'est l'administrateur qui les tient à jour
+/// depuis le back-office (T-J0-05). Un SIRET en dur dans le code aurait vieilli
+/// sans que personne le voie.
+///
+/// Toutes facultatives, comme `lireContactSociete` : la colonne est NULLable et
+/// un administrateur peut vider un champ. La page affiche ce qui existe, et
+/// signale ce qui manque plutôt que d'afficher un trou silencieux - une mention
+/// légale absente est une non-conformité, pas un détail de présentation.
+export type IdentiteSociete = {
+  nom: string | null;
+  siret: string | null;
+  adresse: string | null;
+  telephone: string | null;
+  email: string | null;
+};
+
+export async function lireIdentiteSociete(): Promise<IdentiteSociete> {
+  const lignes = await db.appSetting.findMany({
+    where: {
+      key: {
+        in: [
+          "company.name",
+          "company.siret",
+          "company.address",
+          "company.phone",
+          "company.email",
+        ],
+      },
+    },
+    select: { key: true, value: true },
+  });
+
+  const parCle = new Map(lignes.map((ligne) => [ligne.key, ligne.value]));
+  const lire = (cle: string): string | null => {
+    const valeur = parCle.get(cle)?.trim();
+    return valeur ? valeur : null;
+  };
+
+  return {
+    nom: lire("company.name"),
+    siret: lire("company.siret"),
+    adresse: lire("company.address"),
+    telephone: lire("company.phone"),
+    email: lire("company.email"),
+  };
+}
+
 /// Horaires d'ouverture de la société, lus depuis les sept clés
 /// `business_hours.*`.
 ///

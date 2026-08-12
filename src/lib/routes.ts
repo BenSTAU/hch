@@ -24,3 +24,29 @@ export const CHEMIN_ESPACE_CLIENT = "/mes-interventions/a-venir";
 
 /// Historique — `US-INTERVENTIONS-LISTER-CLIENT-PASSEES`, écran C10.
 export const CHEMIN_ESPACE_CLIENT_PASSEES = "/mes-interventions/passees";
+
+/// Racine de l'espace « compte » du client, tranchée par Benjamin le
+/// 2026-08-11 en ouvrant T-V3-12.
+///
+/// Le vault ne nommait aucune route d'espace client hors `/mes-interventions`,
+/// et T-V3-07 (fiche client, écran C12) arrive après : sans arbitrage, elle
+/// aurait posé `/profil` ou `/mon-profil` et le produit aurait eu deux racines
+/// pour un seul espace. C'est ce préfixe-ci qu'elle reprend. À tracer au
+/// write-back.
+export const CHEMIN_COMPTE = "/mon-compte";
+
+/// Droit à l'oubli - `US-COMPTE-SUPPRIMER`.
+///
+/// Route **autonome**, et c'est une propriété, pas une commodité : le second
+/// point d'entrée nommé par l'US est `US-RGPD` → « Exercer mon droit à
+/// l'oubli », donc le parcours reste entier même si T-V3-07 est sacrifiée et
+/// que l'écran C12 n'existe jamais. Le critère de fin de phase V3 nomme ce
+/// droit ; il ne peut pas dépendre d'une tâche supprimable.
+export const CHEMIN_SUPPRESSION_COMPTE = "/mon-compte/supprimer";
+
+/// Retour après pseudonymisation - `US-COMPTE-SUPPRIMER` §Cas nominal, « je
+/// suis redirigé vers la page publique d'accueil avec message final ».
+///
+/// Le message voyage en paramètre d'URL plutôt qu'en session : il n'y a plus de
+/// session à ce moment-là, c'est tout le sujet.
+export const CHEMIN_COMPTE_SUPPRIME = "/?compte=supprime";

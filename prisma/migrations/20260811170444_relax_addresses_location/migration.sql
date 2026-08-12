@@ -1,0 +1,26 @@
+-- Droit a l'oubli : `addresses.location` devient NULLable.
+--
+-- `US-COMPTE-SUPPRIMER` fait de `street` -> « Anonymisee » un critere
+-- d'acceptation, et renvoie les coordonnees a « NULL en v1 ou conservees selon
+-- obligations comptables - a trancher PLAN + juriste ». Le PLAN ne l'a jamais
+-- tranche : S4 §4.4 se contente de renvoyer a S2 §T6, qui ne parle que de
+-- `users`. Arbitre par Benjamin le 2026-08-11, dictionnaire a amender au
+-- write-back (colonne portee `NN`).
+--
+-- Le motif n'est pas la symetrie. Effacer la rue en gardant le point GPS
+-- garderait la donnee la PLUS precise et effacerait la moins sensible, alors
+-- que l'amendement du 2026-08-11 a S4 §4.5 rend le strip EXIF obligatoire au
+-- motif exact que « le destinataire legitime lui-meme n'a pas a recevoir les
+-- coordonnees du domicile ». Stripper le GPS d'une photo pour le laisser en
+-- clair dans `addresses` apres un droit a l'oubli ne se defend pas.
+--
+-- La conservation de 10 ans de S4 §4.4 porte sur les factures et les
+-- interventions, pas sur un point geographique : `interventions.address_id`
+-- reste intacte, la ligne d'adresse reste lisible, seule sa geometrie part.
+--
+-- L'index GIST survit a la colonne NULLable - PostgreSQL n'indexe simplement
+-- pas les lignes nulles, et aucune requete de sectorisation ne lit cette
+-- colonne : `trouverZoneCouvrante` recoit un couple lon/lat re-geocode cote
+-- serveur, il ne part pas d'`addresses`.
+
+ALTER TABLE "addresses" ALTER COLUMN "location" DROP NOT NULL;

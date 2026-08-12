@@ -243,6 +243,25 @@ describe("LandingView — déconnexion", () => {
 
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
   });
+
+  it("confirme la suppression du compte, message final de US-COMPTE-SUPPRIMER", () => {
+    render(<LandingView forfaits={FORFAITS} compteSupprime />);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /Votre compte a été supprimé/i,
+    );
+  });
+
+  it("ne dit pas « déconnecté » à qui vient d'effacer son compte", () => {
+    // Les deux paramètres peuvent arriver ensemble : une suppression déconnecte
+    // aussi. Annoncer la déconnexion serait exact et hors sujet, et deux
+    // régions `status` concurrentes en annonceraient une de trop.
+    render(<LandingView forfaits={FORFAITS} compteSupprime deconnecte />);
+
+    const statut = screen.getByRole("status");
+    expect(statut).toHaveTextContent(/Votre compte a été supprimé/i);
+    expect(statut).not.toHaveTextContent(/déconnecté/i);
+  });
 });
 
 describe("LandingView — structure et accessibilité", () => {
