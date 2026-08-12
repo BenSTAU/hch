@@ -184,7 +184,7 @@ export function LandingView({
           <ol className="grid grid-cols-1 gap-4 md:grid-cols-3">
             {ETAPES.map((etape, index) => (
               <li key={etape.titre} className="flex">
-                <Card className="w-full gap-4 bg-card ring-0 [--card-spacing:--spacing(6)]">
+                <Card className="w-full gap-4 border-0 bg-card [--card-spacing:--spacing(6)]">
                   <CardHeader className="gap-4">
                     <span className="mb-2 flex size-14 items-center justify-center rounded-full bg-primary-container">
                       <etape.Icone
@@ -253,7 +253,7 @@ export function LandingView({
           <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
             {ENGAGEMENTS.map((engagement) => (
               <li key={engagement.titre} className="flex">
-                <Card className="w-full justify-between bg-card ring-0 transition-shadow [--card-spacing:--spacing(6)] hover:shadow-md md:h-48">
+                <Card className="w-full justify-between border-0 bg-card transition-shadow [--card-spacing:--spacing(6)] hover:shadow-md md:h-48">
                   <CardHeader className="gap-0">
                     <engagement.Icone
                       aria-hidden="true"

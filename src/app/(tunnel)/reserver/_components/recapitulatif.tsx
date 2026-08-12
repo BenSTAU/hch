@@ -12,6 +12,7 @@ import {
 } from "@/lib/format";
 import type { SuggestionAdresse } from "@/lib/geo/ban";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
@@ -126,25 +127,30 @@ export function Recapitulatif({
               `US-INTERVENTION-PRODUIT-AJOUTER-TUNNEL` s'ouvre sur « authentifié
               ou non ». C'est la validation qui exige une session, pas la
               composition du panier (Constitution §3.2). */}
-          <section className="rounded-xl border border-border bg-card p-6">
+          {/* `Card` et non un `<section>` habillé à la main : aucun de ces
+              trois blocs ne porte de nom accessible, donc aucun n'expose de
+              repère `region` - la balise ne changeait rien à la sémantique et
+              seul le style était dupliqué. `rounded-xl` conservé, la maquette
+              du récapitulatif ayant un angle plus serré que le défaut. */}
+          <Card className="rounded-xl [--card-spacing:--spacing(6)]">
             <EtapePanier
               produits={produits}
               panier={panier}
               onChangement={onChangementPanier}
             />
-          </section>
+          </Card>
 
           {estConnecte ? (
-            <section className="rounded-xl border border-border bg-card p-6">
+            <Card className="rounded-xl [--card-spacing:--spacing(6)]">
               <EtapePhotos photos={photos} onChangement={onChangementPhotos} />
-            </section>
+            </Card>
           ) : (
             // Les photos n'apparaissent qu'une fois connecté : leur dépôt exige
             // une session, et proposer un champ qui refuserait le fichier serait
             // une promesse qu'on ne tient pas.
-            <section className="rounded-xl border border-border bg-card p-6">
+            <Card className="rounded-xl [--card-spacing:--spacing(6)]">
               <EtapeCoordonnees retour={retour} />
-            </section>
+            </Card>
           )}
         </div>
 

@@ -44,7 +44,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 /// usages).
 export function ForfaitCard({ forfait }: { forfait: ForfaitPublic }) {
   return (
-    <Card className="flex w-full flex-col gap-6 bg-secondary ring-0 [--card-spacing:--spacing(6)]">
+    <Card className="flex w-full flex-col gap-6 border-0 bg-secondary [--card-spacing:--spacing(6)]">
       <CardHeader className="gap-0">
         <h3 className="font-heading text-xl font-bold tracking-[-0.01em]">
           {forfait.label}

@@ -1,18 +1,47 @@
 import * as React from "react";
+import { Slot } from "radix-ui";
 
 import { cn } from "@/lib/utils";
 
+/// ⚠️ **`border border-border` remplace le `ring-1 ring-foreground/10` du
+/// registry, et c'est une modification VOLONTAIRE d'un fichier régénérable.**
+///
+/// Audit de conformité du 2026-08-12 : dix endroits redessinaient une card à la
+/// main en `rounded-2xl border border-border bg-card`, parce que le composant
+/// ne rendait pas la bordure que les maquettes dessinent. Deux traitements pour
+/// un même objet, et le composant perdait à chaque fois.
+///
+/// Le sens du correctif suit [[adr-012-maquettage-stitch-shadcn|ADR-012]] §D4 -
+/// « quand une maquette validée diverge, la maquette fait foi » : T1 et C8
+/// bordent leurs cards. C'est donc le registry qui s'aligne, pas l'inverse.
+///
+/// ── `asChild`, ajouté pour la même raison
+///
+/// Plusieurs des dix sites étaient des `<section aria-labelledby>` : les rendre
+/// en `div` pour gagner le composant aurait échangé une duplication de style
+/// contre une perte de sémantique. `Slot` est le pattern que `ui/button.tsx`
+/// utilise déjà dans ce dépôt.
+///
+/// ⚠️ Un `pnpm dlx shadcn@latest add card` écraserait les deux modifications.
+/// Le précédent est le « Close » de `ui/sheet.tsx`, et la garde est la même :
+/// `card.test.tsx` échoue si la bordure ou `asChild` disparaissent.
 function Card({
   className,
   size = "default",
+  asChild = false,
   ...props
-}: React.ComponentProps<"div"> & { size?: "default" | "sm" }) {
+}: React.ComponentProps<"div"> & {
+  size?: "default" | "sm";
+  asChild?: boolean;
+}) {
+  const Comp = asChild ? Slot.Root : "div";
+
   return (
-    <div
+    <Comp
       data-slot="card"
       data-size={size}
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-2xl bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/10 [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-2xl *:[img:last-child]:rounded-b-2xl",
+        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-2xl border border-border bg-card py-(--card-spacing) text-sm text-card-foreground [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-2xl *:[img:last-child]:rounded-b-2xl",
         className,
       )}
       {...props}
