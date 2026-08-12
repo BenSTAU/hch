@@ -196,6 +196,55 @@ function lignesTournee(page: Page) {
     .getByRole("listitem");
 }
 
+/// Rejoue un appel de Server Action **depuis le navigateur**, avec la session
+/// de la page fournie.
+///
+/// 🐛 **Le rejeu passait par `page.request.post`, et la barriere CI l'a mis en
+/// defaut** — verte en local, rouge sur le runner, sur le CONTROLE POSITIF :
+/// l'appel legitime recevait la charge RSC de `/connexion` au lieu de la
+/// tournee, donc il n'etait pas authentifie.
+///
+/// La cause n'est pas applicative, et le bissectage le montre : **a build de
+/// production identique**, le meme test passe sur `http://localhost:3000` et
+/// echoue sur `http://127.0.0.1:3000`, l'origine que la CI impose
+/// (`.github/workflows/deploy.yml`, `HCH_E2E_BASE_URL`). Le cookie de session
+/// est `secure: true` sans condition (`src/lib/auth/session.ts:44`), et
+/// l'`APIRequestContext` de Playwright ne l'emet pas vers une origine `http://`
+/// designee par son adresse IP, la ou le navigateur traite `127.0.0.1` comme une
+/// origine sure et l'envoie.
+///
+/// Le `fetch` ci-dessous part **du contexte de la page**, donc avec la
+/// semantique de cookies reelle d'un navigateur. C'est aussi plus fidele au
+/// modele de menace : la requete d'un attaquant part d'un navigateur, pas d'un
+/// client HTTP qui aurait ses propres regles.
+///
+/// ⚠️ Regle du test rouge, cas « test lui-meme fautif » : l'oracle dependait
+/// d'un detail de transport du harnais, pas d'une propriete du produit. La
+/// propriete verifiee, elle, est inchangee - et le controle positif reste ce qui
+/// empeche ce test de passer pour la mauvaise raison.
+async function rejouerAction(
+  cible: Page,
+  origine: string,
+  enTetes: Record<string, string>,
+  corps: string,
+): Promise<{ statut: number; texte: string }> {
+  return cible.evaluate(
+    async ({ origine, enTetes, corps }) => {
+      const reponse = await fetch(`${origine}/interventions/du-jour`, {
+        method: "POST",
+        headers: enTetes,
+        body: corps,
+        // Meme origine, donc deja le defaut - explicite parce que c'est
+        // exactement ce que le test eprouve.
+        credentials: "include",
+      });
+
+      return { statut: reponse.status, texte: await reponse.text() };
+    },
+    { origine, enTetes, corps },
+  );
+}
+
 test("la connexion d'un technicien atterrit sur sa tournee", async ({
   page,
 }) => {
@@ -350,12 +399,9 @@ test("la Server Action de rafraichissement refuse un client authentifie", async 
   const corps = appel.postData() ?? "[]";
 
   // Controle positif : le rejeu fonctionne, et il rend bien de la donnee client.
-  const legitime = await page.request.post(`${origine}/interventions/du-jour`, {
-    headers: enTetes,
-    data: corps,
-  });
-  expect(legitime.status()).toBe(200);
-  expect(await legitime.text()).toContain("+33612345678");
+  const legitime = await rejouerAction(page, origine, enTetes, corps);
+  expect(legitime.statut).toBe(200);
+  expect(legitime.texte).toContain("+33612345678");
 
   // Le meme appel, a la lettre, avec la session d'un CLIENT.
   const client = await creerCompte(db, "action", ["ROLE_CLIENT"]);
@@ -363,20 +409,17 @@ test("la Server Action de rafraichissement refuse un client authentifie", async 
 
   const contexte = await browser.newContext({ baseURL: origine });
   try {
-    await seConnecterCompte(await contexte.newPage(), client.email);
+    const pageClient = await contexte.newPage();
+    await seConnecterCompte(pageClient, client.email);
 
-    const usurpation = await contexte.request.post(
-      `${origine}/interventions/du-jour`,
-      { headers: enTetes, data: corps },
-    );
-    const rendu = await usurpation.text();
+    const usurpation = await rejouerAction(pageClient, origine, enTetes, corps);
 
     // L'oracle porte sur la DONNEE, pas sur le code de statut : ce qui est en
     // jeu est le carnet d'adresses d'un technicien - nom, telephone et adresse
     // complete de clients tiers (cadrage plancher V2, D6).
-    expect(rendu).not.toContain("+33612345678");
-    expect(rendu).not.toContain("Sophie Dumas");
-    expect(rendu).not.toContain("8 rue Tres Reconnaissable");
+    expect(usurpation.texte).not.toContain("+33612345678");
+    expect(usurpation.texte).not.toContain("Sophie Dumas");
+    expect(usurpation.texte).not.toContain("8 rue Tres Reconnaissable");
   } finally {
     await contexte.close();
   }
