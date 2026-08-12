@@ -16,29 +16,32 @@
 //   · **le demontage** pendant le chargement ;
 //   · **la reprise apres un echec de script**, que le commentaire du module
 //     declare « rejouable » ;
-//   · **RGAA A** sur le conteneur `aria-hidden`.
+//   · **RGAA A** sur la region de la carte.
 //
 // ── Le double de `google.maps`, et ce qu'il modelise
 //
 // L'API n'est pas installable en test : elle arrive par un `<script>` distant
 // que jsdom ne charge pas. Le double ci-dessous ne simule pas Google Maps, il en
-// reproduit les trois faits observables dont le composant depend - le global
-// `google` n'existe QU'APRES l'evenement `load`, `new google.maps.Map` prend le
-// noeud et des options, et l'API **injecte ses propres commandes focusables dans
-// le conteneur** (zoom, plein ecran, logo, « Raccourcis clavier »). Ce dernier
-// point n'est pas une hypothese de confort : c'est le comportement par defaut
-// documente de l'API.
+// reproduit les trois faits observables dont le composant depend - l'API n'est
+// utilisable QU'APRES avoir appele le rappel nomme dans l'URL,
+// `new google.maps.Map` prend le noeud et des options, et l'API **injecte ses
+// propres commandes focusables dans le conteneur** (zoom, plein ecran, logo).
+// Ce dernier point n'est pas une hypothese de confort : c'est le comportement
+// par defaut documente de l'API.
 //
-// ⚠️ Le double **continue d'injecter sa commande meme apres le correctif**, et
-// c'est deliberé : il ne lit pas `disableDefaultUI`. Un double qui obeirait aux
-// options ne prouverait plus rien de `inert`, qui est precisement la garantie
-// posee pour le cas ou l'API ajoute quelque chose qu'aucune option ne coupe.
+// ⚠️ Le double **injecte sa commande sans lire les options**, et c'est
+// delibere : un double qui obeirait a `zoomControl` ne prouverait plus rien de
+// ce que le composant fait des commandes qu'il ne controle pas.
 //
-// ── Deux constats ont ete corriges depuis l'ecriture de ce fichier
+// ── Trois constats corriges depuis l'ecriture de ce fichier
 //
 // B1 (reprise apres echec de script) et B2 (`aria-hidden-focus`) etaient rouges
-// a l'ecriture ; ils sont verts depuis le correctif, et deux oracles ont ete
-// elargis en consequence — chacun porte sa justification sur place.
+// a l'ecriture, verts depuis le correctif de T-V2-01. Puis le 2026-08-12, cle
+// renseignee, la premiere execution reelle a donne `google.maps.Map is not a
+// constructor` : le harnais lui-meme tenait `load` pour le signal de
+// disponibilite de l'API, donc il modelisait la premisse du bug. Corrige dans
+// `declencher()`, qui porte la justification. **Dix-sept tests verts contre un
+// double faux** - c'est la lecon du fichier.
 import { render, screen, waitFor } from "@testing-library/react";
 import { axe } from "jest-axe";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -131,16 +134,58 @@ function balise(): HTMLScriptElement | null {
   return document.getElementById(ID_SCRIPT) as HTMLScriptElement | null;
 }
 
-/// Rejoue l'evenement du `<script>` distant que jsdom ne charge jamais.
+/// Nom du rappel que le module passe en parametre d'URL, lu DEPUIS l'URL.
 ///
-/// `load` installe le global `google` AVANT de notifier, dans cet ordre : c'est
-/// l'ordre reel, et l'inverser rendrait vert un composant qui lirait `google`
-/// trop tot.
+/// Lu et non code en dur : c'est ce qui fait echouer le test si le module
+/// cessait de passer `callback=`, ou s'il changeait de nom sans changer le
+/// global qu'il installe.
+function nomDuRappel(): string {
+  const source = balise()?.src ?? "";
+  const nom = new URL(source, "https://exemple.test").searchParams.get(
+    "callback",
+  );
+  expect(nom).toBeTruthy();
+  return nom ?? "";
+}
+
+/// Rejoue ce que fait l'API distante que jsdom ne charge jamais.
+///
+/// 🐛 **Ce harnais modelisait la premisse du bug, et c'est LUI qui l'a laisse
+/// passer.** Il installait le global `google` puis emettait l'evenement `load`
+/// du `<script>`, donc il tenait `load` pour le signal de disponibilite de
+/// l'API - exactement l'hypothese fausse du module. Les dix-sept tests etaient
+/// verts contre un double qui reproduisait l'erreur, et la premiere execution
+/// reelle a donne `google.maps.Map is not a constructor` (2026-08-12, des la
+/// cle renseignee).
+///
+/// La sequence reelle est celle-ci : l'API monte ses classes, PUIS appelle le
+/// rappel nomme dans l'URL. `load` peut se produire entre les deux et ne dit
+/// rien. Le double l'emet donc toujours - pour rester fidele - mais ce n'est
+/// plus lui qui rend la main.
+///
+/// Regle du test rouge, cas « test lui-meme fautif » : l'oracle dependait d'un
+/// contrat que l'API ne tient pas.
 async function declencher(evenement: "load" | "error") {
   const script = balise();
   expect(script).not.toBeNull();
-  if (evenement === "load") installerGoogle();
-  script?.dispatchEvent(new Event(evenement));
+
+  if (evenement === "load") {
+    const nom = nomDuRappel();
+    // L'API installe ses classes AVANT de notifier. Inverser rendrait vert un
+    // composant qui lirait `google` trop tot - ce qui est precisement le
+    // defaut qu'on vient de payer.
+    installerGoogle();
+    // `load` d'abord, rappel ensuite : dans cet ordre, un module qui se
+    // fierait a l'evenement construirait sa carte trop tot et le test
+    // suivant le verrait.
+    script?.dispatchEvent(new Event("load"));
+    const rappel = (globalThis as unknown as Record<string, unknown>)[nom];
+    expect(typeof rappel).toBe("function");
+    (rappel as () => void)();
+  } else {
+    script?.dispatchEvent(new Event("error"));
+  }
+
   // Une micro-tache pour laisser la promesse de chargement se resoudre et le
   // `.then` construire la carte.
   await waitFor(() => {
@@ -178,13 +223,21 @@ beforeEach(() => {
   fitBoundsSpy.mockClear();
   setZoomSpy.mockClear();
   desinstallerGoogle();
+  oublierRappel();
   balise()?.remove();
 });
 
 afterEach(() => {
   desinstallerGoogle();
+  oublierRappel();
   balise()?.remove();
 });
+
+/// Le module pose son rappel sur `window` et l'y retire lui-meme. Un reliquat
+/// resoudrait la promesse du test SUIVANT sans qu'aucun script n'ait charge.
+function oublierRappel() {
+  Reflect.deleteProperty(globalThis, "__hchMapsPret");
+}
 
 describe("CarteTournee - les trois raisons de ne rien monter", () => {
   it("ne rend rien, et n'injecte aucun script, sans cle Maps", async () => {
@@ -375,6 +428,55 @@ describe("CarteTournee - les pins", () => {
     ecouteursIdle[0]?.();
     expect(setZoomSpy).toHaveBeenCalledWith(14);
   });
+
+  it("retablit ce zoom quand PLUSIEURS rendez-vous partagent une adresse", async () => {
+    // 🐛 **Constate en recette le 2026-08-12**, sur la premiere execution avec
+    // une cle : six rendez-vous a la meme adresse - un immeuble, une
+    // entreprise, ou simplement les reservations laissees par `gp-02` -
+    // donnent six points CONFONDUS. La boite est de surface nulle comme avec un
+    // point unique, `fitBounds` zoome au maximum, mais la condition portait sur
+    // `points.length === 1` et ne se declenchait pas. Carte inutilisable.
+    const CarteTournee = await chargerComposant();
+
+    render(
+      <CarteTournee
+        interventions={[
+          intervention(),
+          intervention({ id: 2 }),
+          intervention({ id: 3 }),
+        ]}
+        mapsApiKey={CLE}
+      />,
+    );
+    await declencher("load");
+
+    // Trois marqueurs sont bien poses - le defaut n'est pas de les perdre.
+    expect(marqueurs).toHaveLength(3);
+
+    expect(ecouteursIdle).toHaveLength(1);
+    ecouteursIdle[0]?.();
+    expect(setZoomSpy).toHaveBeenCalledWith(14);
+  });
+
+  it("laisse `fitBounds` decider des que deux adresses different", async () => {
+    // La contrepartie : sur une vraie tournee etalee, le cadrage automatique
+    // est ce qu'on veut, et forcer un zoom fixe couperait des rendez-vous.
+    const CarteTournee = await chargerComposant();
+
+    render(
+      <CarteTournee
+        interventions={[
+          intervention(),
+          intervention({ id: 2, point: { lon: 4.85, lat: 45.75 } }),
+        ]}
+        mapsApiKey={CLE}
+      />,
+    );
+    await declencher("load");
+
+    expect(fitBoundsSpy).toHaveBeenCalledOnce();
+    expect(ecouteursIdle).toHaveLength(0);
+  });
 });
 
 describe("CarteTournee - le rafraichissement de 30 secondes", () => {
@@ -396,6 +498,59 @@ describe("CarteTournee - le rafraichissement de 30 secondes", () => {
     );
 
     expect(cartes).toHaveLength(1);
+  });
+
+  it("renumerote les pins quand un rendez-vous SANS point s'insere avant eux", async () => {
+    // 🔴 **ROUGE a l'ecriture - constat n°2 de l'agent testeur, 2026-08-12.**
+    //
+    // C'est le defaut B3 qui revient par la porte de derriere. Le label d'un pin
+    // est son rang dans la tournee ENTIERE (`interventions.indexOf`), la
+    // correction meme de B3 - mais la cle de memoisation de l'effet,
+    // `signature`, n'est construite qu'a partir de `points`, donc **des seules
+    // interventions qui portent un point**.
+    //
+    // Consequence : un rendez-vous SANS point qui s'insere avant un pin - client
+    // pseudonymise par T-V3-12, `addresses.location` NULLable depuis la
+    // migration 015 - decale la numerotation attendue **sans faire bouger la
+    // signature**. L'effet ne rejoue pas, la carte n'est pas reconstruite, et le
+    // pin « 1 » designe desormais le DEUXIEME rendez-vous de la journee. Un
+    // numero qui ment, exactement ce que B3 avait fait corriger.
+    //
+    // Le chemin est celui du polling de 30 s, pas une manipulation : c'est
+    // l'administrateur qui ajoute une intervention en cours de journee, cas que
+    // la DoD de T-V2-01 donne comme motif du polling.
+    //
+    // ⚠️ Le rendre vert n'est pas l'affaire de l'agent testeur : la cle de
+    // l'effet vit dans du code de production.
+    const CarteTournee = await chargerComposant();
+
+    const vue = render(
+      <CarteTournee
+        interventions={[
+          intervention({ id: 1, point: { lon: 4.83, lat: 45.76 } }),
+        ]}
+        mapsApiKey={CLE}
+      />,
+    );
+    await declencher("load");
+
+    expect(marqueurs.map((m) => m.label)).toEqual(["1"]);
+
+    // Le refetch ramene une intervention plus matinale, chez un client efface :
+    // aucune coordonnee, donc aucun pin - mais elle occupe bien le rang 1.
+    vue.rerender(
+      <CarteTournee
+        interventions={[
+          intervention({ id: 2, point: null }),
+          intervention({ id: 1, point: { lon: 4.83, lat: 45.76 } }),
+        ]}
+        mapsApiKey={CLE}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(marqueurs.at(-1)?.label).toBe("2");
+    });
   });
 
   it("reconstruit quand l'administrateur ajoute un rendez-vous", async () => {
@@ -446,6 +601,77 @@ describe("CarteTournee - le demontage et les pannes", () => {
     render(<CarteTournee interventions={[intervention()]} mapsApiKey={CLE} />);
 
     expect(screen.getByText(/Chargement de la carte/)).toBeInTheDocument();
+  });
+
+  it("RETIRE la region quand le script echoue, au lieu de promettre un chargement", async () => {
+    // 🔴 **Oracle du constat n°5 de l'agent testeur, correctif du 2026-08-12.**
+    //
+    // Le `catch` journalisait et rien d'autre : `pret` restait faux, donc
+    // « Chargement de la carte… » s'affichait indefiniment. La liste servait
+    // bien de repli - la DoD etait tenue sur le fond - mais l'ecran mentait sur
+    // ce qui allait se passer.
+    //
+    // La propriete visee est que l'echec rende le MEME resultat qu'une cle
+    // absente : rien. Un seul chemin de repli, pas un second, et c'est ce que
+    // le module revendique en toutes lettres depuis son en-tete (« les trois
+    // raisons de ne rien monter », desormais quatre).
+    const CarteTournee = await chargerComposant();
+
+    const { container } = render(
+      <CarteTournee interventions={[intervention()]} mapsApiKey={CLE} />,
+    );
+    expect(screen.getByText(/Chargement de la carte/)).toBeInTheDocument();
+
+    await declencher("error");
+
+    await waitFor(() => {
+      expect(container).toBeEmptyDOMElement();
+    });
+    expect(
+      screen.queryByRole("region", { name: "Carte de la tournée" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Chargement de la carte/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("n'insiste pas tant que la tournee ne bouge pas", async () => {
+    // 🔴 **L'autre moitie du correctif : l'echec COLLE tant que la tournee ne
+    // change pas.**
+    //
+    // Le rafraichissement de 30 s rend le plus souvent exactement la meme
+    // tournee. Sans cette propriete, chaque tour relancerait un chargement dont
+    // on vient d'apprendre qu'il echoue : carte qui se remonte et retombe toutes
+    // les 30 secondes, script Maps reinjecte a chaque tour, quota consomme sur
+    // la ressource meme qui refuse.
+    //
+    // ⚠️ Ce test ne discrimine PAS la signature memorisee d'un simple booleen -
+    // les deux passent ici, l'effet ne rejouant pas a deps inchangees. Ce qui
+    // les separe est la REPRISE, et c'est le test suivant qui la tient. Les deux
+    // sont donc necessaires : celui-ci interdit d'insister, celui-la interdit
+    // d'abandonner.
+    const CarteTournee = await chargerComposant();
+
+    const vue = render(
+      <CarteTournee interventions={[intervention()]} mapsApiKey={CLE} />,
+    );
+    await declencher("error");
+    expect(balise()).toBeNull();
+
+    // Le polling rend un tableau NEUF, aux memes identifiants et aux memes
+    // coordonnees : exactement ce que produit un refetch sans changement.
+    vue.rerender(
+      <CarteTournee interventions={[intervention()]} mapsApiKey={CLE} />,
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(
+      screen.queryByRole("region", { name: "Carte de la tournée" }),
+    ).not.toBeInTheDocument();
+    // Aucun script reinjecte, donc aucune nouvelle tentative.
+    expect(balise()).toBeNull();
+    expect(cartes).toHaveLength(0);
   });
 
   it("REPREND apres un echec de chargement du script", async () => {
@@ -514,49 +740,20 @@ describe("CarteTournee - RGAA A", () => {
     await expect(axe(vue.container)).resolves.toHaveNoViolations();
   });
 
-  it("ne laisse AUCUN element focusable sous le conteneur `aria-hidden`", async () => {
-    // ⚠️ **Test ROUGE a l'ecriture.** Le conteneur porte `aria-hidden="true"`,
-    // et l'API Maps injecte dedans ses propres commandes FOCUSABLES : boutons de
-    // zoom et de plein ecran, lien du logo Google, « Raccourcis clavier ». Le
-    // composant ne pose ni `disableDefaultUI`, ni `zoomControl: false`, ni
-    // `keyboardShortcuts: false` - seuls `streetViewControl` et `mapTypeControl`
-    // sont coupes.
+  it("expose la carte comme une region NOMMEE, et non plus masquee", async () => {
+    // ⚠️ **Oracle RENVERSE le 2026-08-12, et c'est une decision de produit, pas
+    // un test fautif.** Il exigeait qu'aucun element focusable n'existe sous
+    // `[aria-hidden="true"]`, ce qui etait la bonne propriete d'une carte
+    // DECORATIVE : l'API injecte ses commandes de zoom dans le conteneur, et
+    // masquees elles produisent `aria-hidden-focus` (axe, wcag2a, SC 4.1.2).
+    // C'etait le constat B2 de l'agent testeur, corrige par `disableDefaultUI`
+    // plus `inert`.
     //
-    // C'est `aria-hidden-focus` (axe, **wcag2a**, SC 4.1.2) : un element
-    // focusable sous un ancetre `aria-hidden` est atteignable au clavier mais
-    // invisible pour le lecteur d'ecran - un arret sans annonce dans l'ordre de
-    // tabulation. Le raisonnement du module (« un canevas de tuiles n'est pas
-    // restituable, la liste porte l'information ») vaut pour le CANEVAS ; il ne
-    // couvre pas les commandes que l'API ajoute autour.
-    //
-    // ⚠️ **L'oracle est une requete DOM et non `axe()`, deliberement.** `axe()`
-    // rend vert sur ce cas precis sous jsdom - toutes les boites y mesurent zero,
-    // et ses verifications de focus s'appuient sur la geometrie. Le mesurer avec
-    // un outil qui ne peut pas le voir aurait produit une fausse assurance ; la
-    // requete ci-dessous constate la meme propriete sans dependre du rendu.
-    //
-    // La barriere E2E ne peut pas l'attraper non plus : sans `HCH_MAPS_API_KEY`
-    // sur le poste, `AxeBuilder` analyse une page ou la carte n'est jamais
-    // montee.
-    // ⚠️ **Oracle elargi apres correctif — regle du test rouge, cas 3.**
-    //
-    // Ecrit par l'agent testeur, il exigeait qu'AUCUN element focusable
-    // n'existe sous `[aria-hidden="true"]`. La propriete visee est juste ; la
-    // requete, elle, etait un PROXY, et un proxy trop etroit : elle ne pouvait
-    // etre satisfaite qu'en esperant que l'API n'injecte jamais rien.
-    //
-    // Le correctif tient en deux moities, et la seconde est celle qui garantit :
-    //   · `disableDefaultUI` + `keyboardShortcuts: false` retirent les commandes
-    //     que l'API connait — mais une liste d'options n'est pas une garantie ;
-    //   · **`inert` sur le conteneur** rend le sous-arbre entier inatteignable
-    //     au clavier ET absent de l'arbre d'accessibilite, quoi que l'API y
-    //     ajoute. Un sous-arbre `inert` ne contient par definition aucun element
-    //     focusable, ce qui satisfait `aria-hidden-focus` a la racine.
-    //
-    // L'oracle mesure donc l'ACCESSIBILITE REELLE et non la seule presence dans
-    // le DOM : il exige `inert`, puis verifie qu'aucun focusable ne subsiste
-    // hors d'un sous-arbre inerte. Le double de test injecte toujours son bouton
-    // — c'est ce qui rend la verification interessante.
+    // Benjamin a tranche en recette que la carte doit se deplacer et se zoomer.
+    // Elle cesse d'etre une illustration, donc la masquer deviendrait la faute
+    // inverse : un outil qu'on manipule doit etre expose, nomme, et atteignable
+    // au clavier. Ce que la nouvelle propriete garantit contre le retour de B2
+    // n'est plus `inert`, c'est qu'il n'y a **plus rien de masque** a survoler.
     const CarteTournee = await chargerComposant();
     injecteSesCommandes = true;
 
@@ -565,25 +762,56 @@ describe("CarteTournee - RGAA A", () => {
     );
     await declencher("load");
 
-    const conteneur = vue.container.querySelector('[aria-hidden="true"]');
-    expect(conteneur).not.toBeNull();
-    expect(conteneur).toHaveAttribute("inert");
+    // La region porte un nom : sans lui, un lecteur d'ecran annonce une region
+    // anonyme au milieu de la tournee.
+    const region = screen.getByRole("region", { name: "Carte de la tournée" });
 
-    // Les commandes de l'API sont bien la, et bien sous le conteneur inerte :
-    // sans cette assertion le test passerait aussi sur un rendu vide.
-    expect(conteneur?.querySelector("button")).not.toBeNull();
+    // Les commandes de l'API sont bien la - sans cette assertion, le test
+    // passerait aussi sur un rendu vide.
+    expect(region.querySelector("button")).not.toBeNull();
 
-    const atteignables = vue.container.querySelectorAll(
-      '[aria-hidden="true"]:not([inert]) a[href], [aria-hidden="true"]:not([inert]) button, [aria-hidden="true"]:not([inert]) [tabindex]:not([tabindex="-1"])',
-    );
+    // 🔴 Et AUCUNE d'elles n'est masquee. C'est la garde anti-retour de B2 :
+    // reposer `aria-hidden` ou `inert` sur ce conteneur ramenerait exactement
+    // la violation, puisque les commandes, elles, sont desormais rendues.
+    expect(vue.container.querySelector("[aria-hidden]")).toBeNull();
+    expect(vue.container.querySelector("[inert]")).toBeNull();
+  });
 
-    expect(Array.from(atteignables, (noeud) => noeud.outerHTML)).toEqual([]);
+  it("rend une carte manipulable, sans capturer le defilement de la page", async () => {
+    const CarteTournee = await chargerComposant();
 
-    // Et les commandes que l'API sait retirer le sont : la premiere moitie du
-    // correctif se verifie sur les options passees a `new google.maps.Map`.
+    render(<CarteTournee interventions={[intervention()]} mapsApiKey={CLE} />);
+    await declencher("load");
+
     expect(cartes[0]?.options).toMatchObject({
-      disableDefaultUI: true,
-      keyboardShortcuts: false,
+      zoomControl: true,
+      // `cooperative` : la molette fait defiler la PAGE, et zoome avec Ctrl.
+      // Une carte de 384 px au milieu d'une liste de rendez-vous qui capture le
+      // defilement piege le lecteur.
+      gestureHandling: "cooperative",
     });
+
+    // Ni Street View ni selecteur de type de carte : aucun des deux ne sert une
+    // tournee, et chacun ajoute un arret de tabulation.
+    expect(cartes[0]?.options).toMatchObject({
+      streetViewControl: false,
+      mapTypeControl: false,
+    });
+  });
+
+  it("demande a l'API ses libelles en FRANCAIS", async () => {
+    // Sans `language`, les commandes s'appellent « Zoom in » et « Toggle
+    // fullscreen » : des noms accessibles anglais dans une application
+    // entierement en francais (RGAA A). Meme defaut que le « Close » du
+    // registry shadcn, traduit dans `ui/sheet.tsx`. Il ne devient visible que
+    // depuis que les commandes sont rendues.
+    const CarteTournee = await chargerComposant();
+
+    render(<CarteTournee interventions={[intervention()]} mapsApiKey={CLE} />);
+
+    const url = new URL(balise()?.src ?? "", "https://exemple.test");
+
+    expect(url.searchParams.get("language")).toBe("fr");
+    expect(url.searchParams.get("region")).toBe("FR");
   });
 });

@@ -2,11 +2,16 @@ import Link from "next/link";
 
 import { cn } from "@/lib/utils";
 
-/// Pagination de l'historique — **C10**.
+/// Pagination d'un historique d'interventions - **C10** côté client, et
+/// l'onglet « Historique » du technicien depuis T-V2-05.
 ///
-/// `US-INTERVENTIONS-LISTER-CLIENT-PASSEES` demande une « liste paginée ». La
-/// taille de page (dix) n'est écrite dans aucun artefact, elle vit dans
-/// `TAILLE_PAGE_PASSEES`.
+/// Elle vivait dans `mes-interventions/_components/pagination-passees.tsx`, avec
+/// le chemin `/mes-interventions/passees` **en dur** dans ses liens. Deuxième
+/// usage, donc promotion dans `features/` (CLAUDE.md §Folder structure) et
+/// destination reçue en prop.
+///
+/// Les deux US demandent une « liste paginée ». La taille de page (dix) n'est
+/// écrite dans aucun artefact, elle vit dans `TAILLE_PAGE_PASSEES`.
 ///
 /// ── Des liens, pas `nuqs`
 ///
@@ -20,14 +25,18 @@ import { cn } from "@/lib/utils";
 /// Les paramètres de période sont recopiés dans chaque lien : les perdre en
 /// changeant de page afficherait la page 2 d'une autre liste que celle qu'on
 /// regarde.
-export function PaginationPassees({
+export function PaginationInterventions({
   page,
   pages,
   periode,
+  base,
 }: {
   page: number;
   pages: number;
   periode: { du?: string; au?: string };
+  /// Chemin de la liste paginée - `/mes-interventions/passees` ou
+  /// `/interventions/passees`.
+  base: string;
 }) {
   if (pages <= 1) return null;
 
@@ -37,9 +46,7 @@ export function PaginationPassees({
     if (periode.au) parametres.set("au", periode.au);
     if (cible > 1) parametres.set("page", String(cible));
     const requete = parametres.toString();
-    return requete
-      ? `/mes-interventions/passees?${requete}`
-      : "/mes-interventions/passees";
+    return requete ? `${base}?${requete}` : base;
   };
 
   return (

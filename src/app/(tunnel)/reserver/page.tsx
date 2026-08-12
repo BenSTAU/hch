@@ -5,6 +5,7 @@ import { getOptionalUser } from "@/lib/auth/dal";
 import { listForfaitsPublics } from "@/lib/db/queries/forfaits";
 import { listProduitsVendables } from "@/lib/db/queries/produits";
 import { QueryProvider } from "@/components/query-provider";
+import { espacePrincipal } from "@/components/layouts/site-navigation";
 
 import { TunnelReservation } from "./_components/tunnel-reservation";
 
@@ -48,6 +49,18 @@ export default async function ReserverPage() {
           forfaits={forfaits}
           produits={produits}
           estConnecte={utilisateur !== null}
+          // 🐛 **La sortie de l'écran de confirmation suit le rôle.** Elle
+          // pointait `CHEMIN_ESPACE_CLIENT` en dur, et `/reserver` reste
+          // ouverte à tous les rôles (Constitution §3.2) : un technicien qui
+          // réserve pour lui-même atterrissait sur un appel à l'action menant
+          // au 403 de `requireEspaceClient()`. La conséquence assumée de
+          // T-V2-05 est qu'il perde l'accès au rendez-vous, pas qu'un bouton
+          // lui mente. Trouvé par l'agent testeur.
+          //
+          // Calculé au rendu de la page : un visiteur anonyme n'a pas de rôle,
+          // et l'inscription en fin de tunnel crée un `ROLE_CLIENT` - le repli
+          // de `espacePrincipal` est donc la bonne destination pour lui.
+          espace={espacePrincipal(utilisateur?.roles ?? [])}
         />
       </QueryProvider>
     </NuqsAdapter>

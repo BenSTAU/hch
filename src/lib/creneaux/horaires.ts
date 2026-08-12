@@ -32,6 +32,14 @@ export function cleHoraires(jour: JourSemaine): string {
   return `business_hours.${jour}`;
 }
 
+/// Une date de calendrier, sans heure et sans fuseau - « le 13 août 2026 », pas
+/// un instant. C'est la monnaie d'échange entre les vues, qui reçoivent des
+/// jours, et la couche d'accès, qui les ancre par `instantUtc`.
+///
+/// Le type était écrit en clair dans chaque signature ; il est nommé depuis
+/// T-V2-05, où trois nouvelles fonctions le prennent en paramètre.
+export type JourCivil = { annee: number; mois: number; jour: number };
+
 /// Minutes depuis minuit, en heure locale. Pas de `Date` ici : une plage
 /// d'ouverture est un motif hebdomadaire, elle n'a pas de date.
 export type PlageHoraire = {
@@ -127,7 +135,7 @@ function decalageMinutes(instant: Date, fuseau: string): number {
 /// a bougé. C'est exactement le `02:30` du dernier dimanche d'octobre que PLAN
 /// S2 T5 donne en exemple.
 export function instantUtc(
-  jourLocal: { annee: number; mois: number; jour: number },
+  jourLocal: JourCivil,
   minutesLocales: number,
   fuseau: string = FUSEAU_EXPLOITATION,
 ): Date {
@@ -155,7 +163,7 @@ export function instantUtc(
 export function jourLocal(
   instant: Date,
   fuseau: string = FUSEAU_EXPLOITATION,
-): { annee: number; mois: number; jour: number } {
+): JourCivil {
   const parties = new Intl.DateTimeFormat("en-CA", {
     timeZone: fuseau,
     year: "numeric",
@@ -176,11 +184,7 @@ export function jourLocal(
 /// Il se déduit de la date locale, jamais de l'instant UTC : le 1er janvier à
 /// 00 h 30 à Paris est encore le 31 décembre à Greenwich, et le planning suivrait
 /// les horaires de la veille.
-export function jourSemaine(jourLocal: {
-  annee: number;
-  mois: number;
-  jour: number;
-}): JourSemaine {
+export function jourSemaine(jourLocal: JourCivil): JourSemaine {
   const index = new Date(
     Date.UTC(jourLocal.annee, jourLocal.mois - 1, jourLocal.jour),
   ).getUTCDay();
@@ -194,10 +198,7 @@ export function jourSemaine(jourLocal: {
 ///
 /// La distinction compte les deux nuits de bascule : « demain 08 h 00 » n'est
 /// pas « dans 24 h » quand une heure disparaît entre les deux.
-export function ajouterJours(
-  jour: { annee: number; mois: number; jour: number },
-  nombre: number,
-): { annee: number; mois: number; jour: number } {
+export function ajouterJours(jour: JourCivil, nombre: number): JourCivil {
   const avance = new Date(
     Date.UTC(jour.annee, jour.mois - 1, jour.jour + nombre),
   );

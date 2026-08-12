@@ -3,10 +3,24 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { getCurrentUser } from "@/lib/auth/dal";
-import { CHEMIN_ESPACE_CLIENT } from "@/lib/routes";
 import { Button } from "@/components/ui/button";
+import {
+  espacePrincipal,
+  type EspacePrincipal,
+} from "@/components/layouts/site-navigation";
 
 import { FormulaireSuppressionCompte } from "./_components/formulaire-suppression-compte";
+
+/// Le libellé de la sortie, par espace. Une table locale et non un champ de
+/// `espacePrincipal()` : c'est de la copie propre à CETTE page, et la même
+/// entrée s'annonce « Ma tournée » dans une barre de navigation. Typée par le
+/// discriminant, donc exhaustive - un quatrième espace ne compilerait pas sans
+/// sa phrase.
+const RETOUR: Record<EspacePrincipal, string> = {
+  client: "Retour à mes interventions",
+  tech: "Retour à ma tournée",
+  admin: "Retour au back-office",
+};
 
 export const metadata: Metadata = {
   title: "Supprimer mon compte | HomeCycl'Home",
@@ -36,12 +50,23 @@ export const metadata: Metadata = {
 export default async function SupprimerComptePage() {
   const user = await getCurrentUser();
 
+  // 🐛 **La sortie suit le rôle depuis T-V2-05.** Elle pointait
+  // `CHEMIN_ESPACE_CLIENT` en dur : depuis que `requireEspaceClient()` y répond
+  // 403 à un technicien et à un administrateur, le seul lien de sortie d'une
+  // route **volontairement ouverte à tous les rôles** menait à un refus.
+  //
+  // C'est la règle que la tâche s'applique déjà à `user-menu.tsx`, et qu'elle
+  // avait manquée ici : fermer un espace oblige à revoir tout ce qui y menait,
+  // à commencer par les pages qu'on a pris soin de laisser ouvertes. Trouvé par
+  // l'agent testeur.
+  const espace = espacePrincipal(user.roles);
+
   return (
     <main className="mx-auto w-full max-w-3xl px-5 py-12 md:px-8">
       <Button asChild variant="ghost" size="sm" className="mb-6 -ml-2">
-        <Link href={CHEMIN_ESPACE_CLIENT}>
+        <Link href={espace.href}>
           <ArrowLeft aria-hidden="true" />
-          Retour à mes interventions
+          {RETOUR[espace.espace]}
         </Link>
       </Button>
 

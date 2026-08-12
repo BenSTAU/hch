@@ -6,11 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-/// Filtre par période de l'historique — **C10**.
+/// Filtre par période d'un historique d'interventions - **C10** côté client, et
+/// l'onglet « Historique » du technicien depuis T-V2-05 (deuxième usage, donc
+/// promotion dans `features/`).
 ///
 /// `US-INTERVENTIONS-LISTER-CLIENT-PASSEES` : « un filtre par période (année, ou
 /// date début / fin) est disponible ». La forme retenue est le couple de dates,
-/// celle que dessine la maquette.
+/// celle que dessine la maquette. `US-INTERVENTIONS-LISTER-TECH-PASSEES` demande
+/// la même chose pour « retrouver un dossier précédent ».
+///
+/// Le composant ne connaît pas sa page : il écrit `du`, `au` et `page` dans
+/// l'URL courante, quelle qu'elle soit.
 ///
 /// ── Ce qui n'est pas porté
 ///

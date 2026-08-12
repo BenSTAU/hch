@@ -6,6 +6,7 @@ import { listerTourneeDuJour } from "@/lib/db/queries/interventions";
 import { serverEnv } from "@/lib/env";
 import { QueryProvider } from "@/components/query-provider";
 
+import { EnTeteTournee } from "../_components/en-tete-tournee";
 import { TourneeVue } from "./_components/tournee-vue";
 
 export const metadata: Metadata = {
@@ -71,7 +72,13 @@ export default async function TourneeDuJourPage() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-[1920px] flex-1 flex-col gap-6 px-5 py-6 md:px-16 md:py-10">
+    <>
+      {/* La coquille `<main>` et la barre latérale viennent du layout de
+          l'espace depuis T-V2-05. `QueryProvider`, lui, reste ICI : le polling
+          n'appartient qu'à cette vue (PLAN S1 §6.1), et le monter au layout
+          l'étendrait aux deux autres, qui sont de purs Server Components. */}
+      <EnTeteTournee actif="du-jour" />
+
       <QueryProvider>
         <TourneeVue
           initialData={{
@@ -81,6 +88,6 @@ export default async function TourneeDuJourPage() {
           mapsApiKey={mapsApiKey ?? null}
         />
       </QueryProvider>
-    </main>
+    </>
   );
 }

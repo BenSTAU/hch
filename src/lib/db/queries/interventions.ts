@@ -3,9 +3,14 @@ import "server-only";
 import { Prisma } from "@prisma/client";
 
 import { writeAuditLog } from "@/lib/audit/log";
-import { ROLE_TECH } from "@/lib/auth/permissions";
+import { ROLE_TECH } from "@/lib/auth/roles";
 import type { TechnicienCharge } from "@/lib/creneaux/derivation";
-import { ajouterJours, instantUtc } from "@/lib/creneaux/horaires";
+import {
+  ajouterJours,
+  instantUtc,
+  type JourCivil,
+} from "@/lib/creneaux/horaires";
+import type { FenetreJours } from "@/lib/interventions/fenetre";
 import { db } from "@/lib/db/client";
 import { creerAdresse, resoudreCommune } from "@/lib/db/queries/adresses";
 import { annulationOuverte } from "@/lib/interventions/annulation";
@@ -433,20 +438,46 @@ export type PagePassees = {
 /// part.
 export const TAILLE_PAGE_PASSEES = 10;
 
+/// Fenêtre `appointment_at` d'un couple de jours civils, ancrée sur
+/// `Europe/Paris`.
+///
+/// 🐛 **Corrige le bug UTC du filtre de C10** (point ouvert du 2026-08-11), et
+/// c'est la raison pour laquelle les deux bornes sont des **jours civils** et
+/// non des `Date` : l'appelant construisait `new Date(\`${valeur}T00:00:00Z\`)`,
+/// donc minuit **UTC**, et le filtre « du 11 août » écartait les rendez-vous du
+/// 11 entre 00 h 00 et 02 h 00 en été. La borne haute passait de son côté par
+/// « +24 h », qui perd ou duplique une heure les deux nuits de bascule.
+///
+/// `instantUtc` et `ajouterJours` sont exactement ce que `listerTourneeDuJour`
+/// utilise depuis le cadrage du plancher V2 (D1) : un seul mécanisme de bornage
+/// dans le module, plus deux.
+///
+/// La borne haute reste **exclusive au lendemain** et non inclusive au jour
+/// saisi : `<= le 11` écarterait toute la journée du 11, ce qui est faux pour
+/// qui vient de saisir cette date comme fin de période.
+function fenetreCivile(
+  du: JourCivil | undefined,
+  au: JourCivil | undefined,
+): { appointmentAt?: { gte?: Date; lt?: Date } } {
+  if (!du && !au) return {};
+
+  return {
+    appointmentAt: {
+      ...(du ? { gte: instantUtc(du, 0) } : {}),
+      ...(au ? { lt: instantUtc(ajouterJours(au, 1), 0) } : {}),
+    },
+  };
+}
+
 /// Onglet « Passées » - `US-INTERVENTIONS-LISTER-CLIENT-PASSEES`.
 ///
 /// Le filtre par période est celui que l'US demande (« un filtre par période
 /// (année, ou date début / fin) ») ; les filtres par statut et par technicien
 /// de la maquette C10 n'y figurent pas et ne sont pas portés.
-///
-/// `au` est reçue comme une date de jour et bornée en **exclusif au lendemain**
-/// plutôt qu'en inclusif : `<= 2026-08-11T00:00Z` écarterait tout ce qui a eu
-/// lieu dans la journée du 11, ce qui est faux pour un utilisateur qui vient de
-/// saisir cette date comme fin de période.
 export async function listerInterventionsPassees(params: {
   clientId: string;
-  du?: Date;
-  au?: Date;
+  du?: JourCivil;
+  au?: JourCivil;
   page?: number;
 }): Promise<PagePassees> {
   // 🐛 `Math.trunc` en plus du plancher, relevé par l'agent testeur. Le numéro
@@ -464,22 +495,10 @@ export async function listerInterventionsPassees(params: {
     ? Math.max(1, Math.trunc(demandee))
     : 1;
 
-  const fenetre =
-    params.du || params.au
-      ? {
-          appointmentAt: {
-            ...(params.du ? { gte: params.du } : {}),
-            ...(params.au
-              ? { lt: new Date(params.au.getTime() + 24 * 3_600_000) }
-              : {}),
-          },
-        }
-      : {};
-
   const filtre = {
     clientId: params.clientId,
     status: { in: [...STATUTS_TERMINAUX] },
-    ...fenetre,
+    ...fenetreCivile(params.du, params.au),
   };
 
   // Comptage et page en parallèle : ils ne dépendent pas l'un de l'autre, et
@@ -685,28 +704,151 @@ function projeterTournee(
 /// migration n'accompagne donc cette tâche.
 export async function listerTourneeDuJour(params: {
   techId: string;
-  jour: { annee: number; mois: number; jour: number };
+  jour: JourCivil;
 }): Promise<InterventionTournee[]> {
-  const debut = instantUtc(params.jour, 0);
-  const fin = instantUtc(ajouterJours(params.jour, 1), 0);
+  return lireTournee({
+    techId: params.techId,
+    debut: instantUtc(params.jour, 0),
+    fin: instantUtc(ajouterJours(params.jour, 1), 0),
+    ordre: "asc",
+  });
+}
 
+/// Le corps partagé par la tournée du jour et par « À venir » : même `select`,
+/// même projection, même cascade de points GPS. Seules les bornes, le tri et le
+/// filtre de statut changent.
+async function lireTournee(params: {
+  techId: string;
+  debut: Date;
+  fin: Date;
+  ordre: "asc" | "desc";
+  statuts?: readonly string[];
+}): Promise<InterventionTournee[]> {
   const lignes = await db.intervention.findMany({
     where: {
       techId: params.techId,
-      appointmentAt: { gte: debut, lt: fin },
+      appointmentAt: { gte: params.debut, lt: params.fin },
+      ...(params.statuts ? { status: { in: [...params.statuts] } } : {}),
     },
     select: SELECTION_TECH,
-    orderBy: { appointmentAt: "asc" },
+    orderBy: { appointmentAt: params.ordre },
   });
 
   // Cascade assumée : les identifiants d'adresses n'existent qu'après la
   // lecture ci-dessus. Un seul aller-retour supplémentaire pour tout le lot,
-  // pas un par ligne — la base est jointe par un tunnel SSH.
+  // pas un par ligne - la base est jointe par un tunnel SSH.
   const points = await lirePointsAdresses(
     lignes.map((ligne) => ligne.address.id),
   );
 
   return lignes.map((ligne) => projeterTournee(ligne, points));
+}
+
+/// Onglet « Cette semaine » - `US-INTERVENTIONS-LISTER-TECH-A-VENIR`, promue en
+/// v1 le 2026-08-12 et portée par T-V2-05.
+///
+/// ── Elle commence DEMAIN, pas maintenant
+///
+/// L'US écrit « mes interventions des **jours suivants** (7 j / 30 j) », et
+/// aujourd'hui a son propre onglet. Faire commencer la fenêtre à `NOW()` ferait
+/// dire deux choses aux deux onglets sur les mêmes lignes, et un rendez-vous
+/// changerait d'onglet en cours de journée sans que rien ne se soit passé.
+///
+/// ── `PLANNED` seul, et c'est la règle INVERSE de la tournée du jour
+///
+/// L'ancre de l'US le pose (`status = PLANNED`), et c'est le même filtre que
+/// l'onglet « À venir » du client. La tournée du jour, elle, n'a **aucun**
+/// filtre de statut parce que la SPEC exige que les terminaux restent visibles
+/// en fin de journée pour la traçabilité. Les deux règles cohabitent dans ce
+/// module, ne pas recopier celle du voisin.
+///
+/// ⚠️ Conséquence assumée : une intervention future **annulée** ne figure dans
+/// aucune de ces deux vues et apparaît dans « Historique », qui retient les
+/// statuts terminaux sans borne de date. C'est exactement le régime déjà
+/// accepté côté client depuis l'arbitrage du 2026-08-11.
+///
+/// Aucune migration : l'index `@@index([techId, appointmentAt])` de la 008
+/// couvre n'importe quelle plage.
+export async function listerTourneeAVenir(params: {
+  techId: string;
+  /// Le jour courant. La fenêtre part du lendemain.
+  aujourdhui: JourCivil;
+  jours: FenetreJours;
+}): Promise<InterventionTournee[]> {
+  const demain = ajouterJours(params.aujourdhui, 1);
+
+  return lireTournee({
+    techId: params.techId,
+    debut: instantUtc(demain, 0),
+    // Jours **civils** et non « +N × 24 h » : les deux nuits de bascule durent
+    // 23 ou 25 heures, et une fenêtre comptée en heures perdrait ou
+    // dupliquerait un rendez-vous ces jours-là.
+    fin: instantUtc(ajouterJours(demain, params.jours), 0),
+    ordre: "asc",
+    statuts: ["PLANNED"],
+  });
+}
+
+export type PageHistoriqueTech = {
+  interventions: InterventionTournee[];
+  /// Nombre total de lignes du filtre courant, pas de la page.
+  total: number;
+  page: number;
+  pages: number;
+};
+
+/// Onglet « Historique » - `US-INTERVENTIONS-LISTER-TECH-PASSEES`, promue en v1
+/// le 2026-08-12.
+///
+/// Même modèle que `listerInterventionsPassees` côté client : statuts
+/// terminaux, tri `appointment_at DESC`, pagination, filtre par période. Le
+/// **filtre par statut** de l'US reste hors périmètre v1, comme côté client :
+/// les deux seules valeurs possibles sont `DONE` et `CANCELLED`, que l'étiquette
+/// de chaque ligne porte déjà.
+///
+/// La taille de page est celle du client (`TAILLE_PAGE_PASSEES`). Elle n'est
+/// écrite dans aucun artefact, et deux valeurs différentes pour deux historiques
+/// du même produit seraient une divergence sans motif.
+export async function listerHistoriqueTech(params: {
+  techId: string;
+  du?: JourCivil;
+  au?: JourCivil;
+  page?: number;
+}): Promise<PageHistoriqueTech> {
+  // Même durcissement que côté client, et pour la même raison : le numéro vient
+  // de l'URL. `?page=2.3` produit un `skip` fractionnaire que Prisma refuse.
+  const demandee = params.page ?? 1;
+  const page = Number.isFinite(demandee)
+    ? Math.max(1, Math.trunc(demandee))
+    : 1;
+
+  const filtre = {
+    techId: params.techId,
+    status: { in: [...STATUTS_TERMINAUX] },
+    ...fenetreCivile(params.du, params.au),
+  };
+
+  const [total, lignes] = await Promise.all([
+    db.intervention.count({ where: filtre }),
+    db.intervention.findMany({
+      where: filtre,
+      select: SELECTION_TECH,
+      orderBy: { appointmentAt: "desc" },
+      skip: (page - 1) * TAILLE_PAGE_PASSEES,
+      take: TAILLE_PAGE_PASSEES,
+    }),
+  ]);
+
+  const points = await lirePointsAdresses(
+    lignes.map((ligne) => ligne.address.id),
+  );
+
+  return {
+    interventions: lignes.map((ligne) => projeterTournee(ligne, points)),
+    total,
+    page,
+    pages: Math.max(1, Math.ceil(total / TAILLE_PAGE_PASSEES)),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────
