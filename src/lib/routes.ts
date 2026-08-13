@@ -35,6 +35,19 @@ export const CHEMIN_TOURNEE_DU_JOUR = "/interventions/du-jour";
 export const CHEMIN_TOURNEE_A_VENIR = "/interventions/a-venir";
 export const CHEMIN_TOURNEE_PASSEES = "/interventions/passees";
 
+/// Détail d'une intervention - `US-INTERVENTION-AFFICHER`, écran T2.
+///
+/// ⚠️ **Sous le même préfixe que les trois vues, pas sous `/tech/`.** La SPEC
+/// écrit `/tech/interventions/<id>` : deux racines pour un même espace, ce que
+/// l'arbitrage `/mon-compte` du 2026-08-11 a évité côté client et ce que D2 du
+/// cadrage du plancher V2 tranche ici.
+///
+/// Une fonction et non une constante, parce que le chemin porte un identifiant.
+/// Elle reste **pure** au sens de ce module : une chaîne entre, une chaîne sort.
+export function cheminIntervention(id: number): string {
+  return `/interventions/${String(id)}`;
+}
+
 /// Back-office - destination post-connexion de l'administrateur (T-J0-05).
 export const CHEMIN_ADMIN_PARAMETRES = "/admin/parametres";
 

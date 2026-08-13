@@ -158,7 +158,9 @@ vi.mock("@/lib/geo/postgis", () => ({
 const {
   abregerNom,
   annulerInterventionDuClient,
+  chargerInterventionDuTech,
   compterInterventionsClient,
+  demarrerInterventionDuTech,
   listerHistoriqueTech,
   listerInterventionsAVenir,
   listerInterventionsPassees,
@@ -360,7 +362,7 @@ describe("reserverIntervention - la course perdue sur le creneau", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-// Lectures de l'espace client — T-V3-10.
+// Lectures de l'espace client - T-V3-10.
 // ─────────────────────────────────────────────────────────────────────────
 
 /// Une ligne telle que Prisma la rend, avec ses `Decimal` et ses relations.
@@ -1714,5 +1716,599 @@ describe("listerHistoriqueTech", () => {
 
     expect(page.pages).toBe(1);
     expect(page.interventions).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Detail et demarrage - `US-INTERVENTION-AFFICHER` et
+// `US-INTERVENTION-DEMARRER` (T-V2-02).
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("chargerInterventionDuTech", () => {
+  /// Une ligne telle que Prisma la rend sous `SELECTION_DETAIL`.
+  function ligne(surcharge: Record<string, unknown> = {}) {
+    return {
+      id: 847,
+      status: "PLANNED",
+      appointmentAt: new Date("2026-08-20T08:00:00.000Z"),
+      startedAt: null,
+      durationSnapshot: 60,
+      priceSnapshot: new Prisma.Decimal("85.00"),
+      cancellationReason: null,
+      techComment: null,
+      service: {
+        label: "Revision complete",
+        description: "Reglage et graissage",
+      },
+      client: {
+        firstname: "Julien",
+        lastname: "Marceau",
+        phone: "0612345678",
+        email: "julien@exemple.fr",
+      },
+      address: {
+        id: 77,
+        street: "8 quai Saint-Antoine",
+        city: { zipCode: "69002", city: "Lyon" },
+      },
+      cycle: null,
+      products: [],
+      photos: [],
+      ...surcharge,
+    };
+  }
+
+  beforeEach(() => {
+    lirePointsAdresses.mockResolvedValue(new Map());
+  });
+
+  it("porte la garde de propriete dans la clause `where`", async () => {
+    // 🔴 La propriete de securite de l'ecran. `techId` est dans la requete, pas
+    // dans un `if` qui suivrait la lecture : une branche oubliee ne peut pas
+    // l'ouvrir, et l'intervention d'un collegue ne remonte simplement pas.
+    interventionFindFirst.mockResolvedValue(ligne());
+
+    await chargerInterventionDuTech({ interventionId: 847, techId: TECH });
+
+    expect(interventionFindFirst.mock.calls[0]?.[0]).toMatchObject({
+      where: { id: 847, techId: TECH },
+    });
+  });
+
+  it("ne distingue pas l'intervention inconnue de celle d'un collegue", async () => {
+    // Les deux rendent `null`, et c'est l'appelant qui en fait un 403 unique.
+    // `interventions.id` est un SERIAL : deux reponses distinctes apprendraient
+    // a qui incremente quelles interventions existent.
+    interventionFindFirst.mockResolvedValue(null);
+
+    await expect(
+      chargerInterventionDuTech({ interventionId: 999, techId: TECH }),
+    ).resolves.toBeNull();
+  });
+
+  it("calcule le total en forfait PLUS produits, pas le forfait seul", async () => {
+    // Meme formule que `projeter()`, et c'est ce montant que T-V2-03 prereglera
+    // au paiement (cadrage D9). Preregler sur `price_snapshot` sous-facturerait
+    // toute intervention portant des produits.
+    interventionFindFirst.mockResolvedValue(
+      ligne({
+        products: [
+          {
+            productId: 2,
+            quantity: 3,
+            unitPriceSnapshot: new Prisma.Decimal("12.90"),
+            product: { label: "Chambre a air" },
+          },
+        ],
+      }),
+    );
+
+    const detail = await chargerInterventionDuTech({
+      interventionId: 847,
+      techId: TECH,
+    });
+
+    // 85.00 + 12.90 × 3 = 123.70, et le calcul passe par `Decimal` : en binaire
+    // il perdrait ses centimes, sur un montant qui sera encaisse.
+    expect(detail?.total).toBe("123.70");
+    expect(detail?.priceSnapshot).toBe("85.00");
+    expect(detail?.produits[0]?.unitPriceSnapshot).toBe("12.90");
+  });
+
+  it("rend le nom COMPLET du client, son telephone et son email", async () => {
+    // `abregerNom` joue dans l'autre sens : il abrege le TECHNICIEN pour le
+    // client. L'US assume l'exposition ici, « justification metier terrain ».
+    interventionFindFirst.mockResolvedValue(ligne());
+
+    const detail = await chargerInterventionDuTech({
+      interventionId: 847,
+      techId: TECH,
+    });
+
+    expect(detail?.client).toEqual({
+      nom: "Julien Marceau",
+      telephone: "0612345678",
+      email: "julien@exemple.fr",
+    });
+  });
+
+  it("survit a un client pseudonymise, telephone et point absents", async () => {
+    // L'intervention survit a l'effacement de son client (Constitution §4.1,
+    // pas de FK cassee) : la ligne existe donc et doit se rendre.
+    interventionFindFirst.mockResolvedValue(
+      ligne({
+        client: {
+          firstname: "Compte",
+          lastname: "supprime",
+          phone: null,
+          email: "supprime+847@exemple.invalid",
+        },
+      }),
+    );
+
+    const detail = await chargerInterventionDuTech({
+      interventionId: 847,
+      techId: TECH,
+    });
+
+    expect(detail?.client.telephone).toBeNull();
+    expect(detail?.point).toBeNull();
+  });
+
+  it("ne selectionne pas le libelle memo de l'adresse", async () => {
+    // « Domicile », « Chez ma mere » : le client le redige pour lui-meme, et
+    // aucun composant de cet ecran ne le lit. Ne pas le SELECTIONNER est plus
+    // sur que ne pas l'afficher - minimisation deja appliquee a la tournee.
+    interventionFindFirst.mockResolvedValue(ligne());
+
+    await chargerInterventionDuTech({ interventionId: 847, techId: TECH });
+
+    const args = interventionFindFirst.mock.calls[0]?.[0] as {
+      select: { address: { select: Record<string, unknown> } };
+    };
+
+    expect(args.select.address.select).not.toHaveProperty("label");
+  });
+
+  it("rend les deux etats du velo", async () => {
+    // Cadrage D11 : `cycle_id` a un ecrivain (T-V3-16) mais le rattachement
+    // reste facultatif, donc la colonne est vide sur toute intervention venue
+    // du tunnel. Les deux etats s'affichent.
+    interventionFindFirst.mockResolvedValue(ligne());
+    const sansVelo = await chargerInterventionDuTech({
+      interventionId: 847,
+      techId: TECH,
+    });
+    expect(sansVelo?.cycle).toBeNull();
+
+    interventionFindFirst.mockResolvedValue(
+      ligne({
+        cycle: { brand: "Btwin", model: "Riverside 500", type: "CLASSIC" },
+      }),
+    );
+    const avecVelo = await chargerInterventionDuTech({
+      interventionId: 847,
+      techId: TECH,
+    });
+    expect(avecVelo?.cycle).toEqual({
+      brand: "Btwin",
+      model: "Riverside 500",
+      type: "CLASSIC",
+    });
+  });
+});
+
+describe("demarrerInterventionDuTech", () => {
+  const MAINTENANT = new Date("2026-08-20T08:02:00.000Z");
+
+  function armer(statut = "PLANNED", sousVerrou = statut) {
+    txInterventionFindFirst.mockResolvedValue({ status: statut });
+    txInterventionFindUniqueOrThrow.mockResolvedValue({ status: sousVerrou });
+  }
+
+  it("passe PLANNED a IN_PROGRESS et date le demarrage", async () => {
+    armer();
+
+    const resultat = await demarrerInterventionDuTech({
+      interventionId: 847,
+      techId: TECH,
+      maintenant: MAINTENANT,
+    });
+
+    expect(resultat).toEqual({ ok: true, startedAt: MAINTENANT });
+    expect(txInterventionUpdate).toHaveBeenCalledWith({
+      where: { id: 847 },
+      data: { status: "IN_PROGRESS", startedAt: MAINTENANT },
+    });
+    expect(commits).toHaveLength(1);
+  });
+
+  it("porte la garde de propriete dans la clause `where`", async () => {
+    armer();
+
+    await demarrerInterventionDuTech({
+      interventionId: 847,
+      techId: TECH,
+      maintenant: MAINTENANT,
+    });
+
+    expect(txInterventionFindFirst.mock.calls[0]?.[0]).toMatchObject({
+      where: { id: 847, techId: TECH },
+    });
+  });
+
+  it("ne distingue pas l'intervention inconnue de celle d'un collegue", async () => {
+    txInterventionFindFirst.mockResolvedValue(null);
+
+    const resultat = await demarrerInterventionDuTech({
+      interventionId: 999,
+      techId: TECH,
+      maintenant: MAINTENANT,
+    });
+
+    expect(resultat).toEqual({ ok: false, reason: "introuvable" });
+    expect(txInterventionUpdate).not.toHaveBeenCalled();
+    expect(auditCreate).not.toHaveBeenCalled();
+  });
+
+  it.each([["IN_PROGRESS"], ["DONE"], ["CANCELLED"]])(
+    "refuse le demarrage depuis %s",
+    async (statut) => {
+      // 🔴 Le refus est SERVEUR et TYPE, pas un code HTTP. La SPEC ecrit 409 :
+      // ce statut n'a plus de referent depuis le pivot Next full-stack, les
+      // Server Actions rendant des unions discriminees. L'exigence reelle - un
+      // refus serveur, hors de l'UI - est tenue.
+      armer(statut);
+
+      const resultat = await demarrerInterventionDuTech({
+        interventionId: 847,
+        techId: TECH,
+        maintenant: MAINTENANT,
+      });
+
+      expect(resultat).toEqual({
+        ok: false,
+        reason: "transition_illegale",
+        statutCourant: statut,
+      });
+      expect(txInterventionUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("verrouille APRES la garde de propriete, jamais avant", async () => {
+    // Un appelant qui incremente des identifiants ne doit pas pouvoir poser un
+    // verrou sur le rendez-vous d'un tiers. Meme ordre que l'annulation et que
+    // le quota de photos.
+    txInterventionFindFirst.mockResolvedValue(null);
+
+    await demarrerInterventionDuTech({
+      interventionId: 999,
+      techId: TECH,
+      maintenant: MAINTENANT,
+    });
+
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("relit SOUS le verrou et refuse si le statut a change entre les deux", async () => {
+    // La premiere lecture a servi aux gardes, la seconde decide. Entre les
+    // deux, une transaction voisine a pu commiter son propre passage en
+    // IN_PROGRESS, ou une annulation par le client.
+    armer("PLANNED", "CANCELLED");
+
+    const resultat = await demarrerInterventionDuTech({
+      interventionId: 847,
+      techId: TECH,
+      maintenant: MAINTENANT,
+    });
+
+    expect(resultat).toEqual({
+      ok: false,
+      reason: "transition_illegale",
+      statutCourant: "CANCELLED",
+    });
+    expect(txInterventionUpdate).not.toHaveBeenCalled();
+  });
+
+  it("ecrit l'audit DANS la transaction, avec la transition en `details`", async () => {
+    // ⚠️ `details` et non `metadata` : la SPEC nomme un champ qui n'existe pas
+    // dans `AuditEntry`, troisieme occurrence de l'erreur (la PR #39 l'avait
+    // deja corrigee deux fois sur T-V3-12).
+    armer();
+
+    await demarrerInterventionDuTech({
+      interventionId: 847,
+      techId: TECH,
+      maintenant: MAINTENANT,
+    });
+
+    expect(auditCreate).toHaveBeenCalledWith({
+      data: {
+        entityType: "interventions",
+        entityId: "847",
+        action: "UPDATE",
+        actorId: TECH,
+        details: { statutAvant: "PLANNED", statutApres: "IN_PROGRESS" },
+      },
+    });
+  });
+
+  it("n'ecrit AUCUNE trace quand la transition est refusee", async () => {
+    // `audit_logs` est la piece qu'on produit en cas de contestation : une
+    // entree pour une transition qui n'a pas eu lieu est pire qu'une absence.
+    armer("DONE");
+
+    await demarrerInterventionDuTech({
+      interventionId: 847,
+      techId: TECH,
+      maintenant: MAINTENANT,
+    });
+
+    expect(auditCreate).not.toHaveBeenCalled();
+  });
+
+  it("serialise deux demarrages concurrents et n'ecrit QU'UNE entree d'audit", async () => {
+    // 🔴 Le test que le verrou existe. Sans `FOR UPDATE`, les deux transactions
+    // passent la lecture de statut sous READ COMMITTED et ecrivent DEUX entrees
+    // d'audit sur la meme transition : le second `UPDATE` est inoffensif, la
+    // trace ne l'est pas, elle daterait deux fois un demarrage unique.
+    //
+    // Le faux client modele le regime reel : premiere lecture non bloquante,
+    // verrou de ligne qui fait attendre la transaction suivante jusqu'au commit
+    // de la precedente.
+    let commite = false;
+    txInterventionFindFirst.mockResolvedValue({ status: "PLANNED" });
+    txInterventionFindUniqueOrThrow.mockImplementation(() =>
+      Promise.resolve({ status: commite ? "IN_PROGRESS" : "PLANNED" }),
+    );
+    txInterventionUpdate.mockImplementation(() => {
+      commite = true;
+      return Promise.resolve({});
+    });
+
+    const [premier, second] = await Promise.all([
+      demarrerInterventionDuTech({
+        interventionId: 847,
+        techId: TECH,
+        maintenant: MAINTENANT,
+      }),
+      demarrerInterventionDuTech({
+        interventionId: 847,
+        techId: TECH,
+        maintenant: MAINTENANT,
+      }),
+    ]);
+
+    expect([premier, second].filter((resultat) => resultat.ok)).toHaveLength(1);
+    expect([premier, second]).toContainEqual({
+      ok: false,
+      reason: "transition_illegale",
+      statutCourant: "IN_PROGRESS",
+    });
+    expect(auditCreate).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// ⚠️ Ajouts de l'agent testeur, 2026-08-13 - ce que le harnais de T-V2-02 ne
+// modelisait pas.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("demarrerInterventionDuTech - l'atomicite, dans l'autre sens", () => {
+  const MAINTENANT = new Date("2026-08-20T08:02:00.000Z");
+
+  it("n'ecrit PAS la transition quand la trace d'audit echoue", async () => {
+    // 🔴 La DoD dit « entree `audit_logs` dans la MEME transaction ». Le test
+    // livre prouve la moitie facile - la trace part bien par le client
+    // transactionnel - mais pas celle qui coute : qu'un echec de la trace
+    // EMPORTE la mutation. Sans elle, une intervention passerait en
+    // `IN_PROGRESS` sans qu'aucune piece n'en garde le souvenir, et c'est
+    // exactement l'etat que « dans la meme transaction » existe pour interdire.
+    //
+    // Le verdict se lit sur le rollback, pas sur la valeur rendue : le rappel de
+    // `$transaction` qui LEVE annule, celui qui rend commite.
+    txInterventionFindFirst.mockResolvedValue({ status: "PLANNED" });
+    txInterventionFindUniqueOrThrow.mockResolvedValue({ status: "PLANNED" });
+    // `…Once` et non `mockRejectedValue` : `vi.clearAllMocks()` efface
+    // l'historique des appels, PAS les implementations, et une trace qui
+    // resterait en echec contaminerait les tests suivants du fichier.
+    auditCreate.mockRejectedValueOnce(new Error("audit_logs indisponible"));
+
+    await expect(
+      demarrerInterventionDuTech({
+        interventionId: 847,
+        techId: TECH,
+        maintenant: MAINTENANT,
+      }),
+    ).rejects.toThrow();
+
+    expect(rollbacks).toHaveLength(1);
+    expect(commits).toHaveLength(0);
+  });
+});
+
+describe("la course que le harnais de T-V2-02 ne joue pas : demarrage CONTRE annulation", () => {
+  // ⚠️ Le test de concurrence livre fait courir **deux demarrages**, donc deux
+  // fois le meme code contre lui-meme. La course qui existe reellement en
+  // production oppose **deux acteurs et deux tables de decision** : le
+  // technicien qui demarre et le client qui annule, chacun avec sa propre garde
+  // de propriete, son propre statut cible et sa propre entree d'audit.
+  //
+  // Rien n'interdit qu'elles se croisent : `annulationOuverte` ouvre
+  // l'annulation jusqu'a H-24, et **aucune borne temporelle n'encadre le
+  // demarrage** - un technicien peut demarrer une intervention la veille. La
+  // fenetre est donc reelle, pas theorique.
+  //
+  // Ce que la propriete exige : le verrou de ligne les serialise, une seule des
+  // deux transitions a lieu, et `audit_logs` porte **une** entree et non deux
+  // recits contradictoires du meme instant.
+  const RDV = new Date("2026-08-20T08:00:00.000Z");
+  // H-25 cote client : sa fenetre d'annulation est ouverte.
+  const MAINTENANT = new Date("2026-08-19T07:00:00.000Z");
+
+  it("serialise les deux acteurs, et n'en laisse passer qu'un", async () => {
+    let statut = "PLANNED";
+
+    // Chaque acteur lit AVEC SA PROPRE clause de propriete : le technicien par
+    // `techId`, le client par `clientId`. Le faux client les distingue, sinon
+    // l'un des deux lirait la ligne de l'autre et la course serait truquee.
+    txInterventionFindFirst.mockImplementation((args: unknown) => {
+      const where = (args as { where: Record<string, unknown> }).where;
+      if (where["techId"]) return Promise.resolve({ status: statut });
+
+      return Promise.resolve({
+        status: statut,
+        appointmentAt: RDV,
+        durationSnapshot: 60,
+        service: { label: "Revision complete" },
+        tech: { email: "tech@exemple.fr", firstname: "Marc" },
+        address: {
+          street: "12 rue de la Republique",
+          city: { zipCode: "69002", city: "Lyon" },
+        },
+      });
+    });
+
+    // La relecture sous verrou voit l'etat COMMITE, ce que la file de verrous du
+    // harnais garantit : la seconde transaction n'y arrive qu'apres la premiere.
+    txInterventionFindUniqueOrThrow.mockImplementation(() =>
+      Promise.resolve({ status: statut }),
+    );
+    txInterventionUpdate.mockImplementation((args: unknown) => {
+      statut = (args as { data: { status: string } }).data.status;
+      return Promise.resolve({});
+    });
+
+    const [demarrage, annulation] = await Promise.all([
+      demarrerInterventionDuTech({
+        interventionId: 847,
+        techId: TECH,
+        maintenant: MAINTENANT,
+      }),
+      annulerInterventionDuClient({
+        interventionId: 847,
+        clientId: CLIENT,
+        motif: "Empechement de derniere minute",
+        maintenant: MAINTENANT,
+      }),
+    ]);
+
+    // Une seule des deux transitions, une seule ecriture, une seule trace.
+    expect([demarrage, annulation].filter((issue) => issue.ok)).toHaveLength(1);
+    expect(txInterventionUpdate).toHaveBeenCalledTimes(1);
+    expect(auditCreate).toHaveBeenCalledTimes(1);
+
+    // Et le perdant recoit le refus de SA propre grammaire, pas une panne : les
+    // deux unions discriminees restent lisibles par leur appelant.
+    const refus = demarrage.ok ? annulation : demarrage;
+    expect(refus).toEqual(
+      demarrage.ok
+        ? { ok: false, reason: "non_annulable" }
+        : {
+            ok: false,
+            reason: "transition_illegale",
+            statutCourant: "CANCELLED",
+          },
+    );
+
+    // Les deux transactions COMMITENT : un refus metier est une valeur rendue,
+    // pas une exception. Un rollback ici voudrait dire qu'on paie une erreur
+    // Postgres pour une reponse que le domaine sait donner.
+    expect(commits).toHaveLength(2);
+    expect(rollbacks).toHaveLength(0);
+  });
+});
+
+describe("chargerInterventionDuTech - les champs dont l'ecran depend", () => {
+  it("fait traverser `startedAt`, le compte-rendu et le TYPE des photos", async () => {
+    // ⚠️ Trois champs qu'aucune assertion ne suivait jusqu'au DTO, alors que
+    // l'ecran en depend directement : `startedAt` porte le jalon date du hub en
+    // `IN_PROGRESS`, `techComment` decide du rendu du bloc compte-rendu, et
+    // `photo.type` decide du texte alternatif (« jointe par le client » contre
+    // « prise apres l'intervention »). Une projection qui les oublierait
+    // rendrait un hub muet et des images mal decrites, sans faire rougir quoi
+    // que ce soit.
+    lirePointsAdresses.mockResolvedValue(new Map());
+    interventionFindFirst.mockResolvedValue({
+      id: 847,
+      status: "IN_PROGRESS",
+      appointmentAt: new Date("2026-08-20T08:00:00.000Z"),
+      startedAt: new Date("2026-08-20T08:02:00.000Z"),
+      durationSnapshot: 60,
+      priceSnapshot: new Prisma.Decimal("85.00"),
+      cancellationReason: null,
+      techComment: "Chaine changee, cassette a surveiller.",
+      service: { label: "Revision complete", description: null },
+      client: {
+        firstname: "Julien",
+        lastname: "Marceau",
+        phone: "0612345678",
+        email: "julien@exemple.fr",
+      },
+      address: {
+        id: 77,
+        street: "8 quai Saint-Antoine",
+        city: { zipCode: "69002", city: "Lyon" },
+      },
+      cycle: null,
+      products: [],
+      photos: [
+        { id: 3, type: "BEFORE" },
+        { id: 9, type: "AFTER" },
+      ],
+    });
+
+    const detail = await chargerInterventionDuTech({
+      interventionId: 847,
+      techId: TECH,
+    });
+
+    expect(detail?.startedAt).toEqual(new Date("2026-08-20T08:02:00.000Z"));
+    expect(detail?.techComment).toBe("Chaine changee, cassette a surveiller.");
+    expect(detail?.photos).toEqual([
+      { id: 3, type: "BEFORE" },
+      { id: 9, type: "AFTER" },
+    ]);
+  });
+
+  it("ne remonte AUCUN identifiant de compte au-dela de la ligne", async () => {
+    // Minimisation, meme geste que le retrait du libelle memo de l'adresse :
+    // l'ecran nomme le client, il n'a besoin ni de son UUID ni de celui du
+    // technicien. Un identifiant qui traverserait finirait dans le HTML rendu.
+    lirePointsAdresses.mockResolvedValue(new Map());
+    interventionFindFirst.mockResolvedValue({
+      id: 847,
+      status: "PLANNED",
+      appointmentAt: new Date("2026-08-20T08:00:00.000Z"),
+      startedAt: null,
+      durationSnapshot: 60,
+      priceSnapshot: new Prisma.Decimal("85.00"),
+      cancellationReason: null,
+      techComment: null,
+      service: { label: "Revision complete", description: null },
+      client: {
+        firstname: "Julien",
+        lastname: "Marceau",
+        phone: "0612345678",
+        email: "julien@exemple.fr",
+      },
+      address: {
+        id: 77,
+        street: "8 quai Saint-Antoine",
+        city: { zipCode: "69002", city: "Lyon" },
+      },
+      cycle: null,
+      products: [],
+      photos: [],
+    });
+
+    const detail = await chargerInterventionDuTech({
+      interventionId: 847,
+      techId: TECH,
+    });
+
+    const serialise = JSON.stringify(detail);
+    expect(serialise).not.toContain(TECH);
+    expect(serialise).not.toContain(CLIENT);
   });
 });

@@ -6,8 +6,8 @@
 //
 //   · **les six elements** de chaque ligne y sont tous - une omission se voit
 //     ici et nulle part ailleurs, la requete les rendant tous ;
-//   · **aucune ligne n'est cliquable** - la route de detail appartient a
-//     T-V2-02, et un lien pose maintenant menerait a un 404.
+//   · **l'action contextuelle suit le statut** - « Demarrer » sur les seules
+//     lignes `PLANNED`, depuis T-V2-02.
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { axe } from "jest-axe";
@@ -21,6 +21,18 @@ import type { InterventionTournee } from "@/lib/db/queries/interventions";
 // l'action a son propre test.
 vi.mock("@/lib/actions/interventions/lister-tournee", () => ({
   listerTournee: vi.fn(() => Promise.resolve({ data: undefined })),
+}));
+
+// Le bouton « Demarrer » de chaque ligne `PLANNED` appelle sa propre Server
+// Action, et `useRouter` pour rafraichir apres coup. Les deux sont doubles :
+// ce fichier eprouve le RENDU de la vue, la garde et la transition ayant leurs
+// propres tests (`demarrer-intervention.test.ts`, `interventions.test.ts`).
+vi.mock("@/lib/actions/interventions/demarrer-intervention", () => ({
+  demarrerIntervention: vi.fn(() => Promise.resolve({ data: { ok: true } })),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
 }));
 
 const { TourneeVue } = await import("./tournee-vue");
@@ -160,7 +172,16 @@ describe("TourneeVue - les six elements de chaque ligne", () => {
 
     expect(screen.getByText("Téléphone non renseigné")).toBeInTheDocument();
     expect(liste().getByText("Utilisateur Anonymisé")).toBeInTheDocument();
-    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+
+    // ⚠️ **Assertion resserrée par T-V2-02** (règle du test rouge, cas 3), même
+    // motif que dans `ligne-tournee.test.tsx` : elle prenait « aucun lien du
+    // tout » pour « aucun lien téléphone », et la ligne porte désormais un lien
+    // vers son détail. Ce qu'elle voulait dire est ci-dessous.
+    expect(
+      screen
+        .getAllByRole("link")
+        .filter((lien) => lien.getAttribute("href")?.startsWith("tel:")),
+    ).toHaveLength(0);
   });
 
   it("n'affiche aucun bloc produits quand il n'y en a pas", () => {
@@ -267,22 +288,62 @@ describe("TourneeVue - la journee vide", () => {
   });
 });
 
-describe("TourneeVue - ce que T-V2-01 ne pose pas", () => {
-  it("ne rend AUCUN lien vers un detail d'intervention", () => {
-    // La route `/interventions/[id]` appartient a T-V2-02. Un lien pose ici
-    // menerait a un 404 tant qu'elle n'a pas atterri - le lien mort que la
-    // lecon T-T2-16 d'Argo proscrit. T-V2-02 le posera EN MEME TEMPS que
-    // l'action contextuelle de chaque ligne.
+// ⚠️ **Ce bloc s'appelait « ce que T-V2-01 ne pose pas » et affirmait
+// qu'AUCUN lien de detail n'etait rendu.** L'oracle etait juste pour son
+// moment - la route `/interventions/[id]` n'existait pas, un lien y aurait
+// mene a un 404 - et T-V2-02 le rend faux en livrant la route, le lien et
+// l'action contextuelle ensemble, comme la DoD le prevoyait. Regle du test
+// rouge, cas 3 : test fautif parce qu'il fige un etat transitoire qu'un
+// changement legitime leve. Il est **remplace par son symetrique**, pas
+// supprime : ce qui etait « aucun lien » devient « le bon lien, et le bouton
+// sur les seules lignes qui l'admettent ».
+describe("TourneeVue - le lien et l'action contextuelle (T-V2-02)", () => {
+  it("ouvre le detail depuis chaque ligne, quel que soit son statut", () => {
+    // Cadrage D4. Les deux statuts terminaux y arrivent en lecture seule.
     afficher([
       intervention({ id: 1, status: "PLANNED" }),
       intervention({ id: 2, status: "IN_PROGRESS" }),
+      intervention({ id: 3, status: "DONE" }),
+      intervention({ id: 4, status: "CANCELLED" }),
     ]);
 
-    const liens = screen.queryAllByRole("link");
-    for (const lien of liens) {
-      // Seuls les `tel:` sont attendus.
-      expect(lien).toHaveAttribute("href", expect.stringMatching(/^tel:/));
-    }
+    const cibles = screen
+      .getAllByRole("link")
+      .map((lien) => lien.getAttribute("href"))
+      .filter((href) => href?.startsWith("/interventions/"));
+
+    expect(cibles).toEqual([
+      "/interventions/1",
+      "/interventions/2",
+      "/interventions/3",
+      "/interventions/4",
+    ]);
+  });
+
+  it("ne propose « Demarrer » que sur les lignes PLANNED", () => {
+    // 🔴 SPEC §Cas nominal : « "Demarrer" si PLANNED, "Ouvrir detail" si
+    // IN_PROGRESS, lecture seule si DONE ou CANCELLED ». « Ouvrir detail » EST
+    // le lien de la carte, teste ci-dessus ; le seul bouton reel est celui de
+    // `PLANNED`. Un bouton sur une ligne terminale serait le bouton inerte que
+    // la DoD interdit nommement.
+    afficher([
+      intervention({ id: 1, status: "PLANNED" }),
+      intervention({ id: 2, status: "IN_PROGRESS" }),
+      intervention({ id: 3, status: "DONE" }),
+      intervention({ id: 4, status: "CANCELLED" }),
+    ]);
+
+    expect(
+      screen.getAllByRole("button", { name: /Démarrer l'intervention/ }),
+    ).toHaveLength(1);
+  });
+
+  it("ne rend aucun bouton sur une tournee sans ligne PLANNED", () => {
+    afficher([
+      intervention({ id: 3, status: "DONE" }),
+      intervention({ id: 4, status: "CANCELLED" }),
+    ]);
+
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 

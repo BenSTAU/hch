@@ -114,23 +114,47 @@ export async function attacherPhoto(params: {
   });
 }
 
-/// Le chemin disque d'une photo, **si elle appartient au client**.
+/// Le chemin disque d'une photo, **si le demandeur a le droit de la voir**.
 ///
 /// C'est la garde de `GET /api/intervention-photos/[id]`. Elle vit ici et non
 /// dans le Route Handler pour être éprouvable sans contexte Next : le
 /// cloisonnement d'une photo prise au domicile de quelqu'un est une propriété
 /// de sécurité, elle se teste.
-export async function chargerPhotoDuClient(params: {
+///
+/// ── Deux titulaires, et le second arrive avec T-V2-02
+///
+/// Le **client** de l'intervention, et le **technicien qui lui est affecté**.
+/// Jusqu'ici la clause ne portait que le premier, et `US-INTERVENTION-AFFICHER`
+/// §Cas nominal exige que le technicien voie « photos existantes (client à la
+/// réservation + tech déjà déposées) » : sans cette seconde branche, l'écran de
+/// détail rendrait des images cassées.
+///
+/// ⚠️ **L'élargissement se fait ICI et pas dans une seconde fonction.** Deux
+/// requêtes pour une même question finiraient par diverger, et c'est la plus
+/// permissive des deux qui déciderait. C'est le motif déjà écrit sur
+/// `cheminPhotoSchema` (`validations/interventions.ts`).
+///
+/// La case correspondante de **T-V2-04** (« le contrôle de propriété doit
+/// accepter le technicien affecté ») est donc close par anticipation : un
+/// critère v1 du plancher ne pouvait pas dépendre de la seule tâche sacrifiable
+/// de la page.
+export async function chargerPhotoAutorisee(params: {
   photoId: number;
-  clientId: string;
+  /// Le compte connecté. Il n'est **pas** qualifié par rôle : c'est le
+  /// rendez-vous qui décide, pas la session. Un technicien reste sans droit sur
+  /// les photos d'une intervention qui n'est pas la sienne.
+  userId: string;
 }): Promise<{ url: string } | null> {
   const photo = await db.photo.findFirst({
     where: {
       id: params.photoId,
       // La propriété se lit sur l'INTERVENTION, pas sur `uploaded_by_user_id` :
       // une photo déposée par le technicien sur mon intervention m'est
-      // destinée, et c'est le rendez-vous qui décide de qui la voit.
-      intervention: { clientId: params.clientId },
+      // destinée, et c'est le rendez-vous qui décide de qui la voit. Le même
+      // raisonnement vaut dans l'autre sens, d'où les deux branches.
+      intervention: {
+        OR: [{ clientId: params.userId }, { techId: params.userId }],
+      },
     },
     select: { url: true },
   });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck, Clock } from "lucide-react";
 
 import {
@@ -8,31 +8,32 @@ import {
   type Tournee,
 } from "@/lib/actions/interventions/lister-tournee";
 import { formatDureeCumulee, formatJourLong } from "@/lib/format";
+import { BoutonDemarrer } from "@/components/features/interventions/bouton-demarrer";
 import { LigneTournee } from "@/components/features/interventions/ligne-tournee";
 import { Badge } from "@/components/ui/badge";
 
 import { CarteTournee } from "./carte-tournee";
 import { ProchaineIntervention } from "./prochaine-intervention";
 
-/// Tournée du jour — `US-INTERVENTIONS-LISTER-TECH-DU-JOUR`, écran **T1**.
+/// Tournée du jour - `US-INTERVENTIONS-LISTER-TECH-DU-JOUR`, écran **T1**.
 ///
 /// ── Ce qui se porte de la maquette, et ce qui saute
 ///
-/// Portés : le titre « Aujourd'hui — <jour> », les chips de synthèse, la colonne
+/// Portés : le titre « Aujourd'hui - <jour> », les chips de synthèse, la colonne
 /// de lignes horodatées à gauche, la carte à droite, l'étiquette de statut.
 ///
 /// **Quatre éléments ne se portent pas**, et aucun n'est un oubli :
 ///
-///  1. **Le CTA « Nouvelle Intervention »** de la barre latérale —
+///  1. **Le CTA « Nouvelle Intervention »** de la barre latérale -
 ///     `US-INTERVENTION-CREER` est **v2 admin**, pas technicien.
-///  2. **Le chip « 12 km au total (tournée optimisée) »** — il n'existe aucun
+///  2. **Le chip « 12 km au total (tournée optimisée) »** - il n'existe aucun
 ///     calcul d'itinéraire en v1 et aucune US n'en demande. Même famille que le
 ///     « Rejoint par plus de 500 cyclistes lyonnais » retiré de C1 : un chiffre
 ///     inventé qui décore.
-///  3. **La cloche de notification et son badge « 2 »** — aucune table de
+///  3. **La cloche de notification et son badge « 2 »** - aucune table de
 ///     notifications n'existe, motif pour lequel la PR #39 a déjà retiré
 ///     « notif in-app » d'une US.
-///  4. **« contactez la régulation au 04 11 22 33 44 »** — numéro inventé. Le
+///  4. **« contactez la régulation au 04 11 22 33 44 »** - numéro inventé. Le
 ///     vrai contact de la société vit dans `app_settings` et le bloc
 ///     d'annulation de l'espace client le lit déjà ; il n'a pas sa place ici,
 ///     où la maquette l'accompagnait d'une notion de « régulation » qui ne
@@ -45,11 +46,17 @@ import { ProchaineIntervention } from "./prochaine-intervention";
 /// de Benjamin en recettant cet écran. Trois de ses six entrées sont donc
 /// posées ; les trois autres restent absentes, faute d'US.
 ///
-/// ── Les lignes ne sont pas cliquables, et c'est délibéré
+/// ── Les lignes sont cliquables depuis T-V2-02
 ///
-/// La route de détail `/interventions/[id]` appartient à **T-V2-02**. Le motif
-/// complet vit désormais avec la ligne, dans
+/// Chaque ligne ouvre `/interventions/[id]` quel que soit son statut, et les
+/// lignes `PLANNED` portent en plus le bouton « Démarrer ». Le motif complet
+/// vit avec la ligne, dans
 /// `components/features/interventions/ligne-tournee.tsx`.
+///
+/// ⚠️ C'est la **seule** des trois vues à passer une action : « Cette semaine »
+/// ne montre que des rendez-vous à partir de demain, et « Historique » que des
+/// statuts terminaux. Un bouton « Démarrer » sur l'intervention de jeudi
+/// prochain n'aurait aucun sens terrain.
 ///
 /// ── Le rafraîchissement
 ///
@@ -67,16 +74,18 @@ export function TourneeVue({
 }: {
   initialData: Tournee;
   /// `null` quand `HCH_MAPS_API_KEY` n'est pas renseignée. La carte ne se monte
-  /// alors pas, et la liste ci-contre sert de repli — c'est le même chemin de
+  /// alors pas, et la liste ci-contre sert de repli - c'est le même chemin de
   /// code que lorsque le script Maps ne charge pas.
   mapsApiKey: string | null;
 }) {
+  const queryClient = useQueryClient();
+
   const { data } = useQuery({
     queryKey: ["tournee-du-jour"],
     queryFn: async () => {
       // Server Action et non Route Handler : CLAUDE.md §Data fetching interdit
       // qu'un Client Component lise par Route Handler. Elle porte sa propre
-      // garde de rôle — la garde de la page ne couvre pas cet appel.
+      // garde de rôle - la garde de la page ne couvre pas cet appel.
       const resultat = await listerTournee();
 
       if (resultat?.serverError) throw new Error(resultat.serverError);
@@ -89,7 +98,7 @@ export function TourneeVue({
     initialData,
     refetchInterval: INTERVALLE_MS,
     // Onglet en arrière-plan : on cesse d'interroger. Charge serveur, batterie
-    // et bande passante — l'anti-patron de la convention axe 03 §12.
+    // et bande passante - l'anti-patron de la convention axe 03 §12.
     refetchIntervalInBackground: false,
   });
 
@@ -111,7 +120,7 @@ export function TourneeVue({
           {/* `first-letter:uppercase` plutôt qu'une capitale posée dans la
               chaîne : `Intl` rend « jeudi » en minuscule, et découper la chaîne
               casserait sur toute locale qui ne commence pas par le jour. */}
-          Aujourd&apos;hui —{" "}
+          Aujourd&apos;hui -{" "}
           <span className="first-letter:uppercase">
             {formatJourLong(new Date(data.debutJournee))}
           </span>
@@ -157,6 +166,26 @@ export function TourneeVue({
                 <LigneTournee
                   key={intervention.id}
                   intervention={intervention}
+                  action={
+                    // « Démarrer » si `PLANNED`, rien sinon (SPEC §Cas nominal).
+                    // « Ouvrir détail » d'`IN_PROGRESS` est le lien de la carte,
+                    // et les deux statuts terminaux sont en lecture seule.
+                    intervention.status === "PLANNED" ? (
+                      <BoutonDemarrer
+                        interventionId={intervention.id}
+                        taille="sm"
+                        // La revalidation serveur de l'action ne touche pas le
+                        // cache TanStack de cette vue : sans cette invalidation,
+                        // la ligne resterait « Planifiée » jusqu'au prochain
+                        // cycle de 30 secondes.
+                        onDemarree={() => {
+                          void queryClient.invalidateQueries({
+                            queryKey: ["tournee-du-jour"],
+                          });
+                        }}
+                      />
+                    ) : null
+                  }
                 />
               ))}
             </ol>

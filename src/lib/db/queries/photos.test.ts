@@ -83,10 +83,12 @@ vi.mock("@/lib/db/client", () => ({
   },
 }));
 
-const { attacherPhoto, chargerPhotoDuClient } = await import("./photos");
+const { attacherPhoto, chargerPhotoAutorisee } = await import("./photos");
 
 const CLIENT = "11111111-1111-4111-8111-111111111111";
 const TIERS = "22222222-2222-4222-8222-222222222222";
+/// Le technicien affecte au rendez-vous - second titulaire depuis T-V2-02.
+const TECH = "33333333-3333-4333-8333-333333333333";
 const CHEMIN = "uploads/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.webp";
 
 beforeEach(() => {
@@ -284,18 +286,59 @@ describe("attacherPhoto - quota", () => {
   });
 });
 
-describe("chargerPhotoDuClient", () => {
+// ⚠️ **Renommee `chargerPhotoDuClient` -> `chargerPhotoAutorisee` par T-V2-02**,
+// et les deux premiers tests ci-dessous sont reecrits pour cette raison. Regle
+// du test rouge, cas 3 : l'oracle figeait une clause `where` que le
+// remaniement invalide legitimement, l'ecran de detail technicien ayant besoin
+// de lire les photos que le client a jointes
+// (`US-INTERVENTION-AFFICHER` §Cas nominal). La PROPRIETE verifiee, elle, ne
+// faiblit pas : elle gagne une branche et en garde la borne.
+describe("chargerPhotoAutorisee", () => {
   it("lit la propriete sur l'INTERVENTION, pas sur l'auteur du depot", async () => {
     // Une photo deposee par le technicien sur mon intervention m'est destinee.
     // C'est le rendez-vous qui decide de qui la voit, pas qui a tenu
-    // l'appareil - et la vue technicien de V2 en depend.
+    // l'appareil.
     photoFindFirst.mockResolvedValue({ url: CHEMIN });
 
-    await chargerPhotoDuClient({ photoId: 7, clientId: CLIENT });
+    await chargerPhotoAutorisee({ photoId: 7, userId: CLIENT });
 
     expect(photoFindFirst.mock.calls[0]?.[0]).toMatchObject({
-      where: { id: 7, intervention: { clientId: CLIENT } },
+      where: {
+        id: 7,
+        intervention: { OR: [{ clientId: CLIENT }, { techId: CLIENT }] },
+      },
     });
+  });
+
+  it("accepte les DEUX titulaires du rendez-vous, client et technicien affecte", async () => {
+    // 🔴 Le coeur de l'elargissement de T-V2-02. Sans la seconde branche,
+    // l'ecran T2 rendrait des images cassees : la route repondrait 404 au
+    // technicien pour les photos preparatoires de SON intervention.
+    photoFindFirst.mockResolvedValue({ url: CHEMIN });
+
+    await chargerPhotoAutorisee({ photoId: 7, userId: TECH });
+
+    const where = photoFindFirst.mock.calls[0]?.[0] as {
+      where: { intervention: { OR: unknown[] } };
+    };
+
+    expect(where.where.intervention.OR).toEqual([
+      { clientId: TECH },
+      { techId: TECH },
+    ]);
+  });
+
+  it("ne qualifie PAS le demandeur par son role", async () => {
+    // La regle est « titulaire du rendez-vous », pas « porteur de ROLE_TECH ».
+    // Un `roles` qui remonterait ici voudrait dire qu'un technicien peut lire
+    // les photos d'une intervention qui n'est pas la sienne.
+    photoFindFirst.mockResolvedValue({ url: CHEMIN });
+
+    await chargerPhotoAutorisee({ photoId: 7, userId: TECH });
+
+    expect(JSON.stringify(photoFindFirst.mock.calls[0]?.[0])).not.toContain(
+      "ROLE_",
+    );
   });
 
   it("ne rend que le chemin, rien d'autre", async () => {
@@ -303,7 +346,7 @@ describe("chargerPhotoDuClient", () => {
     // de traverser jusqu'au Route Handler.
     photoFindFirst.mockResolvedValue({ url: CHEMIN });
 
-    await chargerPhotoDuClient({ photoId: 7, clientId: CLIENT });
+    await chargerPhotoAutorisee({ photoId: 7, userId: CLIENT });
 
     expect(photoFindFirst.mock.calls[0]?.[0]).toMatchObject({
       select: { url: true },
@@ -314,7 +357,7 @@ describe("chargerPhotoDuClient", () => {
     photoFindFirst.mockResolvedValue(null);
 
     await expect(
-      chargerPhotoDuClient({ photoId: 7, clientId: TIERS }),
+      chargerPhotoAutorisee({ photoId: 7, userId: TIERS }),
     ).resolves.toBeNull();
   });
 });

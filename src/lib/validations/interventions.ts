@@ -81,6 +81,21 @@ export const ajouterPhotoSchema = z.object({
   url: cheminPhotoSchema,
 });
 
+/// Démarrage d'une intervention par son technicien -
+/// `US-INTERVENTION-DEMARRER`.
+///
+/// Un seul champ, et **aucun `techId`** : le technicien vient de la session,
+/// via `techActionClient`. Le recevoir en charge utile serait le démarrage de
+/// l'intervention d'autrui pour qui sait poster, exactement ce que
+/// `lister-tournee.ts` refuse déjà d'exposer.
+///
+/// Pas d'instant non plus : `started_at` est daté par le serveur, dans la
+/// transaction. Une horloge reçue du client daterait un jalon d'exécution sur
+/// la montre du navigateur.
+export const demarrerInterventionSchema = z.object({
+  interventionId: z.number().int().positive(),
+});
+
 /// Motif d'annulation - `US-INTERVENTION-ANNULER-CLIENT` §Cas d'erreur, « Motif
 /// d'annulation requis ».
 ///
