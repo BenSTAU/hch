@@ -11,7 +11,7 @@ import { render, screen } from "@testing-library/react";
 
 import { Card, CardContent } from "./card";
 
-describe("Card - modifications du registry a garder", () => {
+describe("Card - modifications du registry à garder", () => {
   it("rend une BORDURE et non l'anneau du registry", () => {
     // Audit du 2026-08-12 : dix endroits redessinaient une card à la main parce
     // que le composant ne bordait pas. ADR-012 §D4 fait foi - T1 et C8 bordent
