@@ -23,6 +23,12 @@ import { Toaster } from "@/components/ui/sonner";
 /// Une seule entrée est donc posée. Un lien mort dans une navigation
 /// permanente est la leçon T-T2-16 d'Argo, et il coûte plus cher qu'une barre
 /// courte : il promet un écran que personne ne livrera avant sa tâche.
+///
+/// ⚠️ **Pas de `loading.tsx` dans ce segment.** Sa fallback fait partir les
+/// en-têtes en 200, après quoi le `forbidden()` de `requireEspaceClient()` ne
+/// peut plus poser son 403 (docs Next, `file-conventions/loading` §Status
+/// codes). Un squelette doit vivre sous un `<Suspense>` interne à la page,
+/// sous la garde.
 export default function EspaceClientLayout({
   children,
 }: {
