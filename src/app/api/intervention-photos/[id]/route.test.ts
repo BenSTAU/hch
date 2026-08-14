@@ -20,9 +20,9 @@ vi.mock("@/lib/auth/dal", () => ({
   getOptionalUser: () => getOptionalUser(),
 }));
 
-const chargerPhotoDuClient = vi.fn();
+const chargerPhotoAutorisee = vi.fn();
 vi.mock("@/lib/db/queries/photos", () => ({
-  chargerPhotoDuClient: (args: unknown) => chargerPhotoDuClient(args),
+  chargerPhotoAutorisee: (args: unknown) => chargerPhotoAutorisee(args),
 }));
 
 const lirePhoto = vi.fn();
@@ -47,7 +47,7 @@ const requete = new Request("http://localhost/api/intervention-photos/7");
 beforeEach(() => {
   vi.clearAllMocks();
   getOptionalUser.mockResolvedValue({ id: CLIENT });
-  chargerPhotoDuClient.mockResolvedValue({ url: CHEMIN });
+  chargerPhotoAutorisee.mockResolvedValue({ url: CHEMIN });
   lirePhoto.mockResolvedValue(Buffer.from("RIFF....WEBP"));
 });
 
@@ -60,14 +60,18 @@ describe("GET /api/intervention-photos/[id] - ce qu'elle sert", () => {
   });
 
   it("demande la photo AU NOM du compte connecte", async () => {
-    // L'identifiant du client vient de la session, jamais de l'URL. C'est la
+    // L'identifiant du demandeur vient de la session, jamais de l'URL. C'est la
     // clause `where` de la requete qui cloisonne, et elle ne peut pas etre
     // court-circuitee par un `if` oublie ici.
+    //
+    // ⚠️ `userId` et non `clientId` depuis T-V2-02 : la route ne sait plus si
+    // le demandeur est le client ou le technicien affecte, et n'a pas a le
+    // savoir. La regle entiere vit dans `chargerPhotoAutorisee`.
     await GET(requete, contexte("7"));
 
-    expect(chargerPhotoDuClient).toHaveBeenCalledWith({
+    expect(chargerPhotoAutorisee).toHaveBeenCalledWith({
       photoId: 7,
-      clientId: CLIENT,
+      userId: CLIENT,
     });
   });
 
@@ -89,11 +93,11 @@ describe("GET /api/intervention-photos/[id] - ce qu'elle refuse", () => {
     const reponse = await GET(requete, contexte("7"));
 
     expect(reponse.status).toBe(404);
-    expect(chargerPhotoDuClient).not.toHaveBeenCalled();
+    expect(chargerPhotoAutorisee).not.toHaveBeenCalled();
   });
 
   it("repond 404 sur la photo d'un tiers", async () => {
-    chargerPhotoDuClient.mockResolvedValue(null);
+    chargerPhotoAutorisee.mockResolvedValue(null);
 
     const reponse = await GET(requete, contexte("7"));
 
@@ -129,7 +133,7 @@ describe("GET /api/intervention-photos/[id] - ce qu'elle refuse", () => {
       const reponse = await GET(requete, contexte(hostile));
 
       expect(reponse.status).toBe(404);
-      expect(chargerPhotoDuClient).not.toHaveBeenCalled();
+      expect(chargerPhotoAutorisee).not.toHaveBeenCalled();
     }
   });
 
@@ -139,14 +143,14 @@ describe("GET /api/intervention-photos/[id] - ce qu'elle refuse", () => {
     // et elle n'est pas a vous ».
     const cas = [
       () => getOptionalUser.mockResolvedValue(null),
-      () => chargerPhotoDuClient.mockResolvedValue(null),
+      () => chargerPhotoAutorisee.mockResolvedValue(null),
       () => lirePhoto.mockResolvedValue(null),
     ];
 
     for (const poser of cas) {
       vi.clearAllMocks();
       getOptionalUser.mockResolvedValue({ id: CLIENT });
-      chargerPhotoDuClient.mockResolvedValue({ url: CHEMIN });
+      chargerPhotoAutorisee.mockResolvedValue({ url: CHEMIN });
       lirePhoto.mockResolvedValue(Buffer.from("RIFF"));
       poser();
 

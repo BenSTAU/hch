@@ -594,7 +594,7 @@ export type InterventionTournee = {
     telephone: string | null;
   };
   /// ⚠️ **Sans `label`**, contrairement à `InterventionClient`. C'est un libellé
-  /// que le client rédige pour lui-même — « Domicile », « Chez ma mère » — et
+  /// que le client rédige pour lui-même - « Domicile », « Chez ma mère » - et
   /// aucun composant de cet écran ne le lit. Il traversait jusqu'au navigateur
   /// du technicien sans consommateur : relevé par l'agent testeur, et c'est
   /// exactement la minimisation dont ce module se réclame ailleurs.
@@ -654,7 +654,7 @@ function projeterTournee(
     durationSnapshot: ligne.durationSnapshot,
     forfait: ligne.service.label,
     client: {
-      // Pas d'`abregerNom` — cf. le commentaire du type.
+      // Pas d'`abregerNom` - cf. le commentaire du type.
       nom: `${ligne.client.firstname} ${ligne.client.lastname}`,
       telephone: ligne.client.phone,
     },
@@ -672,7 +672,7 @@ function projeterTournee(
   };
 }
 
-/// Tournée d'un technicien pour une journée civile — l'écran **T1**.
+/// Tournée d'un technicien pour une journée civile - l'écran **T1**.
 ///
 /// ── La journée se borne en heure locale, jamais en UTC construit à la main
 ///
@@ -685,7 +685,7 @@ function projeterTournee(
 ///
 /// C'est exactement le défaut du filtre de l'écran C10, qui construisait
 /// `new Date(\`${valeur}T00:00:00.000Z\`)` en dur (point ouvert du 2026-08-11).
-/// Cadrage du plancher V2, D1 — la note de la SPEC qui renvoie à une clé
+/// Cadrage du plancher V2, D1 - la note de la SPEC qui renvoie à une clé
 /// `app_settings.timezone` est fausse : cette clé n'existe pas, et PLAN S2 §T5
 /// tranche le stockage tout-UTC.
 ///
@@ -699,7 +699,7 @@ function projeterTournee(
 /// un piège : ne pas recopier le filtre du voisin.
 ///
 /// L'index `@@index([techId, appointmentAt])` de la migration
-/// `init_interventions` couvre ce filtre — il avait été posé pour la dérivation
+/// `init_interventions` couvre ce filtre - il avait été posé pour la dérivation
 /// des créneaux, et c'est exactement celui dont la tournée a besoin. Aucune
 /// migration n'accompagne donc cette tâche.
 export async function listerTourneeDuJour(params: {
@@ -849,6 +849,342 @@ export async function listerHistoriqueTech(params: {
     page,
     pages: Math.max(1, Math.ceil(total / TAILLE_PAGE_PASSEES)),
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Détail et démarrage - `US-INTERVENTION-AFFICHER` et
+// `US-INTERVENTION-DEMARRER` (T-V2-02).
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Produit attaché, vu sur le DÉTAIL. Il porte son prix, contrairement à
+/// `ProduitTournee`.
+///
+/// `US-INTERVENTION-AFFICHER` §Cas nominal l'exige nommément (« produits
+/// attachés (nom + quantité + `unit_price_snapshot`) »), et Constitution §3.1
+/// n'y fait pas obstacle : elle interdit au technicien de **modifier** les
+/// prix, « interdit fonctionnel, pas seulement masqué dans l'UI », jamais de
+/// les lire. Il encaissera ce total en T-V2-03, le découvrir au moment de
+/// tendre le terminal serait un mauvais enchaînement.
+export type ProduitDetail = ProduitTournee & {
+  /// Prix unitaire figé à la vente (Constitution §4.1), à deux décimales.
+  unitPriceSnapshot: string;
+};
+
+/// Le détail d'une intervention, vu par son technicien - écran **T2**.
+///
+/// Sur-ensemble d'`InterventionTournee` : mêmes six éléments, plus l'email du
+/// client, les prix, la description du forfait, le vélo, les photos, le
+/// compte-rendu et l'instant de démarrage.
+///
+/// ⚠️ **`appointmentAt` et `startedAt` sont des `Date`, pas des chaînes ISO**,
+/// à l'inverse d'`InterventionTournee`. Ce DTO ne traverse **aucune** frontière
+/// de sérialisation : la page est un Server Component, il n'y a pas de Server
+/// Action de lecture ni de `initialData` à réhydrater ici. La contrainte qui
+/// impose l'ISO à la tournée (deux chemins, donc deux formes à tenir
+/// identiques) n'existe pas sur cet écran.
+export type InterventionDetail = {
+  id: number;
+  /// PLANNED | IN_PROGRESS | DONE | CANCELLED.
+  status: string;
+  appointmentAt: Date;
+  /// Renseigné dès `IN_PROGRESS` (migration 008). C'est le jalon que le hub
+  /// affiche quand il n'a plus d'action à proposer.
+  startedAt: Date | null;
+  durationSnapshot: number;
+  /// Le forfait SEUL. `total` porte forfait plus produits.
+  priceSnapshot: string;
+  total: string;
+  /// Motif de l'annulation, seul contenu utile d'une ligne `CANCELLED`.
+  cancellationReason: string | null;
+  forfait: { label: string; description: string | null };
+  /// ⚠️ **Nom complet, téléphone ET email**, sans abréviation ni masquage.
+  /// `US-INTERVENTION-AFFICHER` §Notes le justifie explicitement : « détail
+  /// client sensible … accessibles au tech propriétaire de l'intervention
+  /// uniquement. Justification métier terrain. » `abregerNom()` joue dans
+  /// l'autre sens, il abrège le technicien POUR le client.
+  client: {
+    nom: string;
+    /// NULL sur un compte pseudonymisé (droit à l'oubli, `queries/users.ts`).
+    telephone: string | null;
+    /// Jamais NULL : la pseudonymisation le remplace par une adresse
+    /// synthétique plutôt que de le vider, la colonne étant NOT NULL et unique.
+    email: string;
+  };
+  adresse: {
+    street: string;
+    zipCode: string;
+    city: string;
+  };
+  /// `null` quand l'adresse n'a pas de point (pseudonymisation).
+  point: PointWgs84 | null;
+  /// `null` tant que rien ne renseigne `cycle_id`. Les deux états s'affichent
+  /// (cadrage du plancher V2, D11) : l'écrivain est T-V3-16, côté client, et le
+  /// rattachement reste facultatif, donc la colonne est vide sur toute
+  /// intervention venue du tunnel.
+  cycle: { brand: string; model: string | null; type: string } | null;
+  produits: ProduitDetail[];
+  /// Identifiants seuls : le contenu passe par
+  /// `GET /api/intervention-photos/[id]`, dont la garde accepte désormais le
+  /// technicien affecté.
+  photos: { id: number; type: string }[];
+  /// `interventions.tech_comment`. ⚠️ La SPEC écrit « commentaires horodatés »
+  /// au pluriel : le modèle porte **une** colonne TEXT sans horodatage propre,
+  /// et `intervention_comments` est une table prévue v2. Rien ne l'écrit en v1
+  /// (`US-INTERVENTION-COMMENTAIRE-AJOUTER` est v2), le champ est donc lu et
+  /// jamais muté ici. Divergence signalée pour write-back.
+  ///
+  /// `is_comment_public` n'est pas remonté : il gouverne la visibilité côté
+  /// CLIENT, pas celle du technicien, qui voit son propre compte-rendu.
+  techComment: string | null;
+};
+
+/// Le `select` du détail. Distinct des deux autres, et pas une variante : c'est
+/// le seul qui lit l'email, les prix, le vélo et le compte-rendu.
+const SELECTION_DETAIL = {
+  id: true,
+  status: true,
+  appointmentAt: true,
+  startedAt: true,
+  durationSnapshot: true,
+  priceSnapshot: true,
+  cancellationReason: true,
+  techComment: true,
+  service: { select: { label: true, description: true } },
+  client: {
+    select: { firstname: true, lastname: true, phone: true, email: true },
+  },
+  address: {
+    // Pas de `label` : c'est un mémo que le client rédige pour lui-même
+    // (« Domicile », « Chez ma mère »), sans lecteur sur cet écran. Même
+    // minimisation que `SELECTION_TECH`.
+    select: {
+      id: true,
+      street: true,
+      city: { select: { zipCode: true, city: true } },
+    },
+  },
+  cycle: { select: { brand: true, model: true, type: true } },
+  products: {
+    select: {
+      productId: true,
+      quantity: true,
+      unitPriceSnapshot: true,
+      product: { select: { label: true } },
+    },
+    orderBy: { productId: "asc" },
+  },
+  photos: { select: { id: true, type: true }, orderBy: { id: "asc" } },
+} satisfies Prisma.InterventionSelect;
+
+type LigneDetail = Prisma.InterventionGetPayload<{
+  select: typeof SELECTION_DETAIL;
+}>;
+
+function projeterDetail(
+  ligne: LigneDetail,
+  point: PointWgs84 | null,
+): InterventionDetail {
+  // Même formule que `projeter()` : `price_snapshot` du forfait plus la somme
+  // des `unit_price_snapshot × quantité`. Elle est écrite mot pour mot dans les
+  // deux US produits, et le paiement de T-V2-03 se préréglera dessus (cadrage
+  // du plancher V2, D9). `Prisma.Decimal` et non un flottant, c'est un montant
+  // qui sera encaissé.
+  const total = ligne.products.reduce(
+    (somme, produit) =>
+      somme.plus(produit.unitPriceSnapshot.times(produit.quantity)),
+    ligne.priceSnapshot,
+  );
+
+  return {
+    id: ligne.id,
+    status: ligne.status,
+    appointmentAt: ligne.appointmentAt,
+    startedAt: ligne.startedAt,
+    durationSnapshot: ligne.durationSnapshot,
+    priceSnapshot: ligne.priceSnapshot.toFixed(2),
+    total: total.toFixed(2),
+    cancellationReason: ligne.cancellationReason,
+    forfait: {
+      label: ligne.service.label,
+      description: ligne.service.description,
+    },
+    client: {
+      // Pas d'`abregerNom` - cf. le commentaire du type.
+      nom: `${ligne.client.firstname} ${ligne.client.lastname}`,
+      telephone: ligne.client.phone,
+      email: ligne.client.email,
+    },
+    adresse: {
+      street: ligne.address.street,
+      zipCode: ligne.address.city.zipCode,
+      city: ligne.address.city.city,
+    },
+    point,
+    cycle: ligne.cycle,
+    produits: ligne.products.map((produit) => ({
+      productId: produit.productId,
+      label: produit.product.label,
+      quantity: produit.quantity,
+      unitPriceSnapshot: produit.unitPriceSnapshot.toFixed(2),
+    })),
+    photos: ligne.photos,
+    techComment: ligne.techComment,
+  };
+}
+
+/// Le détail d'une intervention, **si elle appartient à ce technicien** -
+/// `US-INTERVENTION-AFFICHER`, écran **T2**.
+///
+/// `techId` est dans la clause `where`, pas dans un `if` qui suivrait la
+/// lecture : la garde de propriété est en base, elle ne peut donc pas être
+/// contournée par une branche oubliée. Même geste que `chargerPhotoAutorisee`
+/// et que les deux mutations produits.
+///
+/// ⚠️ **`null` couvre DEUX cas** que l'appelant ne doit pas distinguer :
+/// l'intervention n'existe pas, ou elle est à un collègue. Cf. le commentaire
+/// de la page sur le choix du 403 pour les deux.
+export async function chargerInterventionDuTech(params: {
+  interventionId: number;
+  techId: string;
+}): Promise<InterventionDetail | null> {
+  const ligne = await db.intervention.findFirst({
+    where: { id: params.interventionId, techId: params.techId },
+    select: SELECTION_DETAIL,
+  });
+
+  if (!ligne) return null;
+
+  // Cascade assumée, comme dans `lireTournee` : l'identifiant d'adresse n'existe
+  // qu'après la lecture ci-dessus. Une seule ligne, donc un seul aller-retour.
+  const points = await lirePointsAdresses([ligne.address.id]);
+
+  return projeterDetail(ligne, points.get(ligne.address.id) ?? null);
+}
+
+/// Le statut depuis lequel on démarre, et le seul.
+///
+/// Constitution §2.4 : `PLANNED → IN_PROGRESS`, sans `CONFIRMED` en v1 (audit
+/// F-06 du 2026-07-06, transition rendue directe). Les trois autres statuts
+/// refusent - `IN_PROGRESS` parce que la transition est déjà consommée, `DONE`
+/// et `CANCELLED` parce qu'ils sont terminaux.
+const STATUT_DEMARRABLE = "PLANNED";
+
+export type ResultatDemarrage =
+  | { ok: true; startedAt: Date }
+  /// Intervention inconnue **ou** appartenant à un collègue. Une seule réponse
+  /// pour les deux, même régime que partout ailleurs dans ce module.
+  | { ok: false; reason: "introuvable" }
+  /// Statut autre que `PLANNED`. Le statut courant voyage avec le refus : c'est
+  /// ce qui permet à l'appelant de dire « déjà démarrée » plutôt qu'un message
+  /// générique, et c'est exactement l'information dont l'écran a besoin pour se
+  /// remettre à jour.
+  | { ok: false; reason: "transition_illegale"; statutCourant: string };
+
+/// Passe une intervention planifiée en `IN_PROGRESS` -
+/// `US-INTERVENTION-DEMARRER`.
+///
+/// ── Le refus est typé, il n'est pas un code HTTP
+///
+/// La SPEC §Cas d'erreur écrit `409 « Transition impossible depuis ce
+/// statut »`. Ce statut n'a plus de référent : les mutations passent par des
+/// Server Actions qui rendent des unions discriminées, pas par une API REST
+/// (reste d'une rédaction antérieure au pivot Next full-stack, ADR-002 v2).
+/// L'exigence réelle est conservée mot pour mot : le refus est **serveur** et
+/// **typé**, et il ne vit pas dans l'UI.
+///
+/// ── Le verrou n'est pas décoratif, et c'est le même que celui de l'annulation
+///
+/// Deux démarrages concurrents de la même intervention passeraient tous les
+/// deux la lecture de statut sous READ COMMITTED, et écriraient **deux** entrées
+/// d'audit sur la même transition. Le second `UPDATE` est inoffensif, la trace
+/// ne l'est pas : `audit_logs` est la pièce qu'on produit en cas de
+/// contestation, et elle daterait deux fois un démarrage unique.
+///
+/// Le verrou est pris **après** la garde de propriété, jamais avant : un
+/// appelant qui incrémente des identifiants ne doit pas pouvoir verrouiller le
+/// rendez-vous d'un tiers.
+///
+/// ── Effet de bord sur un tiers, et il est voulu
+///
+/// Le passage en `IN_PROGRESS` ferme le panier du client :
+/// `STATUT_MODIFIABLE = "PLANNED"` dans `queries/produits.ts` et dans
+/// `queries/photos.ts` refuse dès lors l'ajout et le retrait de produits comme
+/// le dépôt de photos. Il n'y a **rien à aligner**, ce verrou existe déjà
+/// (arbitrage B7 Q2a) ; l'oracle qui le prouve vit dans
+/// `tests/e2e/detail-intervention.spec.ts`.
+export async function demarrerInterventionDuTech(params: {
+  interventionId: number;
+  techId: string;
+  maintenant: Date;
+}): Promise<ResultatDemarrage> {
+  return db.$transaction(async (tx) => {
+    const intervention = await tx.intervention.findFirst({
+      where: { id: params.interventionId, techId: params.techId },
+      select: { status: true },
+    });
+
+    if (!intervention)
+      return { ok: false as const, reason: "introuvable" as const };
+
+    if (intervention.status !== STATUT_DEMARRABLE) {
+      return {
+        ok: false as const,
+        reason: "transition_illegale" as const,
+        statutCourant: intervention.status,
+      };
+    }
+
+    await tx.$queryRaw`
+      SELECT "id" FROM "interventions"
+      WHERE "id" = ${params.interventionId}
+      FOR UPDATE
+    `;
+
+    // Relu SOUS le verrou : la première lecture a servi aux gardes, celle-ci
+    // décide. Entre les deux, une transaction voisine a pu commiter son propre
+    // passage en `IN_PROGRESS`, ou une annulation par le client.
+    const sousVerrou = await tx.intervention.findUniqueOrThrow({
+      where: { id: params.interventionId },
+      select: { status: true },
+    });
+
+    if (sousVerrou.status !== STATUT_DEMARRABLE) {
+      return {
+        ok: false as const,
+        reason: "transition_illegale" as const,
+        statutCourant: sousVerrou.status,
+      };
+    }
+
+    await tx.intervention.update({
+      where: { id: params.interventionId },
+      data: { status: "IN_PROGRESS", startedAt: params.maintenant },
+    });
+
+    // Dans la transaction, comme toute trace qui accompagne une mutation : une
+    // trace écrite à côté survit à un rollback, ou manque alors que l'écriture
+    // a eu lieu (`src/lib/audit/log.ts`).
+    //
+    // ⚠️ Le champ s'appelle **`details`**. `US-INTERVENTION-DEMARRER` §Cas
+    // nominal écrit `metadata.transition` : ce nom n'existe pas dans
+    // `AuditEntry`, et c'est la troisième occurrence de l'erreur dans la SPEC
+    // (la PR #39 l'avait déjà corrigée deux fois sur T-V3-12).
+    await writeAuditLog(
+      {
+        entityType: "interventions",
+        entityId: String(params.interventionId),
+        action: "UPDATE",
+        actorId: params.techId,
+        details: {
+          statutAvant: STATUT_DEMARRABLE,
+          statutApres: "IN_PROGRESS",
+        },
+      },
+      tx,
+    );
+
+    return { ok: true as const, startedAt: params.maintenant };
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────

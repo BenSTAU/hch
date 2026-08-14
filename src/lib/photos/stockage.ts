@@ -143,8 +143,9 @@ const CHEMIN_ATTENDU = /^uploads\/[0-9a-f-]{36}\.webp$/;
 /// `path.join` résout `..` sans se plaindre.
 ///
 /// L'autorisation, elle, n'est PAS ici : elle vit dans
-/// `chargerPhotoDuClient` (`src/lib/db/queries/photos.ts`), qui décide si ce
-/// client a le droit de voir cette photo. Ce module ne connaît que le disque.
+/// `chargerPhotoAutorisee` (`src/lib/db/queries/photos.ts`), qui décide si ce
+/// compte, client titulaire ou technicien affecté, a le droit de voir cette
+/// photo. Ce module ne connaît que le disque.
 export async function lirePhoto(url: string): Promise<Buffer | null> {
   if (!CHEMIN_ATTENDU.test(url)) return null;
 

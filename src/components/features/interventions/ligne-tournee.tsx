@@ -1,7 +1,10 @@
 import { MapPin, Package, Phone, User } from "lucide-react";
+import Link from "next/link";
+import type { ReactNode } from "react";
 
 import type { InterventionTournee } from "@/lib/db/queries/interventions";
 import { formatDateCourte, formatDuree, formatHeure } from "@/lib/format";
+import { cheminIntervention } from "@/lib/routes";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -26,12 +29,31 @@ import { cn } from "@/lib/utils";
 /// plantage - l'intervention survit à l'effacement de son client
 /// (Constitution §4.1, pas de FK cassée).
 ///
-/// ── Les lignes ne sont pas cliquables, et c'est toujours délibéré
+/// ── Les lignes sont cliquables depuis T-V2-02, dans les quatre statuts
 ///
-/// La route de détail `/interventions/[id]` appartient à **T-V2-02**, qui posera
-/// le lien **et** son action contextuelle en même temps. Poser le lien seul
-/// maintenant produirait une liste dont chaque ligne mène à un 404 - le lien
-/// mort que la leçon `T-T2-16` d'Argo proscrit.
+/// La route de détail `/interventions/[id]` existe désormais, donc le lien et
+/// son action contextuelle arrivent ensemble, comme annoncé. Le cadrage du
+/// plancher V2 (D4) tranche « chaque ligne ouvre le détail **quel que soit son
+/// statut** » : une intervention terminée ou annulée s'ouvre en lecture seule,
+/// ce que la SPEC appelle « lecture seule » sur cette ligne.
+///
+/// L'**action**, elle, ne suit pas la même règle : la SPEC §Cas nominal écrit
+/// « "Démarrer" si `PLANNED`, "Ouvrir détail" si `IN_PROGRESS`, lecture seule si
+/// `DONE` ou `CANCELLED` ». « Ouvrir détail » **est** le lien de la carte, et le
+/// seul bouton réel est celui de `PLANNED`. Il est passé par le slot `action`
+/// plutôt que décidé ici, pour deux raisons : les vues « Cette semaine » et
+/// « Historique » rendent la même ligne sans jamais devoir démarrer quoi que ce
+/// soit, et ce fichier reste ainsi utilisable depuis un Server Component.
+///
+/// ── Le lien étiré, et pourquoi pas un `<a>` autour de la carte
+///
+/// La carte contient déjà un lien `tel:` et parfois un bouton. Les imbriquer
+/// dans un lien produirait du HTML invalide et un piège au clavier. Le motif
+/// retenu est celui de la carte cliquable : **un** lien porté par le titre,
+/// étiré à toute la carte par un pseudo-élément (`after:absolute after:inset-0`),
+/// et les éléments interactifs internes remontés au-dessus (`relative z-10`).
+/// Un seul élément tabulable pour la navigation, et les autres restent
+/// atteignables.
 
 /// Fin théorique du rendez-vous - début plus la durée FIGÉE à la réservation.
 ///
@@ -110,12 +132,23 @@ export function EtiquetteStatut({ statut }: { statut: string }) {
 export function LigneTournee({
   intervention,
   dateVisible = false,
+  action,
 }: {
   intervention: InterventionTournee;
   /// Vrai sur « Historique », où les lignes couvrent des jours quelconques et
   /// où l'heure seule ne situe rien. Faux sur la tournée du jour, dont le titre
   /// porte déjà la date, et sur « Cette semaine », qui groupe par journée.
   dateVisible?: boolean;
+  /// Action contextuelle de la ligne - aujourd'hui `<BoutonDemarrer>` sur les
+  /// lignes `PLANNED` de la tournée du jour, rien ailleurs.
+  ///
+  /// Un **slot** et non un booléen : composition en première intention
+  /// (CLAUDE.md §Patterns composants), et surtout la frontière serveur/client
+  /// reste lisible. Ce fichier n'a pas de `"use client"` ; c'est l'appelant qui
+  /// apporte son composant interactif, donc les deux vues RSC continuent de
+  /// rendre cette ligne au serveur sans embarquer le bouton ni son `AlertDialog`
+  /// dans leur paquet.
+  action?: ReactNode;
 }) {
   const debut = new Date(intervention.appointmentAt);
   const enCours = intervention.status === "IN_PROGRESS";
@@ -133,7 +166,11 @@ export function LigneTournee({
     <li>
       <Card
         className={cn(
-          "gap-0 py-4",
+          // `relative` : c'est le repère du lien étiré porté par le titre.
+          // `focus-within` reporte sur la carte le focus reçu par ce lien, sans
+          // quoi la cible clavier serait le seul texte du titre alors que la
+          // zone cliquable est la carte entière (RGAA A, focus visible).
+          "relative gap-0 py-4 transition-colors focus-within:ring-2 focus-within:ring-ring hover:border-primary/40 hover:bg-secondary/30",
           // La ligne en cours est cerclée dans T1, et c'est la seule. C'est le
           // repère que le technicien cherche en ouvrant l'écran.
           enCours && "border-primary ring-1 ring-primary/30",
@@ -181,9 +218,29 @@ export function LigneTournee({
             </div>
 
             {/* Le forfait est le titre de la ligne. `h3` : la page porte un `h1`,
-            la section son `h2`. */}
+            la section son `h2`.
+
+            C'est lui qui porte le lien, et le lien qui porte la carte entière
+            via `after:inset-0`. Le nom accessible dit le forfait ET l'heure :
+            « Révision complète » répété six fois dans une liste ne distingue
+            aucune ligne pour qui navigue de lien en lien (RGAA A, intitulé
+            explicite hors contexte).
+
+            ⚠️ `aria-label` plutôt qu'un `<span class="sr-only">` ajouté au
+            contenu, et ce n'est pas une préférence : le calcul du nom
+            accessible **trim chaque nœud de texte avant de les joindre**, donc
+            un espace de bord disparaît et deux nœuds voisins s'annoncent
+            collés (« Révision complèteà 10:00 »). Mesuré, pas supposé. Le
+            libellé commence par le texte visible, ce qu'exige WCAG 2.5.3
+            « label in name » pour qui pilote à la voix. */}
             <h3 className="font-heading text-base font-bold text-foreground">
-              {intervention.forfait}
+              <Link
+                href={cheminIntervention(intervention.id)}
+                aria-label={`${intervention.forfait} à ${formatHeure(debut)}`}
+                className="after:absolute after:inset-0 after:rounded-2xl hover:text-primary focus-visible:outline-none"
+              >
+                {intervention.forfait}
+              </Link>
             </h3>
 
             {/* Ligne méta, sur le modèle du « Sophie Dumas • Lyon 2e » de T1 - mais
@@ -221,9 +278,13 @@ export function LigneTournee({
                 />
                 {intervention.client.telephone ? (
                   // `tel:` - le technicien est sur le terrain, souvent au téléphone.
+                  //
+                  // `relative z-10` : il passe AU-DESSUS du lien étiré du titre,
+                  // sinon le pseudo-élément le recouvrirait et un appui sur le
+                  // numéro ouvrirait le détail au lieu de composer.
                   <a
                     href={`tel:${intervention.client.telephone}`}
-                    className="font-medium underline underline-offset-2 hover:text-primary"
+                    className="relative z-10 font-medium underline underline-offset-2 hover:text-primary"
                   >
                     {intervention.client.telephone}
                   </a>
@@ -254,6 +315,17 @@ export function LigneTournee({
                 </span>
               )}
             </div>
+
+            {/* Action contextuelle. `relative z-10` pour la même raison que le
+            numéro de téléphone : elle doit rester cliquable par-dessus le lien
+            étiré. Rien n'est rendu quand l'appelant ne passe pas de slot, et
+            aucun bouton désactivé ne prend sa place - la DoD interdit
+            nommément les boutons inertes. */}
+            {action ? (
+              <div className="relative z-10 flex flex-wrap gap-2 pt-1">
+                {action}
+              </div>
+            ) : null}
           </div>
         </CardContent>
       </Card>

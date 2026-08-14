@@ -82,7 +82,17 @@ describe("LigneTournee - ce qui n'est jamais garanti présent", () => {
     rendre({ client: { nom: "Compte supprimé", telephone: null } });
 
     expect(screen.getByText("Téléphone non renseigné")).toBeInTheDocument();
-    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+
+    // ⚠️ **Assertion resserrée par T-V2-02** (règle du test rouge, cas 3).
+    // Elle disait `queryByRole("link")` absent, ce qui prenait « aucun lien du
+    // tout » pour « aucun lien téléphone » : la ligne porte désormais un lien
+    // vers son détail, et l'oracle rougissait sur un changement légitime. Ce
+    // qu'il voulait dire est ci-dessous, et c'est plus fort qu'avant - un
+    // `tel:` vide ou `tel:null` serait maintenant attrapé.
+    const liens = screen.getAllByRole("link");
+    expect(
+      liens.filter((lien) => lien.getAttribute("href")?.startsWith("tel:")),
+    ).toHaveLength(0);
   });
 
   it("compose le téléphone quand il est là", () => {
@@ -104,6 +114,57 @@ describe("LigneTournee - ce qui n'est jamais garanti présent", () => {
   });
 });
 
+describe("LigneTournee - le lien vers le détail (T-V2-02)", () => {
+  /// Le lien de la carte, distingué du `tel:` par sa cible.
+  function lienDetail() {
+    return screen
+      .getAllByRole("link")
+      .find((lien) => lien.getAttribute("href")?.startsWith("/interventions/"));
+  }
+
+  it.each([["PLANNED"], ["IN_PROGRESS"], ["DONE"], ["CANCELLED"]])(
+    "ouvre le détail depuis le statut %s",
+    (status) => {
+      // Cadrage D4 : « chaque ligne ouvre le détail quel que soit son statut ».
+      // Les deux statuts terminaux y arrivent en lecture seule, ce que la SPEC
+      // appelle « lecture seule » sur cette ligne - pas « ligne morte ».
+      rendre({ status });
+
+      expect(lienDetail()).toHaveAttribute("href", "/interventions/1");
+    },
+  );
+
+  it("nomme le lien par le forfait ET son heure", () => {
+    // 🔴 RGAA A, intitulé explicite hors contexte. « Révision complète » répété
+    // six fois dans une tournée ne distingue aucune ligne pour qui navigue de
+    // lien en lien.
+    rendre();
+
+    expect(lienDetail()).toHaveAccessibleName("Révision complète à 10:00");
+  });
+
+  it("ne rend aucune action quand l'appelant n'en passe pas", () => {
+    // Les deux vues RSC (« Cette semaine », « Historique ») n'en passent
+    // jamais : un bouton « Démarrer » sur le rendez-vous de jeudi prochain
+    // n'aurait aucun sens terrain. Et aucun bouton désactivé ne prend sa place,
+    // la DoD interdisant nommément les boutons inertes.
+    rendre();
+
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("rend l'action que l'appelant lui passe", () => {
+    // Le slot est un `ReactNode` et non un booléen : c'est ce qui permet à ce
+    // fichier de rester sans `"use client"` tout en portant un bouton
+    // interactif sur la seule vue qui en a besoin.
+    rendre({}, { action: <button type="button">Démarrer</button> });
+
+    expect(
+      screen.getByRole("button", { name: "Démarrer" }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("LigneTournee - accessibilité", () => {
   it("ne présente aucune violation, avec ou sans date", async () => {
     const sansDate = rendre();
@@ -115,5 +176,16 @@ describe("LigneTournee - accessibilité", () => {
       { dateVisible: true },
     );
     await expect(axe(avecDate.container)).resolves.toHaveNoViolations();
+  });
+
+  it("ne présente aucune violation avec son action, lien étiré compris", async () => {
+    // Le lien étiré recouvre la carte : le bouton et le `tel:` sont remontés
+    // au-dessus. Un `nested-interactive` ou un lien sans nom se verrait ici.
+    const { container } = rendre(
+      {},
+      { action: <button type="button">Démarrer</button> },
+    );
+
+    await expect(axe(container)).resolves.toHaveNoViolations();
   });
 });

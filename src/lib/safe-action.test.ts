@@ -126,6 +126,7 @@ describe("inventaire des Server Actions", () => {
       "auth/signup.ts": ["actionClient"],
       "interventions/ajouter-photo.ts": ["authActionClient"],
       "interventions/annuler-intervention.ts": ["authActionClient"],
+      "interventions/demarrer-intervention.ts": ["techActionClient"],
       "interventions/lister-creneaux.ts": ["actionClient"],
       "interventions/lister-tournee.ts": ["techActionClient"],
       "interventions/reserver.ts": ["authActionClient"],
@@ -138,21 +139,31 @@ describe("inventaire des Server Actions", () => {
     });
   });
 
-  it("n'expose qu'UNE seule action pour l'espace technicien", () => {
-    // 🔴 La propriété que T-V2-05 affirme. `listerTournee` est la `queryFn` du
-    // polling de 30 s de la tournée du jour, la seule des trois vues à en avoir
-    // besoin (PLAN S1 §6.1 n'autorise TanStack Query que sur trois vues du
-    // produit, dont une seule est technicien). « Cette semaine » et
-    // « Historique » lisent en RSC, et leurs paramètres vivent dans l'URL.
+  it("n'expose que DEUX actions pour l'espace technicien, une lecture et une transition", () => {
+    // 🔴 La propriété que T-V2-05 affirme, **elargie a deux entrees par
+    // T-V2-02** et pas relachee. Chacune se justifie une par une :
     //
-    // Si une action apparaît ici pour ces deux vues, ce test rougit : soit elle
-    // est gardée et l'inventaire ci-dessus le dira, soit elle ne l'est pas et
-    // c'est un endpoint POST public sur le carnet d'adresses d'un technicien.
+    //   · `listerTournee` est la `queryFn` du polling de 30 s de la tournée du
+    //     jour, la seule des trois vues à en avoir besoin (PLAN S1 §6.1
+    //     n'autorise TanStack Query que sur trois vues du produit, dont une
+    //     seule est technicien). « Cette semaine » et « Historique » lisent en
+    //     RSC, et leurs paramètres vivent dans l'URL ;
+    //   · `demarrerIntervention` est une MUTATION, donc une Server Action par
+    //     obligation (CLAUDE.md §Server Actions : toutes les mutations y
+    //     passent).
+    //
+    // Aucune action de LECTURE ne doit s'ajouter à cette liste : le détail de
+    // T-V2-02 est un Server Component, et une action de lecture y serait un
+    // second endpoint POST public sur le carnet d'adresses d'un technicien.
+    //
+    // Si une action apparaît ici pour les deux vues RSC, ce test rougit : soit
+    // elle est gardée et l'inventaire ci-dessus le dira, soit elle ne l'est pas.
     const technicien = Object.entries(inventaire()).filter(([, clients]) =>
       clients.includes("techActionClient"),
     );
 
     expect(technicien).toEqual([
+      ["interventions/demarrer-intervention.ts", ["techActionClient"]],
       ["interventions/lister-tournee.ts", ["techActionClient"]],
     ]);
   });

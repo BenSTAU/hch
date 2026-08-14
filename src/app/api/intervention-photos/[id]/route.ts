@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getOptionalUser } from "@/lib/auth/dal";
-import { chargerPhotoDuClient } from "@/lib/db/queries/photos";
+import { chargerPhotoAutorisee } from "@/lib/db/queries/photos";
 import { lirePhoto } from "@/lib/photos/stockage";
 
 /// Lecture d'une photo d'intervention, **sous contrôle de propriété**.
@@ -54,11 +54,16 @@ export async function GET(
   if (!Number.isInteger(photoId) || photoId <= 0) return introuvable();
 
   // La garde de propriété est en base, dans la clause `where` : elle ne peut
-  // donc pas être contournée par un `if` oublié. Une photo qui n'est pas sur
-  // une intervention de ce client est indistinguable d'une photo inexistante.
-  const photo = await chargerPhotoDuClient({
+  // donc pas être contournée par un `if` oublié. Une photo qui n'est sur
+  // l'intervention ni de ce client ni de ce technicien est indistinguable d'une
+  // photo inexistante.
+  //
+  // Aucun contrôle de rôle ici, et c'est voulu : la règle est « titulaire du
+  // rendez-vous », pas « porteur de ROLE_TECH ». Elle vit entièrement dans
+  // `chargerPhotoAutorisee`, qui la rend testable.
+  const photo = await chargerPhotoAutorisee({
     photoId,
-    clientId: utilisateur.id,
+    userId: utilisateur.id,
   });
   if (!photo) return introuvable();
 
