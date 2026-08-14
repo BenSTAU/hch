@@ -7,6 +7,8 @@ import { EtiquetteStatut } from "@/components/features/interventions/ligne-tourn
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+import { ModaleCloture } from "./modale-cloture";
+
 /// Bloc « Statut actuel » de la maquette **T2**, et hub d'actions de
 /// `US-INTERVENTION-AFFICHER`.
 ///
@@ -16,18 +18,17 @@ import { cn } from "@/lib/utils";
 /// intervention », `IN_PROGRESS` propose le dépôt de photos et la clôture,
 /// `DONE` et `CANCELLED` sont en lecture seule.
 ///
-/// ⚠️ **Le jeu d'`IN_PROGRESS` est vide en l'état du dépôt**, et c'est un écart
-/// assumé, pas un oubli : « Déposer des photos » est
-/// `US-INTERVENTION-PHOTOS-DEPOSER` (T-V2-04) et « Marquer comme terminée » est
-/// `US-INTERVENTION-MARQUER-FAITE` (T-V2-03). Aucune des deux n'est livrée.
-/// Poser les boutons maintenant produirait exactement ce que la DoD interdit
-/// nommément - des boutons inertes - et c'est le raisonnement qui avait déjà
-/// laissé les lignes de T-V2-01 non cliquables tant que cette route-ci
-/// n'existait pas.
+/// ⚠️ **Le jeu d'`IN_PROGRESS` est incomplet, et c'est un écart assumé** : la
+/// clôture arrive avec T-V2-03, « Déposer des photos » est
+/// `US-INTERVENTION-PHOTOS-DEPOSER` (T-V2-04) et n'est pas livrée. Le bouton
+/// manquant n'est pas posé désactivé : ce serait le bouton inerte que la DoD
+/// interdit nommément, et c'est le raisonnement qui avait déjà laissé les
+/// lignes de T-V2-01 non cliquables tant que cette route-ci n'existait pas.
 ///
-/// Ce que le bloc affiche à la place n'est pas un vide : c'est le jalon daté que
-/// la maquette porte elle-même dans son aperçu, « Intervention démarrée à
-/// 13:32 ». Un écran qui dit où il en est renseigne ; trois boutons morts, non.
+/// Le jalon daté reste affiché **sous** l'action, et il vient de la maquette
+/// elle-même (« Intervention démarrée à 13:32 »). Un écran qui dit où il en est
+/// renseigne, et l'heure de démarrage est ce que le technicien relit au moment
+/// de clôturer.
 ///
 /// ── Deux éléments de la maquette ne sont pas portés
 ///
@@ -45,9 +46,12 @@ export function HubStatut({
     <Card
       className={cn(
         "gap-0 py-0",
-        // Le bloc est en primary plein dans T2 quand une action attend le
-        // technicien. Sur les trois autres statuts, plus rien ne l'attend : le
-        // bloc redevient neutre plutôt que de crier une information éteinte.
+        // Le bloc est en primary plein dans T2 sur le statut d'ARRIVÉE, celui
+        // où le technicien ouvre l'écran en descendant de vélo. `IN_PROGRESS`
+        // porte désormais une action lui aussi, et reste pourtant neutre :
+        // l'aplat primary y mettrait un bouton primary sur fond primary, et
+        // T4 traite déjà l'emphase de la clôture dans sa propre modale. Sur
+        // `DONE` et `CANCELLED`, plus rien n'attend.
         intervention.status === "PLANNED" &&
           "border-primary bg-primary text-primary-foreground",
       )}
@@ -86,18 +90,28 @@ function CorpsStatut({ intervention }: { intervention: InterventionDetail }) {
 
     case "IN_PROGRESS":
       return (
-        <p className="flex items-start gap-2 text-sm text-muted-foreground">
-          <Clock3 aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-          <span>
-            {/* `startedAt` est renseigné par la transition. Le repli couvre les
-                lignes passées en `IN_PROGRESS` autrement que par cette action -
-                une correction en base, un jeu de test - plutôt que d'afficher
-                « démarrée à Invalid Date ». */}
-            {intervention.startedAt
-              ? `Intervention démarrée à ${formatHeure(intervention.startedAt)}.`
-              : "Intervention en cours."}
-          </span>
-        </p>
+        <>
+          <p className="flex items-start gap-2 text-sm text-muted-foreground">
+            <Clock3 aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            <span>
+              {/* `startedAt` est renseigné par la transition. Le repli couvre
+                  les lignes passées en `IN_PROGRESS` autrement que par cette
+                  action - une correction en base, un jeu de test - plutôt que
+                  d'afficher « démarrée à Invalid Date ». */}
+              {intervention.startedAt
+                ? `Intervention démarrée à ${formatHeure(intervention.startedAt)}.`
+                : "Intervention en cours."}
+            </span>
+          </p>
+
+          {/* Le total descend en prop, il n'est pas re-dérivé par la modale
+              (cadrage du plancher V2, D9) : `projeterDetail` le calcule déjà,
+              forfait plus la somme des `unit_price_snapshot × quantité`. */}
+          <ModaleCloture
+            interventionId={intervention.id}
+            total={intervention.total}
+          />
+        </>
       );
 
     case "DONE":

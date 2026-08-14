@@ -15,9 +15,16 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { InterventionDetail } from "@/lib/db/queries/interventions";
 
-// Le bouton tire sa Server Action, donc `safe-action`, la DAL et Prisma.
+// Les deux boutons tirent leur Server Action, donc `safe-action`, la DAL et
+// Prisma.
 vi.mock("@/lib/actions/interventions/demarrer-intervention", () => ({
   demarrerIntervention: vi.fn(() => Promise.resolve({ data: { ok: true } })),
+}));
+
+vi.mock("@/lib/actions/paiements/cloturer-intervention", () => ({
+  cloturerIntervention: vi.fn(() =>
+    Promise.resolve({ data: { ok: true, issue: "encaisse" } }),
+  ),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -75,21 +82,35 @@ describe("HubStatut - les actions suivent le statut", () => {
     },
   );
 
-  it("n'affiche AUCUN bouton en IN_PROGRESS, meme desactive", () => {
-    // 🔴 L'ecart assume de la tache, et il est ecrit dans la DoD : « Deposer des
-    // photos » est T-V2-04 et « Marquer comme terminee » est T-V2-03, aucune
-    // des deux n'est livree. Un bouton desactive serait le bouton inerte que la
-    // DoD interdit nommement, et un bouton actif un lien mort.
+  it("propose de cloturer, et RIEN d'autre, en IN_PROGRESS", () => {
+    // 🔄 **Ce test disait « aucun bouton en IN_PROGRESS », et il a ete REMPLACE
+    // par son symetrique, pas supprime ni classe « test fautif ».**
     //
-    // Ce test rougira le jour ou l'une des deux atterrit, ce qui est
-    // exactement ce qu'on veut : il faudra alors le reecrire en connaissance
-    // de cause, pas ajouter un bouton en silence.
+    // Sa version d'origine figeait un ecart de perimetre que T-V2-02 assumait
+    // par ecrit : « Deposer des photos » est T-V2-04 et la cloture est
+    // T-V2-03, aucune des deux n'etait livree. Elle annoncait elle-meme son
+    // remplacement - « ce test rougira le jour ou l'une des deux atterrit [...]
+    // il faudra alors le reecrire en connaissance de cause, pas ajouter un
+    // bouton en silence ». C'est ce jour-la.
+    //
+    // La proposition qu'il portait est conservee entiere : le jeu d'actions
+    // d'`IN_PROGRESS` est EXACTEMENT celui des US livrees. Il en compte
+    // desormais un, et le second - le depot de photos - reste absent plutot que
+    // pose desactive, parce qu'un bouton inerte est ce que la DoD interdit
+    // nommement. Ce test rougira encore a l'arrivee de T-V2-04, pour la meme
+    // raison et avec la meme suite a donner.
     rendre({
       status: "IN_PROGRESS",
       startedAt: new Date("2026-08-20T08:02:00.000Z"),
     });
 
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Marquer comme faite/ }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    expect(
+      screen.queryByRole("button", { name: /photo/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("affiche le jalon date plutot qu'un vide en IN_PROGRESS", () => {

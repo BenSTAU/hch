@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { Toaster } from "@/components/ui/sonner";
+
 import { BarreLateraleTechnicien } from "./_components/barre-laterale";
 
 /// Coquille de l'espace technicien - écran **T1** et ses deux déclinaisons.
@@ -35,6 +37,32 @@ export default function EspaceTechnicienLayout({
       <BarreLateraleTechnicien />
 
       <div className="flex min-w-0 flex-1 flex-col gap-6">{children}</div>
+
+      {/* 🐛 **Il manquait, et les toasts de T-V2-02 ne s'affichaient nulle
+          part.** `bouton-demarrer.tsx` émet `toast.success` et `toast.error`
+          depuis la tournée comme depuis le détail, or le seul `<Toaster>` du
+          produit vivait dans le layout de l'espace CLIENT. Sonner pousse dans un
+          magasin interne qu'aucun abonné ne lisait ici : ni le succès, ni les
+          deux refus métier n'atteignaient l'écran, et le technicien n'avait
+          aucun retour sur un clic dont l'effet est irréversible.
+
+          L'E2E ne pouvait pas le voir : son oracle est `/Intervention démarrée
+          à/`, qui est le **jalon du hub**, pas le toast `Intervention démarrée`.
+          Deux chaînes voisines, dont une seule était prouvée.
+
+          Corrigé ici et pas ailleurs parce que la case « toast Sonner
+          repositionné » de T-V2-03 est inatteignable sans lui.
+
+          `position="bottom-center"` : c'est ce que la maquette **T4** dessine,
+          et c'est la zone du pouce sur le téléphone que le technicien tient
+          d'une main. ⚠️ L'espace client reste au défaut de shadcn
+          (`bottom-right`), qu'aucune maquette ne contredit. Deux contextes, deux
+          positions - à unifier d'un mot si le write-back le tranche.
+
+          Hors du bloc qui rend `children` : la ligne clôturée quitte la tournée
+          au même instant, donc l'émetteur du message se démonte. Le récepteur,
+          lui, doit rester. */}
+      <Toaster position="bottom-center" />
     </main>
   );
 }

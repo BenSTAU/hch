@@ -195,10 +195,17 @@ function CarteIntervention({
       <div className="flex items-start justify-between gap-3">
         <EtiquetteStatut statut={intervention.status} />
         {/* Même règle que le récapitulatif du panneau : rien de chiffré sur une
-            annulée. La carte est la surface la plus lue des deux. */}
+            annulée. La carte est la surface la plus lue des deux.
+
+            Et **le même montant** que lui : la carte n'a pas la place d'un
+            libellé, donc rien n'y distingue un total d'un encaissement. Si les
+            deux surfaces affichaient des chiffres différents pour la même
+            ligne, celle qui ne s'explique pas serait crue. Le technicien peut
+            ajuster ce qu'il encaisse (Constitution §2.3), l'écart est donc
+            réel et pas théorique. */}
         {estAnnulee(intervention) ? null : (
           <span className="font-heading text-lg font-bold tracking-tighter">
-            {formatPrixEuros(intervention.total)}
+            {formatPrixEuros(intervention.montantPaye ?? intervention.total)}
           </span>
         )}
       </div>
@@ -350,15 +357,27 @@ function PanneauDetail({
           <LigneTarif intitule="Déplacement">Inclus</LigneTarif>
 
           <div className="mt-1 flex items-baseline justify-between border-t border-border pt-3">
-            {/* ⚠️ « Montant » et non « Montant payé ». L'US des passées demande
-                `payments.amount_snapshot`, et la table `payments` n'existe pas :
-                elle arrive avec **T-V2-03 « Clôture et paiement terrain »**
-                (migration 009, `US-PAIEMENT-ENREGISTRER`). Ce total est celui de
-                l'intervention, pas un encaissement constaté - le nommer « payé »
-                affirmerait un fait qu'aucune donnée ne porte. */}
-            <dt className="font-heading text-base font-bold">Montant</dt>
+            {/* « Montant payé » dès qu'une ligne `payments` en `PAID` existe,
+                « Montant » sinon - report reçu de T-V3-10 (PR #33), qui
+                affichait le total calculé faute de table `payments`.
+
+                ⚠️ **Les deux libellés restent, et ce n'est pas une hésitation** :
+                le premier affirme un encaissement constaté, le second le montant
+                de l'intervention. Une `PLANNED` ou une `IN_PROGRESS` n'a pas
+                encore de paiement, et les nommer « payé » affirmerait un fait
+                qu'aucune donnée ne porte. Le montant lui-même change avec le
+                libellé : `payments.amount_snapshot` est ce que le technicien a
+                réellement encaissé, que Constitution §2.3 l'autorise à ajuster,
+                donc il peut différer du total. */}
+            {/* `!== null` et non une vérité booléenne : la valeur est une
+                CHAÎNE, et « une chaîne non vide » n'est pas la question posée.
+                Relevé par l'agent testeur - sans effet aujourd'hui, mais une
+                garde doit dire ce qu'elle protège. */}
+            <dt className="font-heading text-base font-bold">
+              {intervention.montantPaye !== null ? "Montant payé" : "Montant"}
+            </dt>
             <dd className="font-heading text-2xl font-extrabold tracking-tighter text-primary">
-              {formatPrixEuros(intervention.total)}
+              {formatPrixEuros(intervention.montantPaye ?? intervention.total)}
             </dd>
           </div>
         </dl>

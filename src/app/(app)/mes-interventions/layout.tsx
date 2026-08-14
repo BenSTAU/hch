@@ -55,10 +55,10 @@ export default function EspaceClientLayout({
 
       <div className="flex min-w-0 flex-1 flex-col gap-6">{children}</div>
 
-      {/* Monté ICI et non dans le layout racine : c'est le seul espace qui émet
-          des notifications éphémères, et le `Toaster` est un composant client.
-          Le poser à la racine ferait voyager sonner jusqu'à la landing, qui
-          n'en a aucun usage.
+      {/* Monté ICI et non dans le layout racine : le `Toaster` est un composant
+          client, et le poser à la racine ferait voyager sonner jusqu'à la
+          landing, qui n'en a aucun usage. L'espace technicien a le sien, pour
+          la même raison et depuis T-V2-03 - il en émettait déjà sans en avoir.
 
           Il vit **hors** du bloc qui rend `children` : la ligne annulée quitte
           la liste au même instant, donc l'émetteur du message se démonte. Le
