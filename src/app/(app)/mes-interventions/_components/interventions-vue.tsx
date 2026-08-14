@@ -119,7 +119,17 @@ export function InterventionsVue({
         ))}
       </ul>
 
+      {/* 🐛 **`key` sur l'intervention : changer de ligne remonte le panneau.**
+          Les trois blocs de mutation gardent leur refus dans un `useState`
+          local. Sans cette clé, le panneau ne se démonte pas au changement de
+          sélection : un « Intervention introuvable. » posé sur une ligne
+          restait affiché sous la suivante, à laquelle il ne s'appliquait pas.
+          Mesuré par l'agent testeur sur le bloc vélo ; le défaut est de famille,
+          `bloc-produits` et `bloc-photos` le partageaient. Le chemin réel : le
+          technicien démarre le rendez-vous pendant que l'onglet est ouvert, le
+          refus s'affiche, le client clique une autre ligne. */}
       <PanneauDetail
+        key={courante.id}
         intervention={courante}
         produits={produits}
         cycles={cycles}

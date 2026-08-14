@@ -382,7 +382,7 @@ function FormulaireCycle({
         />
 
         <fieldset className="flex flex-col gap-2">
-          <legend className="mb-2 text-sm font-medium">
+          <legend id="type-cycle-legende" className="mb-2 text-sm font-medium">
             Type de vélo
             <span aria-hidden="true"> *</span>
           </legend>
@@ -390,8 +390,17 @@ function FormulaireCycle({
           {/* Trois tuiles côte à côte sont sémantiquement un groupe de boutons
               radio, pas une liste déroulante : la navigation par flèches et
               l'annonce « 2 sur 3 » viennent sans code (RGAA 7.1). Même motif
-              que les dalles de forfait du tunnel, `etape-forfait.tsx`. */}
+              que les dalles de forfait du tunnel, `etape-forfait.tsx`.
+
+              🐛 **`aria-labelledby` sur le groupe, en plus de la `<legend>`.**
+              Le groupe était anonyme : mesuré par l'agent testeur, son nom
+              accessible rendait la chaîne vide. Le `<fieldset>` groupe bien, et
+              axe ne signale rien, mais le conteneur le plus proche des boutons
+              radio est le `role="radiogroup"` - c'est lui qu'un lecteur d'écran
+              annonce en y entrant. Les deux autres groupes du dépôt le posent,
+              dont celui du bloc de rattachement de cette PR. */}
           <RadioGroup
+            aria-labelledby="type-cycle-legende"
             value={type}
             onValueChange={(valeur) => {
               if (estTypeCycle(valeur)) setType(valeur);

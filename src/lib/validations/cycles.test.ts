@@ -49,9 +49,49 @@ describe("champsCycleSchema - marque", () => {
 
     expect(refus(resultat)).toContain("Marque requise");
   });
+
+  it("refuse une marque plus longue que la colonne", () => {
+    // Ajouté par l'agent testeur. `cycles.brand` est un `VARCHAR(100)` : au-delà,
+    // c'est Prisma qui lèverait, et `handleServerError` rendrait « Une erreur est
+    // survenue » - un refus de saisie déguisé en panne. La borne applicative est
+    // la seule qui produise un message utile, et rien ne l'exerçait.
+    const resultat = champsCycleSchema.safeParse({
+      ...VALIDE,
+      brand: "x".repeat(101),
+    });
+
+    expect(refus(resultat)).toContain(
+      "Marque trop longue (100 caractères maximum)",
+    );
+    expect(
+      champsCycleSchema.safeParse({ ...VALIDE, brand: "x".repeat(100) })
+        .success,
+    ).toBe(true);
+  });
 });
 
 describe("champsCycleSchema - modele", () => {
+  it("refuse un modèle plus long que la colonne", () => {
+    // Ajouté par l'agent testeur, même motif que la marque.
+    const resultat = champsCycleSchema.safeParse({
+      ...VALIDE,
+      model: "x".repeat(101),
+    });
+
+    expect(refus(resultat)).toContain(
+      "Modèle trop long (100 caractères maximum)",
+    );
+  });
+
+  it("ramène un modèle fait d'espaces à null, pas à une chaîne d'espaces", () => {
+    // Ajouté par l'agent testeur. `trim` puis `transform` : le cas de la marque
+    // était couvert, celui du modèle non, et c'est lui qui décide de l'affichage
+    // « Decathlon  » avec une espace pendante sur toutes les cartes.
+    expect(
+      champsCycleSchema.parse({ ...VALIDE, model: "   " }).model,
+    ).toBeNull();
+  });
+
   it("ramène la chaîne vide à null", () => {
     // Une seule représentation de l'absence : deux obligeraient chaque lecteur
     // à tester `null` ET `""`.
@@ -202,5 +242,37 @@ describe("rattacherCycleSchema", () => {
     expect(rattacherCycleSchema.safeParse({ interventionId: 3 }).success).toBe(
       false,
     );
+  });
+
+  it("refuse les identifiants qu'un SERIAL ne produit jamais", () => {
+    // Ajouté par l'agent testeur. `modifierCycleSchema` a son test de borne,
+    // `rattacherCycleSchema` n'en avait aucun alors qu'il en porte DEUX. Un
+    // `0`, un négatif ou un décimal n'atteignent aucune ligne, mais ils
+    // atteindraient la base : `skip`/`where` sur un flottant fait lever Prisma,
+    // donc une panne 500 sur une charge utile bricolée, là où un refus de
+    // schéma ne coûte rien.
+    for (const cible of [
+      { interventionId: 0, cycleId: 12 },
+      { interventionId: -1, cycleId: 12 },
+      { interventionId: 3.5, cycleId: 12 },
+      { interventionId: 3, cycleId: 0 },
+      { interventionId: 3, cycleId: -4 },
+      { interventionId: 3, cycleId: 2.5 },
+    ]) {
+      expect(rattacherCycleSchema.safeParse(cible).success).toBe(false);
+    }
+  });
+
+  it("ne transporte AUCUN propriétaire", () => {
+    // Ajouté par l'agent testeur. Les deux autres schémas ont ce test, celui-ci
+    // ne l'avait pas - et c'est le seul des trois où DEUX entités appartiennent
+    // à deux vérifications distinctes.
+    const parsed = rattacherCycleSchema.parse({
+      interventionId: 3,
+      cycleId: 12,
+      clientId: "3f1e0a5c-0b2d-4c6e-9a11-2b3c4d5e6f70",
+    });
+
+    expect(parsed).not.toHaveProperty("clientId");
   });
 });

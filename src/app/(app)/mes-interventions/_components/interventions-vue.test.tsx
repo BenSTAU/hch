@@ -31,8 +31,9 @@ vi.mock("@/lib/actions/interventions/ajouter-photo", () => ({
 vi.mock("@/lib/actions/interventions/annuler-intervention", () => ({
   annulerIntervention: vi.fn(),
 }));
+const rattacherCycle = vi.fn();
 vi.mock("@/lib/actions/cycles/rattacher-cycle", () => ({
-  rattacherCycle: vi.fn(),
+  rattacherCycle: (args: unknown) => rattacherCycle(args),
 }));
 
 const { InterventionsVue } = await import("./interventions-vue");
@@ -274,6 +275,51 @@ describe("InterventionsVue - liste", () => {
     await utilisateur.click(cartes[1]!);
 
     expect(screen.getByText("Diagnostic express")).toBeInTheDocument();
+  });
+
+  it("n'emporte pas le refus d'une intervention sur la suivante", async () => {
+    // 🐛 Le panneau est monte avec `key={courante.id}` depuis que l'agent
+    // testeur a mesure ce defaut (C2) : les trois blocs de mutation gardent
+    // leur refus dans un `useState` local, et sans remontage un « Intervention
+    // introuvable. » posé sur une ligne restait affiché sous la suivante.
+    //
+    // Le chemin reel : le technicien demarre le rendez-vous pendant que
+    // l'onglet est ouvert, le refus s'affiche, le client clique une autre
+    // ligne. Le defaut etait de famille - `bloc-produits` et `bloc-photos` le
+    // partageaient -, la cle les couvre tous les trois.
+    rattacherCycle.mockResolvedValue({
+      data: { ok: false, message: "Intervention introuvable." },
+    });
+
+    const utilisateur = userEvent.setup();
+    render(
+      <Enveloppe>
+        <Vue
+          interventions={[intervention(), intervention({ id: 848 })]}
+          produits={[]}
+          cycles={[
+            {
+              id: 12,
+              brand: "Decathlon",
+              model: "Elops 900",
+              type: "CLASSIC",
+              year: 2023,
+            },
+          ]}
+          vide={VIDE}
+        />
+      </Enveloppe>,
+    );
+
+    await utilisateur.click(screen.getByRole("radio", { name: /Decathlon/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Intervention introuvable.",
+    );
+
+    const cartes = screen.getAllByRole("button", { name: /Marc L\./ });
+    await utilisateur.click(cartes[1]!);
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
 

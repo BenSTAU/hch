@@ -55,6 +55,11 @@ describe("ajouterCycle", () => {
     await ajouterCycle(SAISIE);
 
     expect(revalidatePath).toHaveBeenCalledWith("/mon-compte/cycles");
+    // 🐛 Et l'espace client, relevé par l'agent testeur : le sélecteur de
+    // rattachement du panneau de détail liste ces mêmes vélos, donc un vélo
+    // créé pour le rendez-vous de demain n'y apparaissait qu'à la navigation
+    // suivante. DoD 517, « après CHAQUE mutation ».
+    expect(revalidatePath).toHaveBeenCalledWith("/mes-interventions/a-venir");
   });
 
   it("rend le vélo créé, dont le message de succès a besoin", async () => {
@@ -68,6 +73,36 @@ describe("ajouterCycle", () => {
 
     expect(creerCycle).not.toHaveBeenCalled();
     expect(revalidatePath).not.toHaveBeenCalled();
+    expect(resultat?.validationErrors).toBeDefined();
+  });
+
+  it("rend des refus AU FORMAT que l'écran sait lire", async () => {
+    // Ajouté par l'agent testeur. `cycles-vue.tsx` lit `erreurs[champ]._errors[0]`
+    // (`premierRefus`), et cette forme est un défaut de next-safe-action, pas un
+    // contrat écrit ici : si elle basculait en « flattened », le parseur
+    // retournerait `null` sans lever, et l'écran n'afficherait plus que
+    // « Vérifiez les champs signalés » sur les quatre champs. Aucun test ne
+    // reliait les deux surfaces - celui de l'écran mocke l'action et celui de
+    // l'action ne regarde pas la forme.
+    const resultat = await ajouterCycle({ ...SAISIE, brand: "", year: 1800 });
+
+    expect(resultat?.validationErrors).toMatchObject({
+      brand: { _errors: ["Marque requise"] },
+      year: { _errors: ["Année d'achat invalide"] },
+    });
+  });
+
+  it("borne la marque à 100 caractères, avant la colonne VARCHAR(100)", async () => {
+    // Ajouté par l'agent testeur. `cycles.brand` est un `VARCHAR(100)` : sans
+    // cette borne applicative, une saisie plus longue partirait à Prisma, qui
+    // lèverait, et `handleServerError` la rendrait en « Une erreur est
+    // survenue » - un refus de saisie déguisé en panne.
+    const resultat = await ajouterCycle({
+      ...SAISIE,
+      brand: "x".repeat(101),
+    });
+
+    expect(creerCycle).not.toHaveBeenCalled();
     expect(resultat?.validationErrors).toBeDefined();
   });
 

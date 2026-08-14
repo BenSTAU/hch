@@ -180,10 +180,31 @@ export async function rattacherCycleAIntervention(params: {
       }
     }
 
-    await tx.intervention.update({
-      where: { id: params.interventionId },
+    // ⚠️ **Le statut est REJOUÉ dans le `WHERE` de l'écriture**, et ce n'est pas
+    // une redite de la garde ci-dessus. Entre la lecture et l'écriture, un
+    // `demarrerInterventionDuTech` concurrent peut faire passer la ligne en
+    // `IN_PROGRESS` : sous READ COMMITTED, l'`update` l'écraserait quand même.
+    // `updateMany` porte la condition dans la requête, donc l'écriture est
+    // atomique et `count === 0` dit qu'on a perdu la course.
+    //
+    // La lecture au-dessus reste nécessaire : c'est elle qui distingue
+    // « introuvable » de « verrouillee », qu'un `count` seul confondrait.
+    //
+    // Fenêtre relevée par l'agent testeur (C5). `produits.ts` porte la même et
+    // n'est PAS corrigée ici : elle écrit plusieurs lignes sous un verrou de
+    // stock, la refermer demande un autre geste que celui-ci.
+    const { count } = await tx.intervention.updateMany({
+      where: {
+        id: params.interventionId,
+        clientId: params.clientId,
+        status: STATUT_RATTACHABLE,
+      },
       data: { cycleId: params.cycleId },
     });
+
+    if (count === 0) {
+      return { ok: false as const, reason: "verrouillee" as const };
+    }
 
     return { ok: true as const };
   });

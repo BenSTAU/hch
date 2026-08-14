@@ -16,13 +16,13 @@ const cycleCreate = vi.fn();
 const cycleUpdateMany = vi.fn();
 const cycleFindFirst = vi.fn();
 const interventionFindFirst = vi.fn();
-const interventionUpdate = vi.fn();
+const interventionUpdateMany = vi.fn();
 
 const tx = {
   cycle: { findFirst: cycleFindFirst },
   intervention: {
     findFirst: interventionFindFirst,
-    update: interventionUpdate,
+    updateMany: interventionUpdateMany,
   },
 };
 
@@ -61,7 +61,7 @@ beforeEach(() => {
   cycleUpdateMany.mockResolvedValue({ count: 1 });
   cycleFindFirst.mockResolvedValue({ id: 12 });
   interventionFindFirst.mockResolvedValue({ status: "PLANNED" });
-  interventionUpdate.mockResolvedValue({});
+  interventionUpdateMany.mockResolvedValue({ count: 1 });
 });
 
 describe("listerCyclesDuClient", () => {
@@ -105,9 +105,39 @@ describe("creerCycle", () => {
       }),
     );
   });
+
+  it("ne redescend pas le propriétaire du vélo créé", async () => {
+    // Ajouté par l'agent testeur. Ce vélo-là **repart au navigateur** :
+    // `ajouterCycle` le rend dans `data.cycle` pour composer le message de
+    // succès. `listerCyclesDuClient` avait ce test, `creerCycle` non, alors que
+    // c'est lui qui traverse la frontière serveur → client.
+    await creerCycle({ ...CHAMPS, type: "CLASSIC", userId: CLIENT });
+
+    const appel = cycleCreate.mock.calls[0]?.[0] as {
+      select: Record<string, boolean>;
+    };
+
+    expect(appel.select).not.toHaveProperty("userId");
+  });
 });
 
 describe("modifierCycleDuClient", () => {
+  it("ne redescend pas le propriétaire du vélo modifié", async () => {
+    // Ajouté par l'agent testeur. Le résultat est reconstruit à la main plutôt
+    // que relu, donc rien n'empêche structurellement qu'un champ de trop y
+    // entre - et il repart au navigateur par `data.cycle`.
+    const resultat = await modifierCycleDuClient({
+      ...CHAMPS,
+      type: "CLASSIC",
+      cycleId: 12,
+      userId: CLIENT,
+    });
+
+    expect(resultat.ok).toBe(true);
+    expect(resultat.ok && resultat.cycle).not.toHaveProperty("userId");
+    expect(resultat.ok && resultat.cycle).toEqual({ id: 12, ...CHAMPS });
+  });
+
   it("met la propriété dans le WHERE, pas dans une garde séparée", async () => {
     await modifierCycleDuClient({
       ...CHAMPS,
@@ -148,8 +178,11 @@ describe("rattacherCycleAIntervention", () => {
     });
 
     expect(resultat).toEqual({ ok: true });
-    expect(interventionUpdate).toHaveBeenCalledWith({
-      where: { id: 3 },
+    // Le statut est REJOUÉ dans le `WHERE` de l'écriture : entre la lecture et
+    // l'`update`, un démarrage concurrent peut faire passer la ligne en
+    // `IN_PROGRESS`, et un `update` sur la seule clé primaire l'écraserait.
+    expect(interventionUpdateMany).toHaveBeenCalledWith({
+      where: { id: 3, clientId: CLIENT, status: "PLANNED" },
       data: { cycleId: 12 },
     });
   });
@@ -176,7 +209,7 @@ describe("rattacherCycleAIntervention", () => {
     });
 
     expect(resultat).toEqual({ ok: false, reason: "introuvable" });
-    expect(interventionUpdate).not.toHaveBeenCalled();
+    expect(interventionUpdateMany).not.toHaveBeenCalled();
   });
 
   it("refuse hors PLANNED, sur les trois autres statuts", async () => {
@@ -193,8 +226,24 @@ describe("rattacherCycleAIntervention", () => {
       });
 
       expect(resultat).toEqual({ ok: false, reason: "verrouillee" });
-      expect(interventionUpdate).not.toHaveBeenCalled();
+      expect(interventionUpdateMany).not.toHaveBeenCalled();
     }
+  });
+
+  it("refuse quand le statut a changé ENTRE la lecture et l'écriture", async () => {
+    // La course que l'agent testeur a relevée (C5) : le technicien démarre le
+    // rendez-vous pendant que le client choisit son vélo. La lecture voit
+    // encore `PLANNED`, l'écriture ne trouve plus la ligne. Sans le statut dans
+    // le `WHERE`, un `update` sur la seule clé primaire aurait écrit quand même.
+    interventionUpdateMany.mockResolvedValue({ count: 0 });
+
+    const resultat = await rattacherCycleAIntervention({
+      interventionId: 3,
+      cycleId: 12,
+      clientId: CLIENT,
+    });
+
+    expect(resultat).toEqual({ ok: false, reason: "verrouillee" });
   });
 
   it("refuse le vélo d'un tiers, que la FK accepterait pourtant", async () => {
@@ -209,7 +258,7 @@ describe("rattacherCycleAIntervention", () => {
     });
 
     expect(resultat).toEqual({ ok: false, reason: "cycle_introuvable" });
-    expect(interventionUpdate).not.toHaveBeenCalled();
+    expect(interventionUpdateMany).not.toHaveBeenCalled();
   });
 
   it("vérifie le vélo sur le COUPLE (id, propriétaire)", async () => {
@@ -235,10 +284,27 @@ describe("rattacherCycleAIntervention", () => {
 
     expect(resultat).toEqual({ ok: true });
     expect(cycleFindFirst).not.toHaveBeenCalled();
-    expect(interventionUpdate).toHaveBeenCalledWith({
-      where: { id: 3 },
+    expect(interventionUpdateMany).toHaveBeenCalledWith({
+      where: { id: 3, clientId: CLIENT, status: "PLANNED" },
       data: { cycleId: null },
     });
+  });
+
+  it("n'interroge pas cycles quand l'intervention est déjà verrouillée", async () => {
+    // Ajouté par l'agent testeur. L'ordre des trois gardes est une propriété,
+    // pas un détail : une intervention hors `PLANNED` doit couper AVANT la
+    // lecture du vélo, sans quoi le temps de réponse distinguerait un vélo
+    // existant d'un vélo absent sur une intervention où l'écriture est de toute
+    // façon refusée. Le test voisin n'assertait que l'absence d'écriture.
+    interventionFindFirst.mockResolvedValue({ status: "IN_PROGRESS" });
+
+    await rattacherCycleAIntervention({
+      interventionId: 3,
+      cycleId: 999,
+      clientId: CLIENT,
+    });
+
+    expect(cycleFindFirst).not.toHaveBeenCalled();
   });
 
   it("refuse le détachement hors PLANNED, comme le rattachement", async () => {

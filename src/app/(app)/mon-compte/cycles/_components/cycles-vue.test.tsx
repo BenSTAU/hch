@@ -369,6 +369,95 @@ describe("CyclesVue - refus", () => {
     expect(champ).toHaveAttribute("aria-invalid", "true");
   });
 
+  it("garde AUSSI le type et l'année choisis, pas seulement les champs texte", async () => {
+    // Ajouté par l'agent testeur. Le test voisin ne couvre que « Modèle », donc
+    // que les champs non contrôlés. Le type vit dans un `useState` et l'année
+    // dans un troisième `defaultValue` : trois mécanismes de survie distincts
+    // pour une même promesse, « un refus n'efface pas la saisie qu'il demande
+    // de corriger ». Deux d'entre eux n'étaient pas exercés.
+    ajouterCycle.mockResolvedValue({
+      validationErrors: { brand: { _errors: ["Marque requise"] } },
+    });
+
+    render(
+      <Enveloppe>
+        <CyclesVue cycles={VELOS} />
+      </Enveloppe>,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ajouter un vélo" }),
+    );
+    // Une espace, et non un champ laissé vide : `required` est posé sur
+    // « Marque », et jsdom applique la validation interactive du navigateur -
+    // un champ vide ne soumettrait pas du tout, donc ne prouverait rien.
+    await userEvent.type(screen.getByLabelText(/Marque/), " ");
+    await userEvent.click(screen.getByRole("radio", { name: "Cargo" }));
+    await userEvent.type(screen.getByLabelText("Année d'achat"), "2019");
+    await userEvent.click(screen.getByRole("button", { name: "Ajouter" }));
+
+    expect(await screen.findByText("Marque requise")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { checked: true })).toHaveAccessibleName(
+      "Cargo",
+    );
+    expect(screen.getByLabelText("Année d'achat")).toHaveValue(2019);
+  });
+
+  it("affiche une panne serveur en tête, sans la confondre avec un refus de champ", async () => {
+    // Ajouté par l'agent testeur. La branche `serverError` n'était exercée sur
+    // aucun des deux écrans du domaine. C'est celle de toute exception non
+    // interceptée : sans elle, la soumission reste sans retour et le formulaire
+    // paraît avoir abouti.
+    ajouterCycle.mockResolvedValue({
+      serverError: "Une erreur est survenue. Réessayez dans un instant.",
+    });
+
+    render(
+      <Enveloppe>
+        <CyclesVue cycles={VELOS} />
+      </Enveloppe>,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ajouter un vélo" }),
+    );
+    await userEvent.type(screen.getByLabelText(/Marque/), "Trek");
+    await userEvent.click(screen.getByRole("button", { name: "Ajouter" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Une erreur est survenue.",
+    );
+    // Le panneau reste ouvert : rien n'a été écrit, la saisie doit pouvoir être
+    // resoumise.
+    expect(
+      screen.getByRole("heading", { name: "Nouveau vélo" }),
+    ).toBeInTheDocument();
+  });
+
+  it("porte le focus sur le message de refus, pour qui navigue au clavier", async () => {
+    // Ajouté par l'agent testeur. Le composant pose un `useEffect` et un
+    // `tabIndex={-1}` pour ça, et rien ne le vérifiait : sans le focus, une
+    // soumission refusée ne déplace rien sous le curseur, et le message est
+    // annoncé loin du point où l'utilisateur se trouve (RGAA A, même geste que
+    // le formulaire de connexion).
+    ajouterCycle.mockResolvedValue({
+      validationErrors: { brand: { _errors: ["Marque requise"] } },
+    });
+
+    render(
+      <Enveloppe>
+        <CyclesVue cycles={VELOS} />
+      </Enveloppe>,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ajouter un vélo" }),
+    );
+    await userEvent.type(screen.getByLabelText(/Marque/), " ");
+    await userEvent.click(screen.getByRole("button", { name: "Ajouter" }));
+
+    const alerte = await screen.findByRole("alert");
+
+    expect(alerte).toHaveFocus();
+  });
+
   it("passe un refus métier en toast, le panneau se refermant", async () => {
     modifierCycle.mockResolvedValue({
       data: { ok: false, message: "Cycle introuvable." },
@@ -392,6 +481,25 @@ describe("CyclesVue - refus", () => {
 });
 
 describe("CyclesVue - accessibilité", () => {
+  it("nomme le groupe de boutons radio du type", () => {
+    // 🐛 Le groupe était ANONYME : mesuré par l'agent testeur (C1), son nom
+    // accessible rendait la chaîne vide. Le `<fieldset><legend>` groupe bien et
+    // axe ne signale rien, mais c'est le `role="radiogroup"` qu'un lecteur
+    // d'écran annonce en y entrant, et c'est lui qui n'avait pas de nom. Les
+    // deux autres groupes du dépôt le posent, dont celui du rattachement dans
+    // cette même PR.
+    //
+    // Aucun audit axe n'attrape ce défaut, d'où ce test à part : une garde de
+    // comptage prouve que la cible est rendue, pas qu'elle est nommée.
+    render(
+      <Enveloppe searchParams="?cycle=12">
+        <CyclesVue cycles={VELOS} />
+      </Enveloppe>,
+    );
+
+    expect(screen.getByRole("radiogroup")).toHaveAccessibleName(/Type de vélo/);
+  });
+
   it("ne présente aucune violation axe, formulaire ouvert", async () => {
     const vue = render(
       <Enveloppe searchParams="?cycle=12">
@@ -402,6 +510,58 @@ describe("CyclesVue - accessibilité", () => {
     // Garde anti-régression : sans elle, l'audit resterait vert le jour où le
     // formulaire cesse d'être rendu dans ce container (leçon PR #25, note 7).
     expect(vue.container.querySelectorAll('[role="radio"]').length).toBe(3);
+
+    await expect(axe(vue.container)).resolves.toHaveNoViolations();
+  });
+
+  it("ne présente aucune violation axe sur l'état vide", async () => {
+    // Ajouté par l'agent testeur. L'audit voisin ne couvre qu'UN état, celui du
+    // formulaire ouvert sur une liste peuplée. L'état vide est un arbre DOM
+    // distinct - section en pointillés, texte, CTA - et c'est le premier écran
+    // que voit tout nouveau client : il n'était audité nulle part.
+    const vue = render(
+      <Enveloppe>
+        <CyclesVue cycles={[]} />
+      </Enveloppe>,
+    );
+
+    // Garde : sans elle, l'audit resterait vert si l'état vide cessait d'être
+    // rendu.
+    expect(
+      within(vue.container).getByRole("button", { name: "Ajouter un cycle" }),
+    ).toBeInTheDocument();
+
+    await expect(axe(vue.container)).resolves.toHaveNoViolations();
+  });
+
+  it("ne présente aucune violation axe sur un formulaire en erreur", async () => {
+    // Ajouté par l'agent testeur. Troisième état non audité, et le seul qui
+    // pose des attributs ARIA calculés : `aria-invalid`, `aria-describedby`
+    // pointant sur un `id` conditionnel. Un `describedby` orphelin est
+    // précisément ce qu'axe attrape, et rien ne l'exerçait.
+    ajouterCycle.mockResolvedValue({
+      validationErrors: {
+        brand: { _errors: ["Marque requise"] },
+        year: { _errors: ["Année d'achat invalide"] },
+      },
+    });
+
+    const vue = render(
+      <Enveloppe>
+        <CyclesVue cycles={VELOS} />
+      </Enveloppe>,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ajouter un vélo" }),
+    );
+    await userEvent.type(screen.getByLabelText(/Marque/), " ");
+    await userEvent.click(screen.getByRole("button", { name: "Ajouter" }));
+
+    expect(await screen.findByText("Marque requise")).toBeInTheDocument();
+    expect(
+      vue.container.querySelectorAll("[aria-describedby]").length,
+    ).toBeGreaterThan(0);
 
     await expect(axe(vue.container)).resolves.toHaveNoViolations();
   });
