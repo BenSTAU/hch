@@ -124,6 +124,14 @@ describe("inventaire des Server Actions", () => {
       // entrée à valider, elle efface le cookie et redirige.
       "auth/logout.ts": [],
       "auth/signup.ts": ["actionClient"],
+      // Les trois mutations du domaine `cycles` (T-V3-16). Toutes en
+      // `authActionClient` : le propriétaire vient de la session, et `cycles.id`
+      // comme `interventions.id` sont des SERIAL, donc énumérables.
+      "cycles/ajouter-cycle.ts": ["authActionClient"],
+      // Catalogue de libellés, pas une action.
+      "cycles/messages.ts": [],
+      "cycles/modifier-cycle.ts": ["authActionClient"],
+      "cycles/rattacher-cycle.ts": ["authActionClient"],
       "interventions/ajouter-photo.ts": ["authActionClient"],
       "interventions/annuler-intervention.ts": ["authActionClient"],
       "interventions/demarrer-intervention.ts": ["techActionClient"],

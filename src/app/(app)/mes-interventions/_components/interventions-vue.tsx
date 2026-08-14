@@ -4,6 +4,7 @@ import { CalendarClock, MapPin, User, Wrench } from "lucide-react";
 import Link from "next/link";
 import { parseAsInteger, useQueryState } from "nuqs";
 
+import type { CycleClient } from "@/lib/db/queries/cycles";
 import type { InterventionClient } from "@/lib/db/queries/interventions";
 import type { ProduitVendable } from "@/lib/db/queries/produits";
 import {
@@ -18,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { BlocAnnulation, type ContactSociete } from "./bloc-annulation";
+import { BlocCycle } from "./bloc-cycle";
 import { BlocPhotos } from "./bloc-photos";
 import { BlocProduits } from "./bloc-produits";
 
@@ -47,6 +49,7 @@ import { BlocProduits } from "./bloc-produits";
 export function InterventionsVue({
   interventions,
   produits,
+  cycles,
   contact,
   maintenant,
   vide,
@@ -55,6 +58,9 @@ export function InterventionsVue({
   /// Catalogue vendable, pour le bloc T+n du panneau. Vide sur l'onglet des
   /// passées, où aucune ligne n'est modifiable.
   produits: readonly ProduitVendable[];
+  /// Les vélos du client, pour le sélecteur de rattachement du panneau. Vide
+  /// sur l'onglet des passées, pour la même raison que le catalogue.
+  cycles: readonly CycleClient[];
   /// Coordonnées de l'atelier, affichées par le bloc d'annulation quand la
   /// fenêtre H-24 est dépassée (`US-INTERVENTION-ANNULER-CLIENT` §Cas d'erreur).
   contact: ContactSociete;
@@ -116,6 +122,7 @@ export function InterventionsVue({
       <PanneauDetail
         intervention={courante}
         produits={produits}
+        cycles={cycles}
         contact={contact}
         maintenant={maintenant}
       />
@@ -253,11 +260,13 @@ function CarteIntervention({
 function PanneauDetail({
   intervention,
   produits,
+  cycles,
   contact,
   maintenant,
 }: {
   intervention: InterventionClient;
   produits: readonly ProduitVendable[];
+  cycles: readonly CycleClient[];
   contact: ContactSociete;
   maintenant: Date;
 }) {
@@ -317,6 +326,15 @@ function PanneauDetail({
           Motif de l&apos;annulation : {intervention.cancellationReason}
         </p>
       ) : null}
+
+      {/* Placé AVANT les produits et les photos : il désigne l'objet de
+          l'intervention, quand les deux autres décrivent ce qui s'y ajoute. */}
+      <BlocCycle
+        interventionId={intervention.id}
+        cycle={intervention.cycle}
+        cycles={cycles}
+        modifiable={modifiable}
+      />
 
       <BlocProduits
         interventionId={intervention.id}

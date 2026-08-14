@@ -12,6 +12,21 @@ afterEach(() => {
   cleanup();
 });
 
+// jsdom n'implémente pas `ResizeObserver`, que Radix appelle dès qu'un groupe
+// de boutons radio vit **dans un `<form>`** : il y rend alors un input natif
+// masqué pour que le formulaire porte la valeur, et mesure le contrôle réel.
+// Le premier cas du dépôt est le formulaire de C11 (T-V3-16) ; les dalles de
+// forfait du tunnel n'étaient pas dans un formulaire, d'où le silence jusqu'ici.
+//
+// Un bouchon inerte suffit : rien de ce qui est testé ne dépend d'une mesure, et
+// tous les navigateurs visés implémentent l'API. Le poser globalement plutôt que
+// par fichier - c'est un trou de l'environnement, pas une affaire de test.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 // `jest-axe` expose ses matchers au format Jest ; l'API `expect` de Vitest est
 // compatible, `expect.extend` suffit. Le typage vient de `@types/jest-axe`.
 expect.extend(toHaveNoViolations);

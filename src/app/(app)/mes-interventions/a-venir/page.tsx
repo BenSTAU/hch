@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 
 import { requireEspaceClient } from "@/lib/auth/permissions";
+import { listerCyclesDuClient } from "@/lib/db/queries/cycles";
 import {
   compterInterventionsClient,
   listerInterventionsAVenir,
@@ -43,16 +44,18 @@ export const metadata: Metadata = {
 export default async function InterventionsAVenirPage() {
   const user = await requireEspaceClient();
 
-  // Quatre lectures indépendantes, donc en parallèle et jamais en cascade. Le
-  // catalogue alimente le bloc T+n du panneau, le contact alimente son bloc
-  // d'annulation : ils sont lus ici parce que le panneau est un composant
-  // client, qui ne peut pas interroger la base.
-  const [interventions, produits, compteurs, contact] = await Promise.all([
-    listerInterventionsAVenir({ clientId: user.id }),
-    listProduitsVendables(),
-    compterInterventionsClient({ clientId: user.id }),
-    lireContactSociete(),
-  ]);
+  // Cinq lectures indépendantes, donc en parallèle et jamais en cascade. Le
+  // catalogue alimente le bloc T+n du panneau, les vélos son sélecteur de
+  // rattachement, le contact son bloc d'annulation : ils sont lus ici parce que
+  // le panneau est un composant client, qui ne peut pas interroger la base.
+  const [interventions, produits, cycles, compteurs, contact] =
+    await Promise.all([
+      listerInterventionsAVenir({ clientId: user.id }),
+      listProduitsVendables(),
+      listerCyclesDuClient({ userId: user.id }),
+      compterInterventionsClient({ clientId: user.id }),
+      lireContactSociete(),
+    ]);
 
   // L'horloge est fixée **une fois**, au rendu serveur, et descend en prop. Le
   // chip « Dans X jours » et la fenêtre d'annulation en dépendent tous les
@@ -72,6 +75,7 @@ export default async function InterventionsAVenirPage() {
         <InterventionsVue
           interventions={interventions}
           produits={produits}
+          cycles={cycles}
           contact={contact}
           maintenant={maintenant}
           vide={{

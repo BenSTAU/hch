@@ -55,6 +55,16 @@ export const CHEMIN_ADMIN_PARAMETRES = "/admin/parametres";
 /// préfixe que T-V3-07 reprendra pour la fiche client, pas `/profil`.
 export const CHEMIN_COMPTE = "/mon-compte";
 
+/// Mes vélos - `US-CYCLES-LISTER`, écran C11.
+///
+/// ⚠️ **Sous `/mon-compte`, mais cloisonné à l'espace client**, contrairement à
+/// `/mon-compte/supprimer` juste dessous. Le critère n'est pas le préfixe :
+/// une surface qui relève du **fait d'avoir un compte** reste ouverte à tous
+/// les rôles, une surface qui relève du **fait d'être client** ne l'est pas.
+/// Le droit à l'oubli est le premier, une liste de vélos le second. Constitution
+/// §3.1 amendée en ce sens le 2026-08-14.
+export const CHEMIN_CYCLES = "/mon-compte/cycles";
+
 /// Droit à l'oubli - `US-COMPTE-SUPPRIMER`.
 ///
 /// ⚠️ Route **autonome**, et c'est une propriété : `US-RGPD` y mène depuis la

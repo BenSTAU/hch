@@ -323,6 +323,26 @@ export type InterventionClient = {
   /// « montant payé » dirait au client qu'il a réglé zéro euro, quand le fait
   /// est qu'il n'a pas réglé.
   montantPaye: string | null;
+  /// Le vélo désigné par le client, `null` tant qu'aucun ne l'est - et c'est un
+  /// état nominal, pas une donnée manquante : `cycle_id` est NULLable et toute
+  /// intervention venue du tunnel en est dépourvue (dictionnaire §interventions
+  /// champ 14). Même forme que ce que lit l'écran T2 du technicien.
+  ///
+  /// ⚠️ **Référence vivante, pas instantané.** Contrairement à `price_snapshot`
+  /// et `duration_snapshot`, ces trois valeurs sont relues dans `cycles` à
+  /// chaque affichage : un client qui corrige la marque de son vélo change ce
+  /// qu'affiche un rendez-vous **déjà passé**. Dérogation assumée à la doctrine
+  /// du snapshot, qui porte sur ce qui est facturé (Constitution §4.1).
+  ///
+  /// `id` compris, contrairement à ce que lit l'écran T2 : le client **choisit**
+  /// le vélo, et un sélecteur doit savoir lequel est retenu. Le technicien, lui,
+  /// ne fait que le lire.
+  cycle: {
+    id: number;
+    brand: string;
+    model: string | null;
+    type: string;
+  } | null;
   photos: { id: number }[];
 };
 
@@ -365,6 +385,10 @@ const SELECTION_CLIENT = {
     },
     orderBy: { productId: "asc" },
   },
+  // Le vélo désigné, depuis T-V3-16 qui en est le premier écrivain. Sans
+  // `year` : le panneau nomme le vélo, il ne le décrit pas - la fiche complète
+  // est en C11.
+  cycle: { select: { id: true, brand: true, model: true, type: true } },
   // Les identifiants seuls : le contenu passe par
   // `GET /api/intervention-photos/[id]`, jamais par un chemin de fichier rendu
   // au navigateur.
@@ -430,6 +454,7 @@ function projeter(ligne: LigneLue): InterventionClient {
       ligne.payment?.status === "PAID"
         ? ligne.payment.amountSnapshot.toFixed(2)
         : null,
+    cycle: ligne.cycle,
     photos: ligne.photos,
   };
 }

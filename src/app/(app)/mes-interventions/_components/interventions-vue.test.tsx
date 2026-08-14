@@ -31,6 +31,9 @@ vi.mock("@/lib/actions/interventions/ajouter-photo", () => ({
 vi.mock("@/lib/actions/interventions/annuler-intervention", () => ({
   annulerIntervention: vi.fn(),
 }));
+vi.mock("@/lib/actions/cycles/rattacher-cycle", () => ({
+  rattacherCycle: vi.fn(),
+}));
 
 const { InterventionsVue } = await import("./interventions-vue");
 
@@ -71,14 +74,24 @@ const CONTACT = { telephone: "+33639980000", email: "contact@exemple.fr" };
 /// Injecte les deux props que T-V3-11 a ajoutees, sans les redire a chaque
 /// appel. Elles sont **requises** a dessein cote composant : `maintenant` doit
 /// venir du serveur, un defaut l'aurait laisse se lire au rendu.
+///
+/// `cycles` a rejoint la liste avec T-V3-16, avec un défaut vide plutôt qu'une
+/// injection : la très grande majorité de ces tests ne parle pas du vélo, et
+/// leur faire porter la prop aurait ajouté du bruit à chaque appel. Le bloc de
+/// rattachement a son propre fichier, `bloc-cycle.test.tsx`.
 function Vue(
   props: Omit<
     ComponentProps<typeof InterventionsVue>,
-    "contact" | "maintenant"
-  >,
+    "contact" | "maintenant" | "cycles"
+  > & { cycles?: ComponentProps<typeof InterventionsVue>["cycles"] },
 ) {
   return (
-    <InterventionsVue contact={CONTACT} maintenant={MAINTENANT} {...props} />
+    <InterventionsVue
+      contact={CONTACT}
+      maintenant={MAINTENANT}
+      cycles={[]}
+      {...props}
+    />
   );
 }
 
@@ -104,6 +117,9 @@ function intervention(surcharge: Record<string, unknown> = {}) {
     // pas passee par la cloture du technicien, donc des `PLANNED`, des
     // `IN_PROGRESS`, et des `CANCELLED` annulees par le client.
     montantPaye: null,
+    // Aucun vélo désigné : c'est l'état de toute intervention venue du tunnel,
+    // qui n'en demande aucun, et donc le défaut.
+    cycle: null,
     photos: [],
     ...surcharge,
   };
