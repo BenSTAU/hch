@@ -143,12 +143,13 @@ describe("BoutonDemarrer - la confirmation", () => {
   });
 
   it("laisse la touche Echap refermer sans rien envoyer", async () => {
-    // ⚠️ **Comportement CONSTATE, contraire a ce qu'affirme le commentaire de
-    // `src/components/ui/alert-dialog.tsx`** (« ne se ferme ni au clic
-    // exterieur ni a l'echappement »). Radix ne previent que l'interaction
+    // ⚠️ **Comportement CONSTATE par l'agent testeur**, et les deux commentaires
+    // qui affirmaient l'inverse (`ui/alert-dialog.tsx` et `bouton-demarrer.tsx`)
+    // ont ete corriges sur cette mesure. Radix ne neutralise que l'interaction
     // EXTERIEURE sur un `AlertDialog` ; l'echappement reste actif, et le motif
-    // WAI-ARIA de l'`alertdialog` l'exige. Ce qui compte pour la surete du
-    // geste est tenu quand meme : sortir par megarde n'envoie rien.
+    // WAI-ARIA de l'`alertdialog` l'exige. Ce qui compte pour la surete du geste
+    // est tenu quand meme : sortir par megarde n'envoie rien, et c'est ce que ce
+    // test fige.
     const utilisateur = userEvent.setup();
     monter();
 

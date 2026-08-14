@@ -37,9 +37,10 @@ import {
 /// au client une modification qu'il ne pourra plus faire.
 ///
 /// `AlertDialog` et non `Dialog` : Radix y rend `role="alertdialog"`, pose le
-/// focus initial sur le refus et ne se ferme ni au clic extérieur ni à
-/// l'échappement. Ajout à la DoD, tranché par Benjamin à l'ouverture de la
-/// tâche - la maquette T2 n'en porte pas, mais elle porte aussi une référence
+/// focus initial sur le refus et neutralise le clic extérieur. L'échappement,
+/// lui, referme, et sans rien envoyer - le motif WAI-ARIA l'exige, et un test
+/// le fige. Ajout à la DoD, tranché par Benjamin à l'ouverture de la tâche : la
+/// maquette T2 n'en porte pas, mais elle porte aussi une référence
 /// `#INT-2026-1042` et une fenêtre d'arrivée fictives, toutes deux retirées.
 ///
 /// ── Ce qu'il fait après coup, et pourquoi ça dépend de l'appelant
