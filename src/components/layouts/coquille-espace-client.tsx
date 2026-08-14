@@ -60,15 +60,18 @@ export function CoquilleEspaceClient({
 }) {
   return (
     <main className="mx-auto flex w-full max-w-[1920px] flex-1 flex-col gap-8 px-5 py-6 md:flex-row md:px-16 md:py-10">
-      {/* Masquée sous `md` : sur un téléphone, deux entrées mangeraient un
-          tiers de l'écran pour redire où l'on est déjà. Les onglets de chaque
-          page portent la navigation réelle de l'espace.
+      {/* 🐛 **Visible au téléphone, en rangée.** Elle était `hidden md:block`,
+          héritage du temps où elle ne portait qu'« Interventions » : la masquer
+          ne coûtait rien puisque l'en-tête du site mène déjà là. Avec « Mes
+          vélos », la même règle **orpheline l'écran** - `navigationPrincipale`
+          ne porte pas cette entrée, le menu mobile non plus, et C11 n'était
+          plus atteignable que par son URL. Constaté au navigateur en 375 px.
 
-          ⚠️ Elle le reste tant qu'il n'y a que deux entrées. Le jour où C12
-          arrive, la question se repose - une navigation d'espace inatteignable
-          au téléphone n'est plus un choix de densité. */}
-      <nav aria-label="Espace client" className="hidden w-56 shrink-0 md:block">
-        <ul className="flex flex-col gap-1">
+          Rangée sous `md`, colonne au-dessus : deux entrées tiennent sur une
+          ligne, et `overflow-x-auto` encaisse la troisième que C12 apportera
+          sans reposer la question. */}
+      <nav aria-label="Espace client" className="w-full shrink-0 md:w-56">
+        <ul className="flex flex-row gap-2 overflow-x-auto md:flex-col md:gap-1 md:overflow-visible">
           {ENTREES.map(({ segment, href, libelle, Icone }) => {
             const courant = segment === actif;
 
@@ -81,7 +84,10 @@ export function CoquilleEspaceClient({
                   // peuvent pas être courantes.
                   aria-current={courant ? "page" : undefined}
                   className={cn(
-                    "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition-colors",
+                    // `whitespace-nowrap` : en rangée, « Mes vélos » se casserait
+                    // en deux lignes dès que la troisième entrée serrera la
+                    // largeur.
+                    "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold whitespace-nowrap transition-colors",
                     courant
                       ? "bg-primary-fixed/40 text-primary hover:bg-primary-fixed/60"
                       : "text-muted-foreground hover:bg-secondary",

@@ -63,6 +63,29 @@ describe("CoquilleEspaceClient", () => {
     expect(courantes[0]).toHaveAttribute("href", CHEMIN_CYCLES);
   });
 
+  it("n'est masquée à AUCUNE largeur", () => {
+    // 🐛 Elle était `hidden md:block`, héritage du temps où elle ne portait
+    // qu'« Interventions », que l'en-tête du site atteint par ailleurs. Avec
+    // « Mes vélos », qui n'est dans aucune autre navigation, la même règle
+    // **orphelinait C11 au téléphone** : constaté au navigateur en 375 px, pas
+    // déduit.
+    //
+    // ⚠️ **Oracle de substitution, et il faut le dire** : la propriété réelle
+    // est « la barre est visible en 375 px », c'est une media query, et jsdom
+    // n'en évalue aucune - `toBeVisible()` rendrait vert un `hidden` de
+    // Tailwind. Ce test lit donc une CLASSE, ce que le dépôt évite partout
+    // ailleurs. Il encode exactement la régression, il ne prouve pas le rendu.
+    // La preuve, elle, demande Playwright sur un viewport mobile, et l'espace
+    // client n'a pas encore de scénario E2E.
+    render(
+      <CoquilleEspaceClient actif="cycles">
+        <p>contenu</p>
+      </CoquilleEspaceClient>,
+    );
+
+    expect(barre().className).not.toMatch(/(^|\s)hidden(\s|$)/);
+  });
+
   it("rend le contenu du segment, la coquille n'étant qu'un gabarit", () => {
     render(
       <CoquilleEspaceClient actif="interventions">
