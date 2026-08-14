@@ -3,7 +3,6 @@ import { z } from "zod";
 import { MOTIF_ANNULATION_MAX } from "@/lib/interventions/annulation";
 import {
   METHODES_PAIEMENT,
-  MONTANT_MAX,
   montantStrictementPositif,
   normaliserMontant,
 } from "@/lib/paiements/encaissement";
@@ -39,9 +38,16 @@ const interventionIdSchema = z.number().int().positive();
 /// en `Decimal`, il arrive parfois à `85.099999…`. La chaîne canonique va
 /// directement au constructeur de `Prisma.Decimal`.
 ///
-/// Trois refus distincts et trois messages : une forme invalide, un zéro, un
-/// dépassement de capacité. Un message unique ferait relire au technicien un
-/// champ dont il ne saurait pas ce qui cloche.
+/// Deux refus distincts et deux messages : une forme invalide, un zéro. Un
+/// message unique ferait relire au technicien un champ dont il ne saurait pas
+/// ce qui cloche.
+///
+/// ⚠️ **Aucune borne haute ici**, et c'est délibéré depuis la vérification :
+/// `normaliserMontant` n'accepte que huit chiffres avant la virgule, soit
+/// exactement la capacité de `DECIMAL(10,2)`. Un `.refine(… <= 99999999.99)`
+/// serait **inatteignable**, et son message « Montant trop élevé » ne
+/// s'afficherait jamais. Un garde inatteignable est pire qu'aucun garde : le
+/// prochain lecteur le croit actif. Cf. `lib/paiements/encaissement.ts`.
 const montantSchema = z
   .string()
   .transform((saisie, ctx) => {
@@ -50,7 +56,8 @@ const montantSchema = z
     if (canonique === null) {
       ctx.addIssue({
         code: "custom",
-        message: "Montant invalide : deux décimales au maximum.",
+        message:
+          "Montant invalide : deux décimales au maximum, huit chiffres avant la virgule.",
       });
       return z.NEVER;
     }
@@ -63,9 +70,6 @@ const montantSchema = z
     // chemin.
     message:
       "Un encaissement ne peut pas être nul. Utilisez « Clôturer sans encaissement ».",
-  })
-  .refine((canonique) => Number(canonique) <= Number(MONTANT_MAX), {
-    message: `Montant trop élevé (${MONTANT_MAX} € au maximum).`,
   });
 
 export const cloturerInterventionSchema = z.discriminatedUnion("issue", [

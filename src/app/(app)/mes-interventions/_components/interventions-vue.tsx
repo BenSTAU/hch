@@ -369,8 +369,12 @@ function PanneauDetail({
                 libellé : `payments.amount_snapshot` est ce que le technicien a
                 réellement encaissé, que Constitution §2.3 l'autorise à ajuster,
                 donc il peut différer du total. */}
+            {/* `!== null` et non une vérité booléenne : la valeur est une
+                CHAÎNE, et « une chaîne non vide » n'est pas la question posée.
+                Relevé par l'agent testeur - sans effet aujourd'hui, mais une
+                garde doit dire ce qu'elle protège. */}
             <dt className="font-heading text-base font-bold">
-              {intervention.montantPaye ? "Montant payé" : "Montant"}
+              {intervention.montantPaye !== null ? "Montant payé" : "Montant"}
             </dt>
             <dd className="font-heading text-2xl font-extrabold tracking-tighter text-primary">
               {formatPrixEuros(intervention.montantPaye ?? intervention.total)}

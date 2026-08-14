@@ -1,16 +1,22 @@
 "use client";
 
-import { CheckCircle2, HandCoins, TriangleAlert } from "lucide-react";
+import {
+  CalendarClock,
+  CheckCircle2,
+  HandCoins,
+  TriangleAlert,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { cloturerIntervention } from "@/lib/actions/paiements/cloturer-intervention";
-import { formatPrixEuros } from "@/lib/format";
+import { formatDateCourte, formatHeure, formatPrixEuros } from "@/lib/format";
 import { MOTIF_ANNULATION_MAX } from "@/lib/interventions/annulation";
 import {
   LIBELLE_METHODE,
   METHODES_PAIEMENT,
+  normaliserMontant,
   type MethodePaiement,
 } from "@/lib/paiements/encaissement";
 import { Button } from "@/components/ui/button";
@@ -178,6 +184,9 @@ function PanneauEncaissement({
   const [enCours, demarrer] = useTransition();
   const [montant, setMontant] = useState(total);
   const [methode, setMethode] = useState<MethodePaiement>("CB");
+  /// L'instant affiché, gelé à l'ouverture du panneau. Cf. le commentaire du
+  /// bloc de date plus bas : ce n'est PAS la valeur écrite en base.
+  const [ouvertureLe] = useState(() => new Date());
   /// Refus **qui laissent la modale en place** : ceux de Zod et une panne
   /// serveur. Ni l'un ni l'autre ne mute quoi que ce soit, donc rien n'est
   /// revalidé et la modale reste ouverte sur la même intervention - une alerte
@@ -211,7 +220,18 @@ function PanneauEncaissement({
       }
 
       const donnees = resultat?.data;
-      if (donnees && !donnees.ok) {
+
+      // 🐛 **Aucune donnée reconnue ne vaut pas succès**, relevé par l'agent
+      // testeur. La branche par défaut annonçait une clôture dès que ni Zod, ni
+      // `serverError`, ni un refus métier n'avaient été reconnus - donc aussi
+      // sur une réponse dont la forme aurait changé. Sur l'unique geste
+      // irréversible du parcours, le défaut par défaut doit être le doute.
+      if (!donnees) {
+        setErreur("Réponse inattendue du serveur. Rechargez la page.");
+        return;
+      }
+
+      if (!donnees.ok) {
         // Refus métier : le statut a changé sous les yeux du technicien, parce
         // qu'un autre onglet a clôturé ou que le client vient d'annuler. La
         // modale se ferme et l'écran se remet à jour - le laisser ouvert sur un
@@ -227,8 +247,17 @@ function PanneauEncaissement({
       // enregistré - Merci Marc L. ». Le remerciement au technicien par
       // lui-même n'est pas porté ; le montant, lui, l'est : c'est le seul
       // chiffre que le geste vient de figer.
+      //
+      // 🐛 **Le montant est NORMALISÉ avant d'être formaté**, relevé par l'agent
+      // testeur. `formatPrixEuros` fait `Number(price)`, et le champ accepte
+      // délibérément la virgule : « 85,10 » donnait `NaN`, donc « NaN € » sur le
+      // seul retour que reçoit le technicien après un geste irréversible. La
+      // base, elle, était juste - c'est l'écran qui mentait. `normaliserMontant`
+      // vit dans un module pur, importable ici, et c'est sa raison d'être.
+      // Le repli garde la saisie brute plutôt que d'afficher un vide : à ce
+      // stade le serveur a accepté, donc la valeur EST normalisable.
       toast.success(
-        `Intervention clôturée, ${formatPrixEuros(montant)} encaissés`,
+        `Intervention clôturée, ${formatPrixEuros(normaliserMontant(montant) ?? montant)} encaissés`,
       );
       router.refresh();
     });
@@ -294,6 +323,33 @@ function PanneauEncaissement({
             compris.
           </p>
         </div>
+
+        {/* 🔻 **La date d'encaissement est AFFICHÉE et pas saisissable**, case
+            de la DoD qui manquait au premier jet (relevée par l'agent testeur).
+            `US-PAIEMENT-ENREGISTRER` §Cas nominal liste « date-heure (préréglée
+            à maintenant) » dans le formulaire, et ne qualifie de « modifiable »
+            que le montant.
+
+            ⚠️ **La valeur affichée est l'horloge du NAVIGATEUR, gelée à
+            l'ouverture ; celle qui est écrite est datée serveur, dans la
+            transaction.** Les deux diffèrent de la durée de la saisie, quelques
+            secondes. C'est précisément pourquoi ce n'est pas un champ : une
+            date reçue du client ouvrirait l'antidatage d'un encaissement, que
+            Constitution §3.1 et l'absence d'US écartent toutes deux.
+
+            Gelée par l'initialiseur de `useState` et non relue au rendu : sans
+            ça l'heure avancerait à chaque frappe dans le champ du montant. Et
+            aucune divergence d'hydratation à craindre - ce panneau ne se monte
+            qu'au clic, bien après. */}
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <CalendarClock aria-hidden="true" className="size-4 shrink-0" />
+          <span>
+            Encaissement daté du{" "}
+            <time dateTime={ouvertureLe.toISOString()}>
+              {formatDateCourte(ouvertureLe)} à {formatHeure(ouvertureLe)}
+            </time>
+          </span>
+        </p>
 
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-2 text-sm font-medium">Mode de paiement</legend>
@@ -425,7 +481,15 @@ function PanneauRefus({
       }
 
       const donnees = resultat?.data;
-      if (donnees && !donnees.ok) {
+
+      // Même défaut par défaut que sur l'encaissement : rien de reconnu ne vaut
+      // pas succès.
+      if (!donnees) {
+        setErreur("Réponse inattendue du serveur. Rechargez la page.");
+        return;
+      }
+
+      if (!donnees.ok) {
         onTermine();
         toast.error(donnees.message, { duration: 8_000 });
         router.refresh();

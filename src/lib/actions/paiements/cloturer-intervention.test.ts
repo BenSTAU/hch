@@ -179,9 +179,17 @@ describe("cloturerIntervention - les bornes du montant", () => {
     expect(resultat?.validationErrors).toBeDefined();
   });
 
-  it("refuse un depassement de DECIMAL(10,2)", async () => {
-    // Au-dela, la base rejette l'ecriture avec une erreur de depassement
-    // numerique que rien ne traduirait en message lisible.
+  it("refuse un depassement de DECIMAL(10,2), par la FORME et non par une borne", async () => {
+    // 📐 **Le nom d'origine de ce test disait la propriete mais pas le
+    // mecanisme**, releve par l'agent testeur. Il passait par une borne
+    // numerique `<= 99999999.99` qui etait INATTEIGNABLE : le motif de
+    // `normaliserMontant` n'accepte que huit chiffres avant la virgule, donc
+    // rien de plus grand ne l'atteignait jamais. Le garde a ete retire, la
+    // propriete est inchangee - au-dela de la capacite, la base rejetterait
+    // l'ecriture avec une erreur de depassement numerique que rien ne
+    // traduirait en message lisible.
+    //
+    // Neuf chiffres : un de trop pour le motif.
     const resultat = await cloturerIntervention({
       ...DEMANDE,
       montant: "100000000",
@@ -189,6 +197,18 @@ describe("cloturerIntervention - les bornes du montant", () => {
 
     expect(resultat?.validationErrors).toBeDefined();
     expect(cloturerInterventionDuTech).not.toHaveBeenCalled();
+  });
+
+  it("accepte le plafond exact de la colonne", async () => {
+    // La contrepartie, et c'est elle qui rend le test precedent discriminant :
+    // sans elle, un motif trop STRICT passerait les deux.
+    await cloturerIntervention({ ...DEMANDE, montant: "99999999.99" });
+
+    expect(cloturerInterventionDuTech).toHaveBeenCalledWith(
+      expect.objectContaining({
+        demande: expect.objectContaining({ montant: "99999999.99" }),
+      }),
+    );
   });
 
   it.each([["12.345"], ["abc"], ["12 €"], [""], ["-5"], ["1e3"]])(

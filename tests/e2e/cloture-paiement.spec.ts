@@ -286,6 +286,23 @@ test("le refus de paiement annule l'intervention et trace un UNPAID", async ({
   expect(paiement.method).toBeNull();
   expect(paiement.paidAt).toBeNull();
   expect(paiement.amountSnapshot.toFixed(2)).toBe("0.00");
+
+  // ⚠️ **Ajout de l'agent testeur, 2026-08-14.** La DoD ecrit « entree
+  // `audit_logs` dans la meme transaction **sur les deux branches** », et
+  // seule la branche nominale la relisait en base. Le refus est justement
+  // celle qui compte le plus en cas de contestation : c'est la trace de qui a
+  // annule une intervention executee, et pourquoi.
+  const audit = await db.auditLog.findFirst({
+    where: { entityType: "interventions", entityId: String(id) },
+    orderBy: { createdAt: "desc" },
+  });
+  expect(audit?.actorId).toBe(technicien.id);
+  expect(audit?.details).toMatchObject({
+    statutAvant: "IN_PROGRESS",
+    statutApres: "CANCELLED",
+    paiement: "UNPAID",
+    motif: "Client absent au règlement",
+  });
 });
 
 test("une intervention DONE ne se cloture pas deux fois", async ({ page }) => {
@@ -461,6 +478,37 @@ test("le client lit le motif du refus, et aucun montant", async ({
   await contexteClient.close();
 });
 
+test("le toast de cloture atteint reellement l'ecran du technicien", async ({
+  page,
+}) => {
+  // 🐛 **Ajout de l'agent testeur, 2026-08-14 - l'oracle manquant du correctif
+  // embarque ici.**
+  //
+  // Cette PR corrige un bug de T-V2-02 : aucun `<Toaster>` n'etait monte dans
+  // l'espace technicien, donc les toasts de `bouton-demarrer.tsx` ne
+  // s'affichaient nulle part. Le correctif (`interventions/layout.tsx`)
+  // n'avait AUCUN test : les scenarios de ce fichier s'ancrent tous sur
+  // « Intervention terminée. », qui est le jalon du HUB, et les tests
+  // co-localises de la modale doublent `sonner`. Retirer le `<Toaster>`
+  // laisserait la suite entierement verte - soit exactement le trou d'oracle
+  // qui a permis au bug de vivre une PR de plus.
+  //
+  // C'est un test de MONTAGE, pas de copie : il verifie que le message emis
+  // par le composant a un abonne dans cet espace-la.
+  const id = await semerIntervention({ heure: 20 });
+
+  await seConnecterTechnicien(page, technicien.email);
+  await page.goto(`/interventions/${String(id)}`);
+  await page.getByRole("button", { name: "Marquer comme faite" }).click();
+
+  const modale = page.getByRole("dialog");
+  await modale.getByRole("button", { name: "Confirmer la clôture" }).click();
+
+  await expect(
+    page.getByRole("region", { name: /Notifications/ }),
+  ).toContainText(/Intervention clôturée/);
+});
+
 test("la modale de cloture ne presente aucune violation RGAA A", async ({
   page,
 }) => {
@@ -472,6 +520,32 @@ test("la modale de cloture ne presente aucune violation RGAA A", async ({
   await page.goto(`/interventions/${String(id)}`);
   await page.getByRole("button", { name: "Marquer comme faite" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
+
+  const resultats = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag21a"])
+    .analyze();
+
+  expect(resultats.violations).toEqual([]);
+});
+
+test("le panneau de refus non plus ne presente aucune violation RGAA A", async ({
+  page,
+}) => {
+  // ⚠️ **Ajout de l'agent testeur, 2026-08-14.** La DoD demande T4 « RGAA A »
+  // et la revue nomme **deux panneaux**. Le scan en page ne couvrait que celui
+  // d'encaissement ; celui de refus n'etait vu que par `jest-axe` sous jsdom,
+  // qui n'evalue ni les contrastes ni rien qui depende de la feuille de style
+  // reellement servie. Deux panneaux, deux scans.
+  const id = await semerIntervention({ heure: 21 });
+
+  await seConnecterTechnicien(page, technicien.email);
+  await page.goto(`/interventions/${String(id)}`);
+  await page.getByRole("button", { name: "Marquer comme faite" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Le client refuse le paiement" })
+    .click();
+  await expect(page.getByLabel("Motif du refus")).toBeVisible();
 
   const resultats = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag21a"])

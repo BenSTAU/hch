@@ -516,4 +516,80 @@ describe("cloturerInterventionDuTech - la concurrence", () => {
     expect(txPaymentCreate).toHaveBeenCalledOnce();
     expect(auditCreate).toHaveBeenCalledOnce();
   });
+
+  it("serialise pour de vrai : la seconde relit ce que la premiere a ecrit", async () => {
+    // 🔴 **Ajout de l'agent testeur, 2026-08-14.** Le test ci-dessus affirme
+    // « c'est la RELECTURE sous verrou qui refuse », mais son double ne
+    // l'observe pas : la relecture rend `DONE` au SECOND APPEL, quel que soit
+    // l'ordre reel des transactions. Le verrou pouvait disparaitre du code sans
+    // qu'il rougisse - c'est la prémisse fausse de [[double-de-test-premisse-fausse]],
+    // transposee au verrouillage.
+    //
+    // Ici la relecture rend un ETAT PARTAGE, comme une ligne de la base : elle
+    // ne bascule a `DONE` que parce qu'une transaction voisine a ecrit et
+    // relache. Sans le `FOR UPDATE`, les deux relectures tombent avant la
+    // premiere ecriture - c'est exactement le scenario READ COMMITTED que le
+    // verrou existe pour fermer - et deux lignes `payments` partent.
+    let statutEnBase = "IN_PROGRESS";
+
+    txInterventionFindFirst.mockImplementation(() =>
+      Promise.resolve({ ...EN_COURS, status: statutEnBase }),
+    );
+    txInterventionFindUniqueOrThrow.mockImplementation(() =>
+      Promise.resolve({ status: statutEnBase }),
+    );
+    txInterventionUpdate.mockImplementation((args: unknown) => {
+      statutEnBase = (args as { data: { status: string } }).data.status;
+      return Promise.resolve({});
+    });
+
+    const [premier, second] = await Promise.all([cloturer(), cloturer()]);
+
+    expect(premier).toMatchObject({ ok: true, issue: "encaisse" });
+    expect(second).toEqual({
+      ok: false,
+      reason: "transition_illegale",
+      statutCourant: "DONE",
+    });
+
+    expect(txPaymentCreate).toHaveBeenCalledOnce();
+    expect(txInterventionUpdate).toHaveBeenCalledOnce();
+    expect(auditCreate).toHaveBeenCalledOnce();
+  });
+
+  it("serialise aussi deux REFUS concurrents", async () => {
+    // La branche de refus est celle ou rien n'echouerait tout seul : aucune
+    // contrainte d'unicite n'est violee par une seconde ligne `UNPAID` sur une
+    // intervention deja `CANCELLED` - si, elle l'est, `intervention_id` etant
+    // UNIQUE, mais l'erreur remonterait en panne serveur opaque plutot qu'en
+    // refus metier. Et `audit_logs` daterait deux fois une cloture unique.
+    let statutEnBase = "IN_PROGRESS";
+
+    txInterventionFindFirst.mockImplementation(() =>
+      Promise.resolve({ ...EN_COURS, status: statutEnBase }),
+    );
+    txInterventionFindUniqueOrThrow.mockImplementation(() =>
+      Promise.resolve({ status: statutEnBase }),
+    );
+    txInterventionUpdate.mockImplementation((args: unknown) => {
+      statutEnBase = (args as { data: { status: string } }).data.status;
+      return Promise.resolve({});
+    });
+
+    const refus = { demande: { issue: "refuse", motif: "Client absent" } };
+    const [premier, second] = await Promise.all([
+      cloturer(refus),
+      cloturer(refus),
+    ]);
+
+    expect(premier).toEqual({ ok: true, issue: "refuse" });
+    expect(second).toEqual({
+      ok: false,
+      reason: "transition_illegale",
+      statutCourant: "CANCELLED",
+    });
+
+    expect(txPaymentCreate).toHaveBeenCalledOnce();
+    expect(auditCreate).toHaveBeenCalledOnce();
+  });
 });

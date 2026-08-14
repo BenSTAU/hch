@@ -33,21 +33,28 @@ export const LIBELLE_METHODE: Record<MethodePaiement, string> = {
   CHECK: "Chèque",
 };
 
-/// Plafond du montant encaissé : la capacité de `DECIMAL(10,2)`, soit huit
-/// chiffres avant la virgule.
+/// Deux décimales au plus, **huit chiffres avant la virgule**, séparateur point
+/// ou virgule.
+///
+/// ── C'est cette forme, et elle seule, qui borne la capacité
+///
+/// Huit chiffres plus deux décimales, c'est exactement `DECIMAL(10,2)` : le
+/// plafond représentable est `99999999.99`, et rien de plus grand ne franchit le
+/// motif. Une seconde borne numérique en aval serait **inatteignable**, donc du
+/// code mort qui prétendrait tenir une propriété déjà tenue - elle y était au
+/// premier jet, l'agent testeur l'a relevée, elle est retirée. Au-delà de cette
+/// capacité, la base rejetterait l'écriture avec une erreur de dépassement
+/// numérique que rien ne traduirait en message lisible.
 ///
 /// ⚠️ **Ce n'est pas le garde-fou F1**, qui reste v2. F-17/F1 porte sur
 /// l'**écart au `price_snapshot`** - la hausse abusive, tension Constitution
 /// §2.3 contre §3.1 - et exigera une borne relative, un motif et une trace
-/// d'audit. Ici c'est de l'intégrité de type : au-delà, la base rejette
-/// l'écriture avec une erreur de dépassement numérique que rien ne traduirait
-/// en message. Ne pas lire plus tard que v1 a implémenté F1.
-export const MONTANT_MAX = "99999999.99";
-
-/// Deux décimales au plus, huit chiffres avant la virgule, séparateur point ou
-/// virgule. La virgule est acceptée parce qu'un clavier mobile français la
-/// propose en premier, et qu'un refus de saisie pour un séparateur est une
-/// mauvaise réponse à quelqu'un debout dans une cour d'immeuble.
+/// d'audit. Ici c'est de l'intégrité de type. Ne pas lire plus tard que v1 a
+/// implémenté F1.
+///
+/// La virgule est acceptée parce qu'un clavier mobile français la propose en
+/// premier, et qu'un refus de saisie pour un séparateur est une mauvaise
+/// réponse à quelqu'un debout dans une cour d'immeuble.
 const MOTIF_MONTANT = /^\d{1,8}([.,]\d{1,2})?$/;
 
 /// Ramène une saisie à la forme canonique `123.45`, ou `null` si elle n'est pas
