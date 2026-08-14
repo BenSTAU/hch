@@ -345,12 +345,16 @@ test("le demarrage passe la ligne en IN_PROGRESS et date son debut", async ({
   });
 });
 
-test("le bouton disparait une fois l'intervention demarree", async ({
+test("le bouton de demarrage cede la place a celui de cloture", async ({
   page,
 }) => {
-  // Le hub ne propose plus rien en `IN_PROGRESS` : « Deposer des photos » est
-  // T-V2-04 et « Marquer comme terminee » est T-V2-03, ni l'une ni l'autre
-  // n'est livree. Aucun bouton inerte a la place.
+  // 🔄 **Ce test s'appelait « le bouton disparait une fois l'intervention
+  // demarree » et son commentaire disait que le hub ne propose PLUS RIEN en
+  // `IN_PROGRESS`.** C'etait vrai le 13/08, ca ne l'est plus : T-V2-03 pose la
+  // cloture. La proposition d'origine - le jeu d'actions suit le statut, et
+  // aucun bouton n'est inerte - est conservee entiere, elle a juste une seconde
+  // moitie desormais. « Deposer des photos » reste absent : T-V2-04 n'est pas
+  // livree, et un bouton grise serait le bouton inerte que la DoD interdit.
   const id = await semerIntervention({
     techId: techProprietaire.id,
     heure: 15,
@@ -371,6 +375,9 @@ test("le bouton disparait une fois l'intervention demarree", async ({
   await expect(
     page.getByRole("button", { name: "Démarrer l'intervention" }),
   ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Marquer comme faite" }),
+  ).toBeVisible();
 });
 
 test("la tournee mene au detail, et son action ne suit que les lignes PLANNED", async ({

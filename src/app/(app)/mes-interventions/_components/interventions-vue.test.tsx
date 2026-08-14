@@ -9,9 +9,9 @@
 //   · **un identifiant inconnu ne produit aucune erreur.** `interventions.id`
 //     est un SERIAL, et un message « introuvable » distinct du cas nominal
 //     confirmerait l'existence du rendez-vous d'un tiers ;
-//   · **le montant s'appelle « Montant », pas « Montant paye ».** La table
-//     `payments` n'existe pas encore (T-V2-03), et nommer « paye » un total
-//     calcule affirmerait un encaissement qu'aucune donnee ne porte.
+//   · **le libelle du montant suit la donnee.** « Montant paye » des qu'une
+//     ligne `payments` en `PAID` existe, « Montant » sinon : nommer « paye » un
+//     total calcule affirmerait un encaissement qu'aucune donnee ne porte.
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -100,6 +100,10 @@ function intervention(surcharge: Record<string, unknown> = {}) {
     technicien: "Marc L.",
     produits: [],
     total: "85.00",
+    // Par defaut aucun paiement : c'est l'etat de toute intervention qui n'est
+    // pas passee par la cloture du technicien, donc des `PLANNED`, des
+    // `IN_PROGRESS`, et des `CANCELLED` annulees par le client.
+    montantPaye: null,
     photos: [],
     ...surcharge,
   };
@@ -270,10 +274,12 @@ describe("InterventionsVue - panneau de detail", () => {
     expect(screen.getByText("60 min")).toBeInTheDocument();
   });
 
-  it("nomme le total « Montant », jamais « Montant paye »", () => {
-    // ⚠️ `payments` n'existe pas : la table arrive avec T-V2-03 « Cloture et
-    // paiement terrain » (migration 009). Ce total est celui de
-    // l'intervention, pas un encaissement constate.
+  it("nomme le total « Montant » tant qu'aucun paiement n'est enregistre", () => {
+    // 🔄 **Ce test disait « jamais Montant paye », et il a ete REMPLACE par son
+    // symetrique ci-dessous, pas supprime.** Sa version d'origine figeait
+    // l'absence de la table `payments`, que T-V3-10 (PR #33) subissait : la
+    // moitie negative reste vraie et garde tout son sens, elle couvre desormais
+    // les trois etats sans encaissement plutot que l'absence d'une table.
     render(
       <Enveloppe>
         <Vue interventions={[intervention()]} produits={[]} vide={VIDE} />
@@ -281,6 +287,72 @@ describe("InterventionsVue - panneau de detail", () => {
     );
 
     expect(screen.getByText("Montant")).toBeInTheDocument();
+    expect(screen.queryByText(/Montant pay/i)).not.toBeInTheDocument();
+  });
+
+  it("bascule sur « Montant paye » et sur le montant ENCAISSE des qu'un paiement existe", () => {
+    // Report recu de T-V3-10 (PR #33), ferme ici : l'US des passees demande
+    // `payments.amount_snapshot`, pas le total calcule.
+    //
+    // Les deux chiffres different volontairement dans cette fixture. Le
+    // technicien peut ajuster le montant encaisse (Constitution §2.3, champ
+    // `amount_snapshot` distinct de `price_snapshot` que §3.1 lui interdit de
+    // toucher) : afficher le total quand un encaissement existe montrerait au
+    // client une somme qu'il n'a pas reglee.
+    render(
+      <Enveloppe>
+        <Vue
+          interventions={[
+            intervention({ status: "DONE", montantPaye: "70.00" }),
+          ]}
+          produits={[]}
+          vide={VIDE}
+        />
+      </Enveloppe>,
+    );
+
+    expect(screen.getByText("Montant payé")).toBeInTheDocument();
+    // Deux occurrences, et c'est la propriete : la CARTE de la liste et le
+    // recapitulatif du panneau portent le meme chiffre. La carte n'a pas la
+    // place d'un libelle, donc deux montants differents pour la meme ligne
+    // laisseraient croire celui qui ne s'explique pas.
+    expect(screen.getAllByText("70,00 €")).toHaveLength(2);
+
+    // ⚠️ La ligne « Forfait » garde son prix catalogue, et l'ecart avec
+    // l'encaissement reste VISIBLE plutot que masque. Les deux chiffres ne
+    // disent pas la meme chose : `price_snapshot` est le prix fige a la
+    // reservation (Constitution §4.1), `amount_snapshot` est ce que le
+    // technicien a declare avoir encaisse. Reecrire le premier pour que la
+    // somme tombe juste falsifierait un prix, et l'ecart lui-meme est ce que
+    // le garde-fou F1 encadrera en v2.
+    expect(screen.getByText("85,00 €")).toBeInTheDocument();
+  });
+
+  it("ne dit pas « paye » sur une ligne UNPAID", () => {
+    // La branche de refus de paiement cree une ligne `payments` a 0 en `UNPAID`
+    // et passe l'intervention en `CANCELLED`. `projeter()` ne remonte le montant
+    // que sur `PAID`, donc `montantPaye` est nul ici : sans ce filtre, le client
+    // lirait « Montant paye 0,00 € » la ou le fait est qu'il n'a rien regle.
+    //
+    // ⚠️ L'ecran ne chiffre de toute facon rien sur une `CANCELLED` (arbitrage
+    // du 2026-08-11, test plus bas). Ce test-ci verifie le LIBELLE en amont de
+    // cette regle, sur le cas ou les deux se croisent.
+    render(
+      <Enveloppe>
+        <Vue
+          interventions={[
+            intervention({
+              status: "CANCELLED",
+              cancellationReason: "Client refuse le paiement",
+              montantPaye: null,
+            }),
+          ]}
+          produits={[]}
+          vide={VIDE}
+        />
+      </Enveloppe>,
+    );
+
     expect(screen.queryByText(/Montant pay/i)).not.toBeInTheDocument();
   });
 

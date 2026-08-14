@@ -310,6 +310,19 @@ export type InterventionClient = {
   technicien: string;
   produits: ProduitAttache[];
   total: string;
+  /// `payments.amount_snapshot` de la ligne de paiement, **seulement** quand
+  /// elle est en `PAID` - `US-INTERVENTIONS-LISTER-CLIENT-PASSEES` §Cas nominal,
+  /// « montant payé si `DONE` ». `null` partout ailleurs, et l'écran retombe
+  /// alors sur `total`, qui est le montant de l'intervention et non un
+  /// encaissement constaté.
+  ///
+  /// Trois cas rendent ce champ `null` sur une intervention réelle : les
+  /// `PLANNED` et `IN_PROGRESS`, qui n'ont pas encore de paiement ; les
+  /// `CANCELLED`, dont l'écran n'affiche de toute façon aucun chiffre ; et la
+  /// ligne `UNPAID` du refus de paiement, qui porte 0 - l'afficher comme un
+  /// « montant payé » dirait au client qu'il a réglé zéro euro, quand le fait
+  /// est qu'il n'a pas réglé.
+  montantPaye: string | null;
   photos: { id: number }[];
 };
 
@@ -356,6 +369,16 @@ const SELECTION_CLIENT = {
   // `GET /api/intervention-photos/[id]`, jamais par un chemin de fichier rendu
   // au navigateur.
   photos: { select: { id: true }, orderBy: { id: "asc" } },
+  // Le montant réellement encaissé, que T-V3-10 ne pouvait pas lire faute de
+  // table `payments` (PR #33). `status` accompagne le montant et n'est pas
+  // décoratif : la ligne `UNPAID` du refus de paiement porte 0, et sans le
+  // discriminant elle se lirait « payé 0,00 € ».
+  //
+  // ⚠️ Ni `recorded_by`, ni `paid_at`, ni `method` : rien de tout ça n'a de
+  // lecteur sur l'écran du client, et l'identité du technicien qui a saisi est
+  // une donnée d'exploitation. Même minimisation que le retrait d'`address.label`
+  // du `select` de la tournée (PR #41 note 2).
+  payment: { select: { amountSnapshot: true, status: true } },
 } satisfies Prisma.InterventionSelect;
 
 type LigneLue = Prisma.InterventionGetPayload<{
@@ -400,6 +423,13 @@ function projeter(ligne: LigneLue): InterventionClient {
       unitPriceSnapshot: produit.unitPriceSnapshot.toFixed(2),
     })),
     total: total.toFixed(2),
+    // `PAID` seul : voir le commentaire du champ. La comparaison est sur le
+    // statut du PAIEMENT et non sur celui de l'intervention, les deux ne disant
+    // pas la même chose - une `CANCELLED` peut porter une ligne `UNPAID`.
+    montantPaye:
+      ligne.payment?.status === "PAID"
+        ? ligne.payment.amountSnapshot.toFixed(2)
+        : null,
     photos: ligne.photos,
   };
 }

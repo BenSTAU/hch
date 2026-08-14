@@ -130,6 +130,14 @@ describe("inventaire des Server Actions", () => {
       "interventions/lister-creneaux.ts": ["actionClient"],
       "interventions/lister-tournee.ts": ["techActionClient"],
       "interventions/reserver.ts": ["authActionClient"],
+      // 🔻 **UNE seule entrée pour le domaine `paiements`, et c'est la
+      // propriété d'irréversibilité.** Le paiement est irréversible en v1
+      // (`US-PAIEMENT-ENREGISTRER` §Cas nominal) : il n'existe donc aucune
+      // action de modification ni de suppression après enregistrement, et
+      // aucune route non plus. Ce module est le SEUL écrivain de `payments`.
+      // Une seconde entrée ici rougit ce test, et c'est ce qui la rend
+      // difficile à ajouter par distraction.
+      "paiements/cloturer-intervention.ts": ["techActionClient"],
       "parametres/update-settings.ts": ["adminActionClient"],
       "produits/ajouter-produit.ts": ["authActionClient"],
       // Catalogue de libellés, pas une action.
@@ -139,9 +147,11 @@ describe("inventaire des Server Actions", () => {
     });
   });
 
-  it("n'expose que DEUX actions pour l'espace technicien, une lecture et une transition", () => {
+  it("n'expose que TROIS actions pour l'espace technicien, une lecture et deux transitions", () => {
     // 🔴 La propriété que T-V2-05 affirme, **elargie a deux entrees par
-    // T-V2-02** et pas relachee. Chacune se justifie une par une :
+    // T-V2-02 puis a trois par T-V2-03**, et jamais relachee : ce qui est fige
+    // n'est pas un COMPTE, c'est le fait que chaque entree se justifie une par
+    // une.
     //
     //   · `listerTournee` est la `queryFn` du polling de 30 s de la tournée du
     //     jour, la seule des trois vues à en avoir besoin (PLAN S1 §6.1
@@ -150,7 +160,12 @@ describe("inventaire des Server Actions", () => {
     //     RSC, et leurs paramètres vivent dans l'URL ;
     //   · `demarrerIntervention` est une MUTATION, donc une Server Action par
     //     obligation (CLAUDE.md §Server Actions : toutes les mutations y
-    //     passent).
+    //     passent) ;
+    //   · `cloturerIntervention` en est une autre, et **une seule pour ses deux
+    //     branches** : l'encaissement et le refus de paiement partagent la
+    //     garde, le verrou et la transaction que SPEC §Amendements A4 declare
+    //     indissociable. Deux actions auraient double la surface d'endpoint
+    //     POST public a garder pour un seul geste metier.
     //
     // Aucune action de LECTURE ne doit s'ajouter à cette liste : le détail de
     // T-V2-02 est un Server Component, et une action de lecture y serait un
@@ -165,6 +180,7 @@ describe("inventaire des Server Actions", () => {
     expect(technicien).toEqual([
       ["interventions/demarrer-intervention.ts", ["techActionClient"]],
       ["interventions/lister-tournee.ts", ["techActionClient"]],
+      ["paiements/cloturer-intervention.ts", ["techActionClient"]],
     ]);
   });
 

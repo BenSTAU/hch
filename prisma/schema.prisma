@@ -115,6 +115,7 @@ model User {
   interventionsAsClient Intervention[]        @relation("InterventionClient")
   interventionsAsTech   Intervention[]        @relation("InterventionTech")
   photosUploaded        Photo[]
+  paiementsSaisis       Payment[]
 
   @@map("users")
 }
@@ -503,6 +504,13 @@ model Intervention {
 
   products InterventionProduct[]
   photos   Photo[]
+  /// Facultative au sens du schéma, obligatoire au sens du métier sur un statut
+  /// terminal atteint par la clôture : SPEC §Amendements A4 fait du couple
+  /// `MARQUER-FAITE` ↔ `PAIEMENT-ENREGISTRER` un couplage indissociable, tenu
+  /// par la transaction de `cloturerInterventionDuTech`. Le `?` couvre les
+  /// `PLANNED` et les `IN_PROGRESS`, qui n'ont pas encore de paiement, et les
+  /// `CANCELLED` par le client, qui n'en auront jamais.
+  payment  Payment?
 
   /// Dérivation des créneaux : « les interventions de CE technicien dans CETTE
   /// fenêtre », à chaque ouverture de la grille et toutes les 30 s ensuite.
@@ -546,6 +554,63 @@ model Photo {
   intervention Intervention @relation(fields: [interventionId], references: [id])
 
   @@map("photos")
+}
+
+/// Encaissement terrain déclaré par le technicien à la clôture -
+/// `US-PAIEMENT-ENREGISTRER`, migration 009. Alimentée par T-V2-03.
+///
+/// ⚠️ **Aucun paiement en ligne** (Constitution §2.3). Cette table ne porte
+/// pas une transaction, elle porte la **déclaration** de ce que le technicien a
+/// encaissé sur place. Ni identifiant de transaction, ni empreinte de carte, ni
+/// référence de prestataire : il n'y en a pas.
+model Payment {
+  /// SERIAL et non UUID, par cohérence avec le dictionnaire §payments : cet
+  /// identifiant n'apparaît dans aucune URL, donc rien à énumérer.
+  id Int @id @default(autoincrement())
+
+  /// **UNIQUE** : 1..1 avec l'intervention, pas de multi-paiement en v1. C'est
+  /// aussi le second filet de l'irréversibilité - une seconde clôture ne peut
+  /// pas insérer une ligne de plus, même si la garde de statut était contournée.
+  interventionId Int @unique @map("intervention_id")
+
+  /// Montant figé encaissé, et non recalculé à la lecture : le technicien peut
+  /// l'ajuster (Constitution §2.3), il ne vaut donc pas le total de
+  /// l'intervention. 0 sur `UNPAID`.
+  ///
+  /// ⚠️ **Distinct de `interventions.price_snapshot`**, que §3.1 interdit au
+  /// technicien de modifier. Deux champs, deux régimes (finding audit F-17).
+  amountSnapshot Decimal @default(0) @map("amount_snapshot") @db.Decimal(10, 2)
+
+  /// CB | CASH | CHECK - CHECK SQL. NULL sur `UNPAID`.
+  method String? @db.VarChar(10)
+
+  /// PAID | UNPAID - CHECK SQL. `UNPAID` est le repli de refus de paiement sur
+  /// place (audit du 2026-07-06, B2).
+  ///
+  /// La validation croisée « `PAID` implique `method` et `paid_at` renseignés »
+  /// n'est **pas** un CHECK SQL : le dictionnaire §payments la range en Zod plus
+  /// Server Action, le DSL Prisma ne l'exprimant pas.
+  status String @default("PAID") @db.VarChar(10)
+
+  /// Instant d'encaissement. NULL sur `UNPAID`.
+  ///
+  /// `TIMESTAMP` et non `timestamptz` : l'exception de PLAN S2 §T5 reste
+  /// réservée à `appointment_at`, seule colonne sur laquelle une contrainte SQL
+  /// raisonne. La convention tout-UTC s'applique ici comme partout ailleurs.
+  paidAt DateTime? @map("paid_at") @db.Timestamp(6)
+
+  /// Le technicien qui a saisi - traçabilité (Constitution §4.2). Jamais NULL,
+  /// y compris sur `UNPAID` : un refus de paiement est déclaré par quelqu'un.
+  recordedBy String @map("recorded_by") @db.Uuid
+
+  /// Peut différer de `paid_at`, et la différence est entièrement expliquée par
+  /// la branche de refus, où `paid_at` est NULL quand celui-ci est NN.
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  intervention Intervention @relation(fields: [interventionId], references: [id])
+  tech         User         @relation(fields: [recordedBy], references: [id])
+
+  @@map("payments")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
