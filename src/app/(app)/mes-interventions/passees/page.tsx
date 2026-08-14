@@ -86,6 +86,11 @@ export default async function InterventionsPasseesPage({
           // terminale, et charger le catalogue produit ici serait une requête
           // pour un bloc que le panneau ne rendra pas.
           produits={[]}
+          // Aucun vélo proposé, pour la même raison : le rattachement est
+          // borné à `PLANNED`, donc le sélecteur ne se rend jamais ici. Le
+          // vélo DÉJÀ rattaché, lui, s'affiche - il vient de l'intervention,
+          // pas de cette liste.
+          cycles={[]}
           // Aucune ligne de cet onglet n'est annulable : le bloc ne se rend
           // jamais ici, et le contact n'a donc rien à alimenter. Le lire quand
           // même serait une requête pour un composant que le panneau écarte.

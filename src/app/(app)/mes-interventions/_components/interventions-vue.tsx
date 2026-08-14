@@ -4,6 +4,7 @@ import { CalendarClock, MapPin, User, Wrench } from "lucide-react";
 import Link from "next/link";
 import { parseAsInteger, useQueryState } from "nuqs";
 
+import type { CycleClient } from "@/lib/db/queries/cycles";
 import type { InterventionClient } from "@/lib/db/queries/interventions";
 import type { ProduitVendable } from "@/lib/db/queries/produits";
 import {
@@ -18,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { BlocAnnulation, type ContactSociete } from "./bloc-annulation";
+import { BlocCycle } from "./bloc-cycle";
 import { BlocPhotos } from "./bloc-photos";
 import { BlocProduits } from "./bloc-produits";
 
@@ -47,6 +49,7 @@ import { BlocProduits } from "./bloc-produits";
 export function InterventionsVue({
   interventions,
   produits,
+  cycles,
   contact,
   maintenant,
   vide,
@@ -55,6 +58,9 @@ export function InterventionsVue({
   /// Catalogue vendable, pour le bloc T+n du panneau. Vide sur l'onglet des
   /// passées, où aucune ligne n'est modifiable.
   produits: readonly ProduitVendable[];
+  /// Les vélos du client, pour le sélecteur de rattachement du panneau. Vide
+  /// sur l'onglet des passées, pour la même raison que le catalogue.
+  cycles: readonly CycleClient[];
   /// Coordonnées de l'atelier, affichées par le bloc d'annulation quand la
   /// fenêtre H-24 est dépassée (`US-INTERVENTION-ANNULER-CLIENT` §Cas d'erreur).
   contact: ContactSociete;
@@ -113,9 +119,20 @@ export function InterventionsVue({
         ))}
       </ul>
 
+      {/* 🐛 **`key` sur l'intervention : changer de ligne remonte le panneau.**
+          Les trois blocs de mutation gardent leur refus dans un `useState`
+          local. Sans cette clé, le panneau ne se démonte pas au changement de
+          sélection : un « Intervention introuvable. » posé sur une ligne
+          restait affiché sous la suivante, à laquelle il ne s'appliquait pas.
+          Mesuré par l'agent testeur sur le bloc vélo ; le défaut est de famille,
+          `bloc-produits` et `bloc-photos` le partageaient. Le chemin réel : le
+          technicien démarre le rendez-vous pendant que l'onglet est ouvert, le
+          refus s'affiche, le client clique une autre ligne. */}
       <PanneauDetail
+        key={courante.id}
         intervention={courante}
         produits={produits}
+        cycles={cycles}
         contact={contact}
         maintenant={maintenant}
       />
@@ -253,11 +270,13 @@ function CarteIntervention({
 function PanneauDetail({
   intervention,
   produits,
+  cycles,
   contact,
   maintenant,
 }: {
   intervention: InterventionClient;
   produits: readonly ProduitVendable[];
+  cycles: readonly CycleClient[];
   contact: ContactSociete;
   maintenant: Date;
 }) {
@@ -317,6 +336,15 @@ function PanneauDetail({
           Motif de l&apos;annulation : {intervention.cancellationReason}
         </p>
       ) : null}
+
+      {/* Placé AVANT les produits et les photos : il désigne l'objet de
+          l'intervention, quand les deux autres décrivent ce qui s'y ajoute. */}
+      <BlocCycle
+        interventionId={intervention.id}
+        cycle={intervention.cycle}
+        cycles={cycles}
+        modifiable={modifiable}
+      />
 
       <BlocProduits
         interventionId={intervention.id}

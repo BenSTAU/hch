@@ -31,6 +31,10 @@ vi.mock("@/lib/actions/interventions/ajouter-photo", () => ({
 vi.mock("@/lib/actions/interventions/annuler-intervention", () => ({
   annulerIntervention: vi.fn(),
 }));
+const rattacherCycle = vi.fn();
+vi.mock("@/lib/actions/cycles/rattacher-cycle", () => ({
+  rattacherCycle: (args: unknown) => rattacherCycle(args),
+}));
 
 const { InterventionsVue } = await import("./interventions-vue");
 
@@ -71,14 +75,24 @@ const CONTACT = { telephone: "+33639980000", email: "contact@exemple.fr" };
 /// Injecte les deux props que T-V3-11 a ajoutees, sans les redire a chaque
 /// appel. Elles sont **requises** a dessein cote composant : `maintenant` doit
 /// venir du serveur, un defaut l'aurait laisse se lire au rendu.
+///
+/// `cycles` a rejoint la liste avec T-V3-16, avec un défaut vide plutôt qu'une
+/// injection : la très grande majorité de ces tests ne parle pas du vélo, et
+/// leur faire porter la prop aurait ajouté du bruit à chaque appel. Le bloc de
+/// rattachement a son propre fichier, `bloc-cycle.test.tsx`.
 function Vue(
   props: Omit<
     ComponentProps<typeof InterventionsVue>,
-    "contact" | "maintenant"
-  >,
+    "contact" | "maintenant" | "cycles"
+  > & { cycles?: ComponentProps<typeof InterventionsVue>["cycles"] },
 ) {
   return (
-    <InterventionsVue contact={CONTACT} maintenant={MAINTENANT} {...props} />
+    <InterventionsVue
+      contact={CONTACT}
+      maintenant={MAINTENANT}
+      cycles={[]}
+      {...props}
+    />
   );
 }
 
@@ -104,6 +118,9 @@ function intervention(surcharge: Record<string, unknown> = {}) {
     // pas passee par la cloture du technicien, donc des `PLANNED`, des
     // `IN_PROGRESS`, et des `CANCELLED` annulees par le client.
     montantPaye: null,
+    // Aucun vélo désigné : c'est l'état de toute intervention venue du tunnel,
+    // qui n'en demande aucun, et donc le défaut.
+    cycle: null,
     photos: [],
     ...surcharge,
   };
@@ -258,6 +275,51 @@ describe("InterventionsVue - liste", () => {
     await utilisateur.click(cartes[1]!);
 
     expect(screen.getByText("Diagnostic express")).toBeInTheDocument();
+  });
+
+  it("n'emporte pas le refus d'une intervention sur la suivante", async () => {
+    // 🐛 Le panneau est monte avec `key={courante.id}` depuis que l'agent
+    // testeur a mesure ce defaut (C2) : les trois blocs de mutation gardent
+    // leur refus dans un `useState` local, et sans remontage un « Intervention
+    // introuvable. » posé sur une ligne restait affiché sous la suivante.
+    //
+    // Le chemin reel : le technicien demarre le rendez-vous pendant que
+    // l'onglet est ouvert, le refus s'affiche, le client clique une autre
+    // ligne. Le defaut etait de famille - `bloc-produits` et `bloc-photos` le
+    // partageaient -, la cle les couvre tous les trois.
+    rattacherCycle.mockResolvedValue({
+      data: { ok: false, message: "Intervention introuvable." },
+    });
+
+    const utilisateur = userEvent.setup();
+    render(
+      <Enveloppe>
+        <Vue
+          interventions={[intervention(), intervention({ id: 848 })]}
+          produits={[]}
+          cycles={[
+            {
+              id: 12,
+              brand: "Decathlon",
+              model: "Elops 900",
+              type: "CLASSIC",
+              year: 2023,
+            },
+          ]}
+          vide={VIDE}
+        />
+      </Enveloppe>,
+    );
+
+    await utilisateur.click(screen.getByRole("radio", { name: /Decathlon/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Intervention introuvable.",
+    );
+
+    const cartes = screen.getAllByRole("button", { name: /Marc L\./ });
+    await utilisateur.click(cartes[1]!);
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
 

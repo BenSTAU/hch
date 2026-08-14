@@ -503,6 +503,52 @@ describe("listerInterventionsAVenir", () => {
     expect(intervention?.photos).toEqual([{ id: 7 }, { id: 9 }]);
     expect(JSON.stringify(intervention)).not.toContain("uploads/");
   });
+
+  it("DEMANDE le velo au select, sans quoi le selecteur serait vide en permanence", async () => {
+    // Ajoute par l'agent testeur (T-V3-16). C'est exactement le defaut que
+    // cette tache existe pour refermer, mais dans l'autre sens : T-V2-02
+    // affichait une colonne que personne n'ecrivait, et retirer cette ligne du
+    // `select` rendrait une colonne ecrite que personne ne lit. Le symptome
+    // serait « Aucun velo » sur toutes les interventions, indefiniment, sans
+    // aucune erreur - et rien ne le voyait.
+    interventionFindMany.mockResolvedValue([]);
+
+    await listerInterventionsAVenir({ clientId: CLIENT });
+
+    const args = interventionFindMany.mock.calls[0]?.[0] as {
+      select: Record<string, unknown>;
+    };
+
+    expect(args.select).toHaveProperty("cycle");
+  });
+
+  it("descend le velo rattache jusqu'au DTO, id compris", async () => {
+    // Ajoute par l'agent testeur (T-V3-16). L'`id` en fait partie et ce n'est
+    // pas accessoire : c'est lui qui coche la bonne dalle du selecteur. Sans
+    // lui, l'ecran afficherait le velo dans la liste mais « Aucun velo » en
+    // valeur retenue.
+    interventionFindMany.mockResolvedValue([
+      ligneLue({
+        cycle: {
+          id: 12,
+          brand: "Decathlon",
+          model: "Elops 900",
+          type: "CLASSIC",
+        },
+      }),
+    ]);
+
+    const [intervention] = await listerInterventionsAVenir({
+      clientId: CLIENT,
+    });
+
+    expect(intervention?.cycle).toEqual({
+      id: 12,
+      brand: "Decathlon",
+      model: "Elops 900",
+      type: "CLASSIC",
+    });
+  });
 });
 
 describe("listerInterventionsPassees", () => {
