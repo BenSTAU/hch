@@ -110,6 +110,24 @@ describe("SiteHeader — session ouverte", () => {
     ).toHaveAttribute("href", "/mes-interventions/a-venir");
   });
 
+  it("mène à « Mes vélos » depuis le menu", async () => {
+    // C11 n'était atteignable que par la barre latérale de la coquille, donc
+    // une fois DÉJÀ dans l'espace client. Elle n'est pas doublée dans la nav
+    // comme « Mes interventions » l'est : le menu est sa seule entrée hors de
+    // l'espace, et c'est ce que ce test tient.
+    const utilisateur = userEvent.setup();
+    render(<SiteHeader user={CAMILLE} reservationDisponible />);
+
+    await utilisateur.click(
+      screen.getByRole("button", { name: "Ouvrir le menu de Camille Durand" }),
+    );
+
+    expect(screen.getByRole("menuitem", { name: "Mes vélos" })).toHaveAttribute(
+      "href",
+      "/mon-compte/cycles",
+    );
+  });
+
   it("porte « Mes interventions » dans la nav, sans ouvrir de menu", () => {
     // L'entrée double celle du menu utilisateur, et c'est voulu : le menu doit
     // être ouvert pour livrer son contenu, alors que l'espace client est la
@@ -212,6 +230,30 @@ describe("SiteHeader - la navigation suit le rôle (T-V2-05)", () => {
     ).toHaveAttribute("href", "/interventions/du-jour");
     expect(
       screen.queryByRole("menuitem", { name: "Mes interventions" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("ne propose « Mes vélos » ni au technicien ni à l'administrateur", async () => {
+    // `/mon-compte/cycles` est gardé par `requireEspaceClient`, qui refuse
+    // ROLE_TECH et ROLE_ADMIN : proposer l'entrée à ces deux-là serait un lien
+    // vers un 403, le défaut même que T-V2-05 a corrigé sur l'entrée d'espace.
+    const utilisateur = userEvent.setup();
+    const tech = render(<SiteHeader user={MARC} reservationDisponible />);
+
+    await utilisateur.click(
+      screen.getByRole("button", { name: "Ouvrir le menu de Marc Leroy" }),
+    );
+    expect(
+      screen.queryByRole("menuitem", { name: "Mes vélos" }),
+    ).not.toBeInTheDocument();
+    tech.unmount();
+
+    render(<SiteHeader user={ADMIN} reservationDisponible />);
+    await utilisateur.click(
+      screen.getByRole("button", { name: "Ouvrir le menu de Alex Roy" }),
+    );
+    expect(
+      screen.queryByRole("menuitem", { name: "Mes vélos" }),
     ).not.toBeInTheDocument();
   });
 

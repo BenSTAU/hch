@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Bike,
   CalendarDays,
   ChevronDown,
   LogOut,
@@ -9,6 +10,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+import { CHEMIN_CYCLES } from "@/lib/routes";
 import { logout } from "@/lib/actions/auth/logout";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -88,6 +90,26 @@ export function UserMenu({
             {espace.label}
           </Link>
         </DropdownMenuItem>
+
+        {/* ⚠️ **Le discriminant sert de garde, et la coïncidence est exacte.**
+            `espacePrincipal` ne rend « client » que pour un compte qui n'est ni
+            admin ni tech, et `requireEspaceClient` refuse précisément ces deux
+            rôles : l'entrée n'apparaît donc jamais devant quelqu'un qui
+            récolterait un 403 en la suivant. Ne pas la sortir de cette
+            condition sans revoir la garde en même temps.
+
+            C11 n'était atteignable que depuis la barre latérale de la coquille,
+            donc une fois DÉJÀ dans l'espace client. T-V3-16 avait choisi de la
+            rendre visible au téléphone plutôt que de la porter ici ; arbitrage
+            revu le 2026-08-16, à propager au write-back. */}
+        {espace.espace === "client" ? (
+          <DropdownMenuItem asChild>
+            <Link href={CHEMIN_CYCLES}>
+              <Bike aria-hidden="true" />
+              Mes vélos
+            </Link>
+          </DropdownMenuItem>
+        ) : null}
 
         <DropdownMenuSeparator />
 
