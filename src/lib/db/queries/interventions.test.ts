@@ -26,6 +26,9 @@ const photoCreateMany = vi.fn();
 const serviceFindUniqueOrThrow = vi.fn();
 const addressFindFirst = vi.fn();
 const queryRaw = vi.fn();
+/// Garde de propriété du vélo désigné à C5 (2026-08-16). Elle vit DANS la
+/// transaction : c'est elle que ce faux client doit exposer.
+const cycleFindFirst = vi.fn();
 
 // Annulation (T-V3-11). Elle lit, verrouille, relit puis écrit, le tout dans
 // la transaction : ses quatre appels ont donc leur double ici.
@@ -90,6 +93,7 @@ function creerTx() {
     photo: { createMany: photoCreateMany },
     service: { findUniqueOrThrow: serviceFindUniqueOrThrow },
     address: { findFirst: addressFindFirst },
+    cycle: { findFirst: (args: unknown) => cycleFindFirst(args) },
     auditLog: { create: (args: unknown) => auditCreate(args) },
   };
 
@@ -141,9 +145,18 @@ vi.mock("@/lib/db/client", () => ({
   },
 }));
 
+/// ⚠️ **`resoudreCommune` est un espion depuis le 2026-08-16 (agent testeur).**
+/// C'était une fonction nue, donc invisible aux assertions - or elle ÉCRIT :
+/// `upsert` sur `cities` (`queries/adresses.ts:47-58`). C'est la première
+/// écriture de la transaction de réservation, avant même l'adresse, et donc la
+/// vraie borne haute de la garde de propriété du vélo. Sans cet espion, un
+/// refus placé juste après elle laissait toute la suite verte.
+const resoudreCommune = vi.fn();
+const creerAdresse = vi.fn();
+
 vi.mock("@/lib/db/queries/adresses", () => ({
-  resoudreCommune: () => Promise.resolve(69_383),
-  creerAdresse: () => Promise.resolve(77),
+  resoudreCommune: (...args: unknown[]) => resoudreCommune(...args),
+  creerAdresse: (...args: unknown[]) => creerAdresse(...args),
 }));
 
 // La tournee lit `addresses.location`, colonne `Unsupported` que Prisma masque :
@@ -202,6 +215,9 @@ function parametres(
     techId: "22222222-2222-4222-8222-222222222222",
     appointmentAt: new Date("2027-05-10T07:00:00.000Z"),
     clientId: CLIENT,
+    // Le défaut du tunnel : aucun vélo désigné. Les cas qui en désignent un
+    // passent leur propre valeur par la surcharge.
+    cycleId: null,
     photos: [],
     panier: [],
     ...surcharge,
@@ -214,6 +230,8 @@ beforeEach(() => {
   rollbacks.length = 0;
   fileDesVerrous = Promise.resolve();
 
+  resoudreCommune.mockResolvedValue(69_383);
+  creerAdresse.mockResolvedValue(77);
   addressFindFirst.mockResolvedValue({ id: 77 });
   serviceFindUniqueOrThrow.mockResolvedValue({
     price: new Prisma.Decimal("85.00"),
@@ -222,6 +240,9 @@ beforeEach(() => {
   });
   interventionCreate.mockResolvedValue({ id: 4242 });
   queryRaw.mockResolvedValue([ANTIVOL, CHAMBRE]);
+  // Par defaut le velo designe appartient bien a l'appelant. Les tests du refus
+  // rendent `null` explicitement.
+  cycleFindFirst.mockResolvedValue({ id: 7 });
 });
 
 describe("reserverIntervention - l'intervention et son panier partagent le meme sort", () => {
@@ -289,6 +310,184 @@ describe("reserverIntervention - l'intervention et son panier partagent le meme 
     const creation = interventionCreate.mock.invocationCallOrder[0] ?? 0;
     const ligne = interventionProductCreate.mock.invocationCallOrder[0] ?? 0;
     expect(creation).toBeLessThan(ligne);
+  });
+});
+
+describe("reserverIntervention - le velo designe a C5", () => {
+  // Ajoute le 2026-08-16, quand le tunnel est devenu le SECOND ecrivain de
+  // `interventions.cycle_id`. Le dictionnaire v2.4 ecrivait « reste NULL sur
+  // toute intervention venue du tunnel » : ce bloc est ce qui rend la bascule
+  // verifiable plutot que declaree.
+
+  it("ecrit `cycle_id` quand le velo est celui de l'appelant", async () => {
+    const resultat = await reserverIntervention(parametres({ cycleId: 7 }));
+
+    expect(resultat.ok).toBe(true);
+    expect(interventionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ cycleId: 7 }),
+      }),
+    );
+  });
+
+  it("laisse `cycle_id` NULL quand aucun velo n'est designe", async () => {
+    // L'etat nominal, pas une donnee manquante : la colonne est NULLable et le
+    // rattachement est facultatif.
+    const resultat = await reserverIntervention(parametres({ cycleId: null }));
+
+    expect(resultat.ok).toBe(true);
+    expect(interventionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ cycleId: null }),
+      }),
+    );
+    // Aucune lecture de garde : il n'y a rien a verifier quand rien n'est
+    // designe, et une requete de plus par reservation se paierait sur le chemin
+    // nominal du produit.
+    expect(cycleFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("cherche le velo SUR LE COUPLE (id, proprietaire)", async () => {
+    // 🔴 La FK garantit que le velo existe, pas qu'il est a l'appelant. Sans le
+    // `userId` dans le `WHERE`, un identifiant forge rattacherait le velo d'un
+    // tiers - `cycles.id` est un `SERIAL`, donc enumerable.
+    await reserverIntervention(parametres({ cycleId: 7 }));
+
+    expect(cycleFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 7, userId: CLIENT },
+      }),
+    );
+  });
+
+  it("REFUSE la reservation entiere quand le velo n'est pas le sien", async () => {
+    cycleFindFirst.mockResolvedValue(null);
+
+    const resultat = await reserverIntervention(parametres({ cycleId: 999 }));
+
+    expect(resultat).toMatchObject({
+      ok: false,
+      reason: "cycle_introuvable",
+    });
+    // Reserver en ignorant le velo en silence donnerait au client un
+    // rendez-vous qu'il n'a pas demande sous cette forme.
+    expect(interventionCreate).not.toHaveBeenCalled();
+  });
+
+  it("n'ecrit RIEN du tout quand le velo est refuse", async () => {
+    // 🔴 La propriete qui depend de la POSITION de la garde. Rendre une valeur
+    // depuis le rappel de `$transaction` COMMITE : placee apres la creation de
+    // l'adresse, la garde commiterait une adresse orpheline a chaque refus.
+    // Ce test echoue si quelqu'un descend le bloc de quelques lignes.
+    cycleFindFirst.mockResolvedValue(null);
+
+    await reserverIntervention(parametres({ cycleId: 999 }));
+
+    expect(addressFindFirst).not.toHaveBeenCalled();
+    expect(serviceFindUniqueOrThrow).not.toHaveBeenCalled();
+    expect(photoCreateMany).not.toHaveBeenCalled();
+    expect(interventionProductCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuse le velo AVANT de consommer le stock du panier", async () => {
+    // L'ordre importe : un refus tardif aurait deja decremente le stock, que le
+    // rollback rendrait mais apres avoir fait courir la transaction pour rien.
+    cycleFindFirst.mockResolvedValue(null);
+
+    await reserverIntervention(
+      parametres({ cycleId: 999, panier: [{ productId: 2, quantity: 1 }] }),
+    );
+
+    expect(queryRaw).not.toHaveBeenCalled();
+    expect(productUpdate).not.toHaveBeenCalled();
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Ajouts de l'agent testeur, 2026-08-16.
+  // ─────────────────────────────────────────────────────────────────────
+
+  it("ne commite AUCUNE commune quand le velo est refuse", async () => {
+    // 🔴 La borne haute reelle de la garde, et le test voisin ne la voyait pas.
+    // `resoudreCommune` fait un `upsert` sur `cities` : c'est la PREMIERE
+    // ecriture de la transaction, avant `addressFindFirst`. Descendre la garde
+    // d'une seule ligne - sous `resoudreCommune`, au-dessus de l'adresse -
+    // laissait « n'ecrit RIEN du tout » entierement vert tout en commitant une
+    // commune neuve a chaque identifiant de velo forge.
+    //
+    // Une commune orpheline est moins couteuse qu'une adresse, mais c'est une
+    // ligne ecrite par un appelant a qui on vient de tout refuser, et
+    // `cities` n'a aucun proprietaire pour la reprendre.
+    cycleFindFirst.mockResolvedValue(null);
+
+    await reserverIntervention(parametres({ cycleId: 999 }));
+
+    expect(resoudreCommune).not.toHaveBeenCalled();
+    expect(creerAdresse).not.toHaveBeenCalled();
+  });
+
+  it("refuse par un RETOUR, pas par une exception qui remonterait en 500", async () => {
+    // Le refus est un motif metier : il traverse l'union discriminee et l'action
+    // en tire un libelle. S'il sortait par un throw - comme `VenteRefusee` -, il
+    // faudrait un `catch` de plus dans le helper, et sans lui l'ecran afficherait
+    // « une erreur est survenue » sur un vélo simplement retire de la liste.
+    //
+    // La contrepartie est ecrite dans le code : la transaction COMMITE, et c'est
+    // sans consequence parce que rien n'y a encore ete ecrit. Ces deux
+    // assertions tiennent ensemble la these de la position - c'est le fait
+    // qu'elle commite qui rend la position non negociable.
+    cycleFindFirst.mockResolvedValue(null);
+
+    const resultat = await reserverIntervention(parametres({ cycleId: 999 }));
+
+    expect(resultat.ok).toBe(false);
+    expect(commits).toHaveLength(1);
+    expect(rollbacks).toHaveLength(0);
+  });
+
+  it("lit le velo DANS la transaction, pas sur le client global", async () => {
+    // Le faux `db` du haut de fichier n'expose aucun modele `cycle` : une garde
+    // qui lirait `db.cycle.findFirst` leverait ici. L'assertion rend la
+    // propriete explicite plutot que de la laisser tenir a un `TypeError`
+    // fortuit - la lecture doit voir l'instantane de la transaction, sinon elle
+    // repond sur un etat que le commit ne partage pas.
+    await reserverIntervention(parametres({ cycleId: 7 }));
+
+    expect(cycleFindFirst).toHaveBeenCalledTimes(1);
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("ne relit pas la ligne pour en tirer l'identifiant a ecrire", async () => {
+    // La garde repond OUI ou NON, elle ne fournit pas la valeur. Ecrire l'`id`
+    // rendu par la lecture au lieu de celui recu ferait dependre l'ecriture d'un
+    // `select` qui pourrait un jour changer de forme, et masquerait une
+    // substitution silencieuse.
+    cycleFindFirst.mockResolvedValue({ id: 4 });
+
+    await reserverIntervention(parametres({ cycleId: 7 }));
+
+    expect(interventionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ cycleId: 7 }),
+      }),
+    );
+  });
+
+  it("ne fait pas dependre le refus de l'existence d'un panier ou de photos", async () => {
+    // Anti-enumeration : le refus doit etre le MEME quel que soit le reste de la
+    // charge utile. Un refus qui ne surviendrait qu'a panier vide donnerait a
+    // qui incremente un signal de plus que le seul motif.
+    cycleFindFirst.mockResolvedValue(null);
+
+    const nu = await reserverIntervention(parametres({ cycleId: 999 }));
+    const charge = await reserverIntervention(
+      parametres({
+        cycleId: 999,
+        panier: [{ productId: 2, quantity: 1 }],
+        photos: ["uploads/11111111-1111-4111-8111-111111111111.webp"],
+      }),
+    );
+
+    expect(nu).toEqual(charge);
   });
 });
 

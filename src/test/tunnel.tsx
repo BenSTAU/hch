@@ -109,6 +109,32 @@ export const PRODUITS = [
   },
 ];
 
+/// Vélos du visiteur connecté, pour le bloc « Vélo concerné » de C5.
+///
+/// Deux lignes et deux types distincts : c'est le minimum qui permette de
+/// vérifier qu'un choix remplace l'autre et que le badge suit la valeur d'ENUM.
+/// Marques génériques, comme le seed - le dépôt bascule public.
+///
+/// ⚠️ Le tableau **vide** est l'autre cas nominal et non un cas limite : le seed
+/// ne pose aucun vélo, donc un client qui vient de créer son compte au
+/// récapitulatif n'en a aucun. Les tests le posent en passant `[]`.
+export const CYCLES = [
+  {
+    id: 7,
+    brand: "Decathlon",
+    model: "Elops 900",
+    type: "CLASSIC",
+    year: 2023,
+  },
+  {
+    id: 4,
+    brand: "Moustache",
+    model: null,
+    type: "ELECTRIC",
+    year: null,
+  },
+];
+
 /// Adresse de démonstration, alignée sur `src/mocks/handlers.ts` : la même
 /// donnée sert le mock réseau et les props des tests, pour qu'un changement de
 /// fixture ne laisse pas deux vérités.

@@ -488,6 +488,139 @@ describe("reserver - ce qui vient de la session ne vient jamais de la charge uti
   });
 });
 
+describe("reserver - le vélo désigné à C5", () => {
+  beforeEach(() => {
+    banNominale();
+  });
+
+  it("transporte le vélo choisi jusqu'à la transaction", async () => {
+    await reserver(chargeUtile(CRENEAU_VALIDE, { cycleId: 7 }));
+
+    expect(reserverIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({ cycleId: 7 }),
+    );
+  });
+
+  it("vaut `null` quand la charge utile n'en porte aucun", async () => {
+    // Le défaut du schéma. Il laisse valides les appelants antérieurs au
+    // 2026-08-16, et `null` est l'état nominal de la colonne.
+    await reserver(chargeUtile(CRENEAU_VALIDE));
+
+    expect(reserverIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({ cycleId: null }),
+    );
+  });
+
+  it("nomme le refus du vélo, sans le confondre avec un refus de stock", async () => {
+    // 🔴 `messageEchecStock` ne connaît que les motifs de stock : lui passer
+    // `cycle_introuvable` ferait répondre l'écran à côté de la question.
+    reserverIntervention.mockResolvedValue({
+      ok: false,
+      reason: "cycle_introuvable",
+    });
+
+    const resultat = await reserver(
+      chargeUtile(CRENEAU_VALIDE, { cycleId: 999 }),
+    );
+
+    expect(resultat?.data?.ok).toBe(false);
+    if (resultat?.data?.ok === false) {
+      expect(resultat.data.message).toMatch(/vélo/i);
+      // Le créneau n'est pas perdu : rien ne s'est joué dessus, et rafraîchir la
+      // grille ferait reprendre un choix qui reste valable.
+      expect(resultat.data.creneauPerdu).toBe(false);
+    }
+    expect(sendReservationEmail).not.toHaveBeenCalled();
+  });
+
+  it("refuse un cycleId non entier au schéma, sans atteindre la transaction", async () => {
+    const resultat = await reserver(
+      chargeUtile(CRENEAU_VALIDE, { cycleId: 1.5 }),
+    );
+
+    expect(resultat?.validationErrors).toBeDefined();
+    expect(reserverIntervention).not.toHaveBeenCalled();
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Ajouts de l'agent testeur, 2026-08-16 - l'anti-énumération.
+  // ───────────────────────────────────────────────────────────────────────
+
+  it("rend un refus RIGOUREUSEMENT identique quel que soit l'identifiant sondé", async () => {
+    // 🔴 `cycles.id` est un `SERIAL` et cette action est un endpoint POST
+    // public : qui incrémente doit obtenir la même réponse sur un vélo qui
+    // n'existe pas, sur celui du voisin, et sur un identifiant hors domaine.
+    //
+    // Le helper ne rend qu'un motif pour les trois cas ; ce qui est vérifié ici
+    // est que l'ACTION ne les redifférencie pas en aval - ni par le libellé, ni
+    // par `creneauPerdu`, ni par un écho de la valeur sondée.
+    reserverIntervention.mockResolvedValue({
+      ok: false,
+      reason: "cycle_introuvable",
+    });
+
+    const reponses = [];
+    for (const cycleId of [1, 999, 2_147_483_647]) {
+      reponses.push(
+        (await reserver(chargeUtile(CRENEAU_VALIDE, { cycleId })))?.data,
+      );
+    }
+
+    expect(reponses[1]).toEqual(reponses[0]);
+    expect(reponses[2]).toEqual(reponses[0]);
+  });
+
+  it("n'écho jamais l'identifiant sondé dans le message", async () => {
+    // Un libellé qui reprendrait la valeur (« vélo 999 introuvable ») en
+    // ferait un oracle de plus : le sondeur saurait que sa valeur a bien été
+    // lue jusqu'à la garde, et distinguerait un refus de schéma d'un refus de
+    // propriété.
+    reserverIntervention.mockResolvedValue({
+      ok: false,
+      reason: "cycle_introuvable",
+    });
+
+    const resultat = await reserver(
+      chargeUtile(CRENEAU_VALIDE, { cycleId: 424_242 }),
+    );
+
+    expect(resultat?.data?.ok).toBe(false);
+    if (resultat?.data?.ok === false) {
+      expect(resultat.data.message).not.toMatch(/424242|424 242/);
+    }
+  });
+
+  it("ne trace ni n'expédie rien sur un vélo refusé", async () => {
+    // Une entrée d'audit ou un email partis sur un refus donneraient au sondeur
+    // un canal latéral - et à un tiers un message sur un rendez-vous qui n'a
+    // jamais existé.
+    reserverIntervention.mockResolvedValue({
+      ok: false,
+      reason: "cycle_introuvable",
+    });
+
+    await reserver(chargeUtile(CRENEAU_VALIDE, { cycleId: 999 }));
+
+    expect(dispatchEmail).not.toHaveBeenCalled();
+    expect(sendReservationEmail).not.toHaveBeenCalled();
+  });
+
+  it("exige une session avant de lire le moindre vélo", async () => {
+    // La garde d'authentification passe AVANT tout : sans elle, un anonyme
+    // sonderait la table `cycles` en boucle. `authActionClient` la porte, la
+    // vérifier ici est ce qui empêche de la perdre au prochain refactor de
+    // l'ordre des étapes.
+    getCurrentUser.mockResolvedValue(null);
+
+    const resultat = await reserver(
+      chargeUtile(CRENEAU_VALIDE, { cycleId: 7 }),
+    );
+
+    expect(resultat?.serverError).toBeDefined();
+    expect(reserverIntervention).not.toHaveBeenCalled();
+  });
+});
+
 describe("reserver - la course perdue et l'email", () => {
   beforeEach(() => {
     banNominale();

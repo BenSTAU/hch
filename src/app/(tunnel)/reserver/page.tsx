@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 
 import { getOptionalUser } from "@/lib/auth/dal";
+import { listerCyclesDuClient } from "@/lib/db/queries/cycles";
 import { listForfaitsPublics } from "@/lib/db/queries/forfaits";
 import { listProduitsVendables } from "@/lib/db/queries/produits";
 import { QueryProvider } from "@/components/query-provider";
@@ -31,7 +32,7 @@ export default async function ReserverPage() {
   // Indépendantes, donc en parallèle et jamais en cascade.
   // `listForfaitsPublics` est enveloppée dans `cache()`, le layout l'a déjà
   // appelée dans ce rendu.
-  const [forfaits, produits, utilisateur] = await Promise.all([
+  const [forfaits, produits, utilisateur, cycles] = await Promise.all([
     listForfaitsPublics(),
     // Le catalogue additionnel est lu ICI et non à l'étape panier : le
     // récapitulatif est rendu par un composant client, qui ne peut pas
@@ -40,6 +41,16 @@ export default async function ReserverPage() {
     listProduitsVendables(),
     // Renseigne sans rediriger : le tunnel ne doit pas exiger de session.
     getOptionalUser(),
+    // Les vélos du visiteur, pour le bloc « Vélo concerné » de C5.
+    //
+    // Le second appel à `getOptionalUser()` ne coûte rien : la fonction est
+    // enveloppée dans `cache()` de React (`lib/auth/dal.ts:51`), donc elle rend
+    // la même promesse pendant ce rendu - ni cookie relu, ni requête de plus.
+    // C'est ce qui permet de garder les quatre lectures dans un seul
+    // `Promise.all` au lieu d'enchaîner la session puis les vélos.
+    getOptionalUser().then((u) =>
+      u ? listerCyclesDuClient({ userId: u.id }) : [],
+    ),
   ]);
 
   return (
@@ -48,6 +59,7 @@ export default async function ReserverPage() {
         <TunnelReservation
           forfaits={forfaits}
           produits={produits}
+          cycles={cycles}
           estConnecte={utilisateur !== null}
           // 🐛 **La sortie de l'écran de confirmation suit le rôle.** Elle
           // pointait `CHEMIN_ESPACE_CLIENT` en dur, et `/reserver` reste

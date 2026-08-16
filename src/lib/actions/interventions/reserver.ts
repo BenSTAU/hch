@@ -46,6 +46,11 @@ const MESSAGE_HORS_ZONE = "Aucun service disponible à cette adresse.";
 const MESSAGE_FORFAIT_INCONNU = "Ce forfait n'est plus proposé.";
 const MESSAGE_CRENEAU_PRIS =
   "Ce créneau vient d'être réservé. Choisissez-en un autre dans la liste rafraîchie.";
+/// Un seul libellé pour le vélo inconnu et le vélo d'autrui : les distinguer
+/// révélerait l'existence d'une ligne que l'appelant ne possède pas, `cycles.id`
+/// étant un `SERIAL` énumérable. Même régime que les mutations produits.
+const MESSAGE_CYCLE_INCONNU =
+  "Ce vélo n'est plus dans votre liste. Choisissez-en un autre, ou « Aucun vélo ».";
 
 export const reserver = authActionClient
   .inputSchema(reserverSchema)
@@ -151,7 +156,23 @@ export const reserver = authActionClient
       clientId: user.id,
       photos: parsedInput.photos,
       panier: parsedInput.panier,
+      cycleId: parsedInput.cycleId,
     });
+
+    // Le vélo désigné à C5 n'est plus le sien, ou ne l'a jamais été. Traité
+    // AVANT le refus de vente : `messageEchecStock` ne connaît que les motifs
+    // de stock, et lui passer celui-ci le ferait répondre à côté.
+    //
+    // La réservation entière est refusée plutôt que validée sans le vélo : le
+    // client a désigné une monture, réserver en l'ignorant en silence lui
+    // ferait croire à un rendez-vous qu'il n'a pas demandé.
+    if (!resultat.ok && resultat.reason === "cycle_introuvable") {
+      return {
+        ok: false as const,
+        message: MESSAGE_CYCLE_INCONNU,
+        creneauPerdu: false,
+      };
+    }
 
     // Un produit du panier est parti pendant la composition. Composer un panier
     // ne RETIENT rien : aucune source ne promet le contraire, et un stock tenu

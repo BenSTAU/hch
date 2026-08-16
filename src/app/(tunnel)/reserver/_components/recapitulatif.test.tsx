@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import { describe, expect, it, vi } from "vitest";
 
-import { ADRESSE, FORFAITS, PRODUITS } from "@/test/tunnel";
+import { ADRESSE, CYCLES, FORFAITS, PRODUITS } from "@/test/tunnel";
 
 vi.mock("@/lib/actions/auth/signup", () => ({
   signupFormAction: vi.fn(),
@@ -26,8 +26,10 @@ function poser(
   estConnecte: boolean,
   enCours = false,
   panier: { productId: number; quantity: number }[] = [],
+  cycles: typeof CYCLES = CYCLES,
 ) {
   const onValider = vi.fn();
+  const onChangementCycle = vi.fn();
   const { container } = render(
     <Recapitulatif
       forfait={FORFAIT}
@@ -38,6 +40,9 @@ function poser(
       produits={PRODUITS}
       panier={panier}
       onChangementPanier={vi.fn()}
+      cycles={cycles}
+      cycleId={null}
+      onChangementCycle={onChangementCycle}
       estConnecte={estConnecte}
       enCours={enCours}
       onValider={onValider}
@@ -45,7 +50,12 @@ function poser(
       idTitre="titre-c5"
     />,
   );
-  return { container, onValider, utilisateur: userEvent.setup() };
+  return {
+    container,
+    onValider,
+    onChangementCycle,
+    utilisateur: userEvent.setup(),
+  };
 }
 
 describe("Recapitulatif - ce que le visiteur relit", () => {
@@ -169,6 +179,40 @@ describe("Recapitulatif - la validation exige un compte", () => {
 
     expect(screen.getByRole("button", { name: /validation/i })).toBeDisabled();
   });
+
+  it("n'offre le choix du vélo qu'une fois connecté", () => {
+    // Même régime que les photos, et pour une raison de modèle : `cycles.user_id`
+    // est NOT NULL, un visiteur anonyme ne possède aucun vélo. Le bloc n'aurait
+    // rien à lui montrer.
+    poser(false);
+    expect(screen.queryByText(/vélo concerné/i)).toBeNull();
+
+    poser(true);
+    expect(screen.getByText(/vélo concerné/i)).toBeInTheDocument();
+  });
+
+  it("laisse choisir un vélo et remonte l'identifiant", async () => {
+    const { onChangementCycle, utilisateur } = poser(true);
+
+    await utilisateur.click(screen.getByRole("radio", { name: /Moustache/ }));
+
+    expect(onChangementCycle).toHaveBeenCalledWith(4);
+  });
+
+  it("montre l'état vide sans empêcher de valider", async () => {
+    // Le cas du client qui vient de créer son compte au récapitulatif : il n'a
+    // aucun vélo, et le rattachement est facultatif. Un état vide qui bloquerait
+    // la validation fabriquerait une impasse sur le dernier écran du tunnel.
+    const { onValider, utilisateur } = poser(true, false, [], []);
+
+    expect(screen.queryByRole("radio")).not.toBeInTheDocument();
+
+    await utilisateur.click(
+      screen.getByRole("button", { name: /valider ma réservation/i }),
+    );
+
+    expect(onValider).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("Recapitulatif - divergences de portage", () => {
@@ -245,6 +289,15 @@ describe("Recapitulatif - accessibilité", () => {
   it("ne présente aucune violation axe, visiteur connecté", async () => {
     const { container } = poser(true);
 
+    // Garde anti-régression, ajoutée par l'agent testeur le 2026-08-16, sur le
+    // modèle de celle de `bloc-cycle.test.tsx` (leçon PR #25 note 7) : cet audit
+    // est le SEUL à couvrir le sélecteur de vélo dans son contexte réel, avec la
+    // dalle des produits au-dessus. Le jour où le bloc cesse d'être rendu ici,
+    // l'audit resterait vert et muet.
+    expect(container.querySelectorAll('[role="radio"]')).toHaveLength(
+      CYCLES.length + 1,
+    );
+
     await expect(axe(container)).resolves.toHaveNoViolations();
   });
 
@@ -252,5 +305,40 @@ describe("Recapitulatif - accessibilité", () => {
     const { container } = poser(false);
 
     await expect(axe(container)).resolves.toHaveNoViolations();
+  });
+
+  it("nomme le groupe de boutons radio par son titre visible", async () => {
+    // ⚠️ Ajouté par l'agent testeur. `axe` ne rapporte AUCUNE violation sur un
+    // `radiogroup` anonyme : le nom accessible d'un groupe est une exigence
+    // RGAA (WCAG 1.3.1) qu'aucune règle automatique ne couvre. Et c'est
+    // exactement ce que l'extraction a déplacé - `bloc-cycle.tsx` passe un `id`
+    // littéral, C5 passe un `useId()`. Une régression sur ce câblage ne se
+    // verrait nulle part ailleurs.
+    poser(true);
+
+    // Le titre porte sa mention « (facultatif) », qui entre donc dans le nom
+    // accessible du groupe - et c'est souhaitable : le caractère facultatif est
+    // annoncé à l'entrée dans le groupe, pas seulement à l'oeil.
+    expect(
+      await screen.findByRole("radiogroup", { name: /^Vélo concerné/ }),
+    ).toHaveAccessibleName(/facultatif/i);
+  });
+
+  it("n'ouvre aucun niveau de titre sauté sous le h1 de C5", async () => {
+    // Le bloc « Vélo concerné » est la quatrième dalle et pose un `h2` de plus.
+    // Un `h3` y aurait sauté un niveau sous le `h1` de l'écran, et `heading-order`
+    // ne le voit pas toujours : il compare des voisins, pas la hiérarchie
+    // complète d'un écran composé de quatre sous-composants indépendants.
+    poser(true);
+
+    const niveaux = screen
+      .getAllByRole("heading")
+      .map((titre) => Number(titre.tagName.slice(1)));
+
+    expect(niveaux[0]).toBe(1);
+    for (const [rang, niveau] of niveaux.entries()) {
+      const precedent = niveaux[rang - 1] ?? 0;
+      expect(niveau).toBeLessThanOrEqual(precedent + 1);
+    }
   });
 });

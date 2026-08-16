@@ -344,6 +344,244 @@ test("un client activé traverse le tunnel et réserve", async ({ page }) => {
   }
 });
 
+/// ─────────────────────────────────────────────────────────────────────────
+/// Le vélo désigné à C5 - ajouté par l'agent testeur, 2026-08-16.
+///
+/// ⚠️ **La seule preuve sur une VRAIE base que le tunnel écrit
+/// `interventions.cycle_id`.** Tout ce qui existait ailleurs tourne contre un
+/// faux `$transaction` (`queries/interventions.test.ts`) ou un `vi.fn()`
+/// (`reserver.test.ts`) : aucun de ces deux niveaux ne voit la colonne, la clé
+/// étrangère, ni le fait que Prisma sache l'écrire. Le point clos le 2026-08-12
+/// disait « reste NULL sur toute intervention venue du tunnel » ; son
+/// renversement mérite un oracle qui interroge Postgres.
+///
+/// Le second test tient l'autre moitié de la garde de propriété : ce que la
+/// PAGE donne à voir. La garde de `reserverIntervention` refuse un identifiant
+/// forgé, mais elle ne dit rien de ce que le serveur RENVOIE au navigateur -
+/// et un tunnel qui listerait les vélos de tout le monde exposerait la marque
+/// et le modèle d'un tiers avant même qu'on tente d'en désigner un.
+/// ─────────────────────────────────────────────────────────────────────────
+
+test("le vélo désigné à C5 arrive dans interventions.cycle_id", async ({
+  page,
+}) => {
+  const db = new PrismaClient();
+  try {
+    await mockerBan(page);
+
+    const { email, userId } = await creerClientActive(page, db, "gp02-cycle");
+    // Le seed ne pose aucun vélo (choix assumé de T-V3-16) : le client en a
+    // donc zéro à l'inscription, et c'est l'état vide du bloc. On lui en écrit
+    // un AVANT le rendu de C5, que la page lit au serveur.
+    const velo = await db.cycle.create({
+      data: {
+        brand: "Decathlon",
+        model: "Elops 900",
+        type: "CLASSIC",
+        year: 2023,
+        userId,
+      },
+      select: { id: true },
+    });
+
+    await seConnecterClient(page, email);
+    await page.goto("/reserver");
+
+    await choisirForfait(page, /Révision complète/);
+    await page.getByRole("button", { name: /^continuer$/i }).click();
+
+    await page
+      .getByRole("combobox", { name: /adresse/i })
+      .fill("12 rue de la bicyclette");
+    await page.getByRole("option").first().click();
+    await expect(page.getByText(/adresse dans notre zone/i)).toBeVisible();
+    await page
+      .getByRole("button", { name: /continuer vers les créneaux/i })
+      .click();
+
+    const premierCreneau = page.getByRole("button", { name: /^\d{2}:\d{2}$/ });
+    await expect(premierCreneau.first()).toBeVisible();
+    await premierCreneau.first().click();
+    await page
+      .getByRole("button", { name: /continuer vers le récapitulatif/i })
+      .click();
+
+    // Le clic porte sur la DALLE, pas sur le bouton radio : celui-ci est
+    // `sr-only`, même motif que `choisirForfait`.
+    const groupe = page.getByRole("radiogroup", { name: /vélo concerné/i });
+    await expect(groupe).toBeVisible();
+    await groupe.locator("label", { hasText: /Decathlon Elops 900/ }).click();
+    await expect(
+      page.getByRole("radio", { name: /Decathlon Elops 900/ }),
+    ).toBeChecked();
+
+    await page.getByRole("button", { name: /valider ma réservation/i }).click();
+    await expect(
+      page.getByRole("heading", { name: /votre intervention est planifiée/i }),
+    ).toBeVisible();
+
+    const intervention = await db.intervention.findFirstOrThrow({
+      where: { clientId: userId },
+      select: { cycleId: true },
+    });
+
+    expect(intervention.cycleId).toBe(velo.id);
+  } finally {
+    await db.$disconnect();
+  }
+});
+
+test("C5 ne propose jamais le vélo d'un autre client", async ({ page }) => {
+  const db = new PrismaClient();
+  try {
+    await mockerBan(page);
+
+    // Deux titulaires, deux vélos de marques distinctes : c'est ce qui rend la
+    // fuite visible. Un jeu où les deux porteraient le même libellé la
+    // masquerait entièrement.
+    const tiers = await creerClientActive(page, db, "gp02-tiers");
+    await db.cycle.create({
+      data: {
+        brand: "Moustache",
+        model: "Samedi 27",
+        type: "ELECTRIC",
+        year: 2024,
+        userId: tiers.userId,
+      },
+    });
+
+    const titulaire = await creerClientActive(page, db, "gp02-titulaire");
+    await db.cycle.create({
+      data: {
+        brand: "Decathlon",
+        model: "Elops 900",
+        type: "CLASSIC",
+        year: 2023,
+        userId: titulaire.userId,
+      },
+    });
+
+    await seConnecterClient(page, titulaire.email);
+    await page.goto("/reserver");
+
+    await choisirForfait(page, /Révision complète/);
+    await page.getByRole("button", { name: /^continuer$/i }).click();
+    await page
+      .getByRole("combobox", { name: /adresse/i })
+      .fill("12 rue de la bicyclette");
+    await page.getByRole("option").first().click();
+    await expect(page.getByText(/adresse dans notre zone/i)).toBeVisible();
+    await page
+      .getByRole("button", { name: /continuer vers les créneaux/i })
+      .click();
+    const premierCreneau = page.getByRole("button", { name: /^\d{2}:\d{2}$/ });
+    await expect(premierCreneau.first()).toBeVisible();
+    await premierCreneau.first().click();
+    await page
+      .getByRole("button", { name: /continuer vers le récapitulatif/i })
+      .click();
+
+    const groupe = page.getByRole("radiogroup", { name: /vélo concerné/i });
+    await expect(groupe).toBeVisible();
+
+    // Son vélo, « Aucun vélo », et rien d'autre. La marque du tiers ne doit
+    // apparaître NULLE PART dans le document - pas seulement hors du groupe.
+    await expect(
+      page.getByRole("radio", { name: /Decathlon Elops 900/ }),
+    ).toBeVisible();
+    await expect(groupe.getByRole("radio")).toHaveCount(2);
+    await expect(page.getByText(/Moustache/)).toHaveCount(0);
+  } finally {
+    await db.$disconnect();
+  }
+});
+
+test("un tunnel repris sous un AUTRE compte n'engage pas le vélo du premier", async ({
+  page,
+}) => {
+  // 🔴 Ajouté par l'agent testeur, 2026-08-16. `sessionStorage` vit dans
+  // l'ONGLET et survit à la déconnexion ; la liste des vélos vient de la
+  // SESSION, relue à chaque rendu de la page. Les deux se désynchronisent dès
+  // qu'un second compte reprend l'onglet - poste partagé, démonstration au
+  // jury, deux comptes d'essai.
+  //
+  // Le serveur refuse à juste titre (la garde de propriété fait son travail),
+  // mais l'écran du second titulaire n'affiche AUCUN sélecteur - il n'a pas de
+  // vélo - donc rien qui dise qu'un vélo est retenu, et rien pour le retirer.
+  // La validation refuse en boucle : le dernier geste du tunnel est en impasse,
+  // et le message parle d'un vélo que ce client n'a jamais vu.
+  //
+  // Ce test ne prescrit pas le remède. Il tient la seule propriété qui vaille :
+  // au bout du tunnel, une réservation aboutit.
+  const db = new PrismaClient();
+  try {
+    await mockerBan(page);
+
+    const premier = await creerClientActive(page, db, "gp02-bascule-1");
+    await db.cycle.create({
+      data: {
+        brand: "Decathlon",
+        model: "Elops 900",
+        type: "CLASSIC",
+        year: 2023,
+        userId: premier.userId,
+      },
+    });
+    const second = await creerClientActive(page, db, "gp02-bascule-2");
+
+    await seConnecterClient(page, premier.email);
+    await page.goto("/reserver");
+
+    await choisirForfait(page, /Révision complète/);
+    await page.getByRole("button", { name: /^continuer$/i }).click();
+    await page
+      .getByRole("combobox", { name: /adresse/i })
+      .fill("12 rue de la bicyclette");
+    await page.getByRole("option").first().click();
+    await expect(page.getByText(/adresse dans notre zone/i)).toBeVisible();
+    await page
+      .getByRole("button", { name: /continuer vers les créneaux/i })
+      .click();
+    const premierCreneau = page.getByRole("button", { name: /^\d{2}:\d{2}$/ });
+    await expect(premierCreneau.first()).toBeVisible();
+    await premierCreneau.first().click();
+    await page
+      .getByRole("button", { name: /continuer vers le récapitulatif/i })
+      .click();
+
+    await page
+      .getByRole("radiogroup", { name: /vélo concerné/i })
+      .locator("label", { hasText: /Decathlon Elops 900/ })
+      .click();
+    await expect(
+      page.getByRole("radio", { name: /Decathlon Elops 900/ }),
+    ).toBeChecked();
+
+    // Bascule de compte dans le MÊME onglet. `sessionStorage` n'est pas touché.
+    await page.goto("/mes-interventions/a-venir");
+    await page.getByRole("button", { name: /ouvrir le menu de/i }).click();
+    await page.getByRole("menuitem", { name: /se déconnecter/i }).click();
+    await seConnecterClient(page, second.email);
+
+    const avant = await db.intervention.count();
+    await page.goto("/reserver?etape=recapitulatif");
+
+    // Le second titulaire n'a aucun vélo : le bloc affiche son état vide, sans
+    // sélecteur. Rien à l'écran ne porte le choix hérité.
+    await expect(page.getByText(/vélo concerné/i)).toBeVisible();
+    await expect(page.getByRole("radio", { name: /Decathlon/ })).toHaveCount(0);
+
+    await page.getByRole("button", { name: /valider ma réservation/i }).click();
+
+    await expect(
+      page.getByRole("heading", { name: /votre intervention est planifiée/i }),
+    ).toBeVisible();
+    expect(await db.intervention.count()).toBe(avant + 1);
+  } finally {
+    await db.$disconnect();
+  }
+});
+
 test("le tunnel ne présente aucune violation d'accessibilité", async ({
   page,
 }) => {

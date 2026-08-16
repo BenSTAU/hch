@@ -66,6 +66,17 @@ export const reserverSchema = z.object({
   /// et des quantités : les prix sont lus en base au moment de la vente, dans
   /// la transaction de la réservation (Constitution §4.1 et §2.6).
   panier: panierSchema,
+  /// Vélo désigné à C5, `null` pour « Aucun vélo » - ajouté le 2026-08-16.
+  ///
+  /// **Facultatif par nature** : `interventions.cycle_id` est NULLable et le
+  /// rattachement ne conditionne rien. Le défaut vaut `null`, donc une charge
+  /// utile qui ne porte pas le champ reste valide - c'est ce qui laisse les
+  /// appelants antérieurs inchangés.
+  ///
+  /// ⚠️ **L'identifiant n'est pas une preuve de propriété.** `cycles.id` est un
+  /// `SERIAL` énumérable et cette action est un endpoint POST public : la
+  /// vérification vit dans la transaction, pas ici.
+  cycleId: z.number().int().positive().nullable().default(null),
 });
 
 export type ReserverInput = z.infer<typeof reserverSchema>;

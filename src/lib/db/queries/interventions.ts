@@ -107,6 +107,10 @@ export type CreationIntervention =
       forfaitLabel: string;
     }
   | { ok: false; reason: "creneau_pris" }
+  /// Le vélo désigné à C5 n'est pas celui de l'appelant, ou n'existe pas. Un
+  /// seul motif pour les deux cas, même régime anti-énumération que
+  /// `rattacherCycleAIntervention` : `cycles.id` est un `SERIAL`.
+  | { ok: false; reason: "cycle_introuvable" }
   /// Refus de vente. `EchecStock` porte déjà son propre discriminant, on ne lui
   /// en surajoute pas un second : `reason` reste la seule question à poser.
   | ({ ok: false } & EchecStock);
@@ -157,9 +161,38 @@ export async function reserverIntervention(params: {
   /// course perdue sur le créneau laisserait du stock consommé pour un
   /// rendez-vous qui n'existe pas.
   panier: readonly LignePanier[];
+  /// Vélo désigné à C5, `null` pour « Aucun vélo ».
+  cycleId: number | null;
 }): Promise<CreationIntervention> {
   try {
     return await db.$transaction(async (tx) => {
+      // ⚠️ **En TÊTE de transaction, et la position est le point.** Rendre une
+      // valeur depuis le callback de `$transaction` **commite** - c'est ce que
+      // la sentinelle `VenteRefusee` plus bas existe pour contourner. Ici il n'y
+      // a rien à annuler : aucune écriture n'a encore eu lieu, donc un retour
+      // sec suffit.
+      //
+      // ⚠️ La borne haute n'est PAS la création de l'adresse mais l'appel à
+      // `resoudreCommune` juste dessous, qui fait un `upsert` sur `cities` :
+      // descendre la garde d'un seul cran commiterait une commune neuve à
+      // chaque identifiant sondé. Précision de l'agent testeur, avec l'oracle
+      // qui la tient.
+      //
+      // La FK garantit que le vélo existe, pas qu'il est à l'appelant : sans
+      // cette lecture, un identifiant forgé rattacherait le vélo d'un tiers au
+      // rendez-vous. Même garde et même refus unique que
+      // `rattacherCycleAIntervention`.
+      if (params.cycleId !== null) {
+        const cycle = await tx.cycle.findFirst({
+          where: { id: params.cycleId, userId: params.clientId },
+          select: { id: true },
+        });
+
+        if (!cycle) {
+          return { ok: false as const, reason: "cycle_introuvable" as const };
+        }
+      }
+
       // L'adresse naît DANS la transaction de la réservation. Si la contrainte
       // anti-double-réservation rejette l'intervention, elle disparaît avec
       // elle - sinon chaque course perdue laisserait une adresse orpheline.
@@ -210,8 +243,18 @@ export async function reserverIntervention(params: {
           techId: params.techId,
           addressId,
           serviceId: params.serviceId,
-          // `cycle_id` reste NULL : aucune étape du tunnel ne demande le vélo,
-          // et qui le renseignera n'est pas tranché (dictionnaire v2.4).
+          // ⚠️ **Le tunnel écrit `cycle_id` depuis le 2026-08-16.** Le
+          // dictionnaire v2.4 écrivait *« reste NULL sur toute intervention
+          // venue du tunnel »* et désignait le panneau de `/mes-interventions`
+          // comme seul écrivain (point clos le 2026-08-12) ; l'arbitrage du
+          // 2026-08-16 rouvre le point et promeut le sélecteur de C5. La
+          // colonne reste NULLable et le choix facultatif - `null` est l'état
+          // nominal, pas une donnée manquante.
+          //
+          // Le vélo n'est **pas figé en instantané**, contrairement à
+          // `price_snapshot` et `duration_snapshot` : c'est une référence
+          // vivante vers `cycles`, comme au rattachement T+n.
+          cycleId: params.cycleId,
         },
         select: { id: true },
       });
@@ -324,9 +367,10 @@ export type InterventionClient = {
   /// est qu'il n'a pas réglé.
   montantPaye: string | null;
   /// Le vélo désigné par le client, `null` tant qu'aucun ne l'est - et c'est un
-  /// état nominal, pas une donnée manquante : `cycle_id` est NULLable et toute
-  /// intervention venue du tunnel en est dépourvue (dictionnaire §interventions
-  /// champ 14). Même forme que ce que lit l'écran T2 du technicien.
+  /// état nominal, pas une donnée manquante : `cycle_id` est NULLable et le
+  /// rattachement reste facultatif sur les deux surfaces qui l'écrivent, le
+  /// tunnel (C5) et le panneau de l'espace client. Même forme que ce que lit
+  /// l'écran T2 du technicien.
   ///
   /// ⚠️ **Référence vivante, pas instantané.** Contrairement à `price_snapshot`
   /// et `duration_snapshot`, ces trois valeurs sont relues dans `cycles` à
@@ -973,9 +1017,9 @@ export type InterventionDetail = {
   /// `null` quand l'adresse n'a pas de point (pseudonymisation).
   point: PointWgs84 | null;
   /// `null` tant que rien ne renseigne `cycle_id`. Les deux états s'affichent
-  /// (cadrage du plancher V2, D11) : l'écrivain est T-V3-16, côté client, et le
-  /// rattachement reste facultatif, donc la colonne est vide sur toute
-  /// intervention venue du tunnel.
+  /// (cadrage du plancher V2, D11) : deux surfaces l'écrivent depuis le
+  /// 2026-08-16, le tunnel (C5) et le panneau de l'espace client, et le
+  /// rattachement reste facultatif sur les deux.
   cycle: { brand: string; model: string | null; type: string } | null;
   produits: ProduitDetail[];
   /// Identifiants seuls : le contenu passe par

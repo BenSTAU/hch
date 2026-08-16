@@ -2,6 +2,7 @@
 
 import { ArrowRight, CalendarDays, Info, MapPin, Wrench } from "lucide-react";
 
+import type { CycleClient } from "@/lib/db/queries/cycles";
 import type { ForfaitPublic } from "@/lib/db/queries/forfaits";
 import type { LignePanier, ProduitVendable } from "@/lib/db/queries/produits";
 import {
@@ -17,6 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
 import { EtapeCoordonnees } from "./etape-coordonnees";
+import { EtapeCycle } from "./etape-cycle";
 import { EtapePanier } from "./etape-panier";
 import { EtapePhotos, type PhotoDeposee } from "./etape-photos";
 import { CONTENEUR } from "./etapes";
@@ -64,6 +66,9 @@ export function Recapitulatif({
   produits,
   panier,
   onChangementPanier,
+  cycles,
+  cycleId,
+  onChangementCycle,
   estConnecte,
   enCours,
   onValider,
@@ -78,6 +83,11 @@ export function Recapitulatif({
   produits: readonly ProduitVendable[];
   panier: readonly LignePanier[];
   onChangementPanier: (panier: LignePanier[]) => void;
+  /// Vides pour un visiteur anonyme : la lecture exige une session, et le bloc
+  /// qui les consomme ne sort que dans la branche connectée.
+  cycles: readonly CycleClient[];
+  cycleId: number | null;
+  onChangementCycle: (cycleId: number | null) => void;
   estConnecte: boolean;
   enCours: boolean;
   onValider: () => void;
@@ -131,17 +141,21 @@ export function Recapitulatif({
               ou non ». C'est la validation qui exige une session, pas la
               composition du panier (Constitution §3.2). */}
           {/* `Card` et non un `<section>` habillé à la main : aucun de ces
-              trois blocs ne porte de nom accessible, donc aucun n'expose de
-              repère `region` - la balise ne changeait rien à la sémantique et
-              seul le style était dupliqué. `rounded-xl` conservé, la maquette
-              du récapitulatif ayant un angle plus serré que le défaut. */}
+              blocs ne porte de nom accessible, donc aucun n'expose de repère
+              `region` - la balise ne changeait rien à la sémantique et seul le
+              style était dupliqué. `rounded-xl` conservé, la maquette du
+              récapitulatif ayant un angle plus serré que le défaut. */}
           {/* ⚠️ **`p-6` et non `[--card-spacing:--spacing(6)]`.** `Card` ne pose
               que le padding VERTICAL (`py-(--card-spacing)`) ; l'horizontal vit
-              dans `CardHeader` et `CardContent`, que ces trois dalles
-              n'utilisent pas - elles enveloppent un `<section>` brut. La
-              variable n'alimentait donc aucune règle `px` et le contenu
-              touchait la bordure. `p-6` l'emporte sur `py-*` par
-              `tailwind-merge`, et c'est la géométrie annoncée plus haut. */}
+              dans `CardHeader` et `CardContent`, que ces dalles n'utilisent pas
+              - elles enveloppent un `<section>` brut. La variable n'alimentait
+              donc aucune règle `px` et le contenu touchait la bordure. `p-6`
+              l'emporte sur `py-*` par `tailwind-merge`, et c'est la géométrie
+              annoncée plus haut.
+              ⚠️ **Vaut pour les QUATRE dalles**, la dalle « Vélo concerné »
+              comprise : elle est arrivée après le correctif, sur une branche
+              partie d'avant lui, et c'est cette résolution de conflit qui les
+              réunit. */}
           <Card className="rounded-xl p-6">
             <EtapePanier
               produits={produits}
@@ -151,9 +165,25 @@ export function Recapitulatif({
           </Card>
 
           {estConnecte ? (
-            <Card className="rounded-xl p-6">
-              <EtapePhotos photos={photos} onChangement={onChangementPhotos} />
-            </Card>
+            <>
+              <Card className="rounded-xl p-6">
+                <EtapePhotos
+                  photos={photos}
+                  onChangement={onChangementPhotos}
+                />
+              </Card>
+
+              {/* Après les photos, et comme elles réservé à la session ouverte :
+                  `cycles.user_id` est NOT NULL, un visiteur anonyme n'a donc
+                  aucun vélo à désigner. */}
+              <Card className="rounded-xl p-6">
+                <EtapeCycle
+                  cycles={cycles}
+                  cycleId={cycleId}
+                  onChangement={onChangementCycle}
+                />
+              </Card>
+            </>
           ) : (
             // Les photos n'apparaissent qu'une fois connecté : leur dépôt exige
             // une session, et proposer un champ qui refuserait le fichier serait
