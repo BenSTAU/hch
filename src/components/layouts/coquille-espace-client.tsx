@@ -69,7 +69,12 @@ export function CoquilleEspaceClient({
 
           Rangée sous `md`, colonne au-dessus : deux entrées tiennent sur une
           ligne, et `overflow-x-auto` encaisse la troisième que C12 apportera
-          sans reposer la question. */}
+          sans reposer la question.
+
+          Depuis le 2026-08-16, `user-menu.tsx` porte lui aussi « Mes vélos » :
+          l'écran n'est donc plus orphelin hors de la coquille. Cette barre
+          reste néanmoins visible au téléphone, parce qu'elle marque l'entrée
+          courante, ce qu'un menu qu'il faut ouvrir ne fait pas. */}
       <nav aria-label="Espace client" className="w-full shrink-0 md:w-56">
         <ul className="flex flex-row gap-2 overflow-x-auto md:flex-col md:gap-1 md:overflow-visible">
           {ENTREES.map(({ segment, href, libelle, Icone }) => {

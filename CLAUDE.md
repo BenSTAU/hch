@@ -351,8 +351,11 @@ dans les 12 pages d'axe de [[conventions-react-next]].
   paquet qui a besoin d'un script d'installation. pnpm 10 n'en exécute aucun
   sans autorisation, et **échoue en silence** : `bcrypt` se retrouve sans
   binaire, `tsx` ne démarre pas. `pnpm approve-builds` est interactif, donc
-  inutilisable en CI — la liste est la seule voie. Aujourd'hui :
-  `@prisma/client`, `prisma`, `bcrypt`, `esbuild`.
+  inutilisable en CI — la liste est la seule voie. Aujourd'hui **six** :
+  `@prisma/client`, `prisma`, `bcrypt`, `esbuild`, plus `sharp` (strip EXIF des
+  photos, appelé directement depuis T-V3-08 et non plus seulement tiré par Next)
+  et `lefthook` (pose les hooks Git au postinstall : sans lui, `lefthook.yml`
+  existe et rien ne le déclenche, la garde est décorative).
 - **MUST** lancer `pnpm exec prisma generate` **après tout clone neuf**. La
   liste ci-dessus ne suffit pas : constaté le 2026-08-06 sur un poste vierge,
   `pnpm install` affiche `Ignored build scripts: @prisma/engines` et le client

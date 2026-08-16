@@ -9,8 +9,8 @@ import {
   uploadRateLimitKey,
 } from "@/lib/rate-limit";
 
-/// Dépôt d'une photo du tunnel - l'un des **trois** Route Handlers que
-/// CLAUDE.md autorise, avec le callback OAuth et l'initiation Google.
+/// Dépôt d'une photo du tunnel - le canal HTTP est nécessaire en soi, cas du
+/// flux binaire entrant au sens de CLAUDE.md §Server Actions.
 ///
 /// Route Handler et non Server Action, parce qu'il reçoit un fichier : une
 /// Server Action sérialise sa charge utile, et faire transiter cinq images de
