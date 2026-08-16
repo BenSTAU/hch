@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { verifierAdresse } from "@/lib/actions/adresses/verifier-adresse";
 import { reserver } from "@/lib/actions/interventions/reserver";
+import type { CycleClient } from "@/lib/db/queries/cycles";
 import type { ForfaitPublic } from "@/lib/db/queries/forfaits";
 import type { LignePanier, ProduitVendable } from "@/lib/db/queries/produits";
 import { formatPrixEuros } from "@/lib/format";
@@ -97,6 +98,11 @@ type EtatConserve = {
   /// Identifiants et quantités seulement. Les prix se rejoignent à l'affichage
   /// depuis le catalogue rendu par le serveur, et se figent en base à la vente.
   panier: LignePanier[];
+  /// Vélo désigné à C5, `null` pour « Aucun vélo ». Conservé comme le panier :
+  /// le visiteur qui part créer son compte au récapitulatif retrouve son choix
+  /// au retour. La propriété du vélo est revérifiée côté serveur à la
+  /// validation - ce qui survit ici est une intention, pas un droit.
+  cycleId: number | null;
 };
 
 /// Fonction et non constante partagée : deux tunnels successifs dans le même
@@ -109,6 +115,7 @@ function etatVide(): EtatConserve {
     creneau: null,
     photos: [],
     panier: [],
+    cycleId: null,
   };
 }
 
@@ -149,11 +156,16 @@ function lireEtatConserve(): EtatConserve {
 export function TunnelReservation({
   forfaits,
   produits,
+  cycles = [],
   estConnecte,
   espace = ESPACE_CLIENT_PAR_DEFAUT,
 }: {
   forfaits: ForfaitPublic[];
   produits: ProduitVendable[];
+  /// Les vélos du visiteur connecté. Vide par défaut, ce qui est exactement
+  /// l'état d'un anonyme : `cycles.user_id` est NOT NULL, il n'en possède
+  /// aucun.
+  cycles?: CycleClient[];
   estConnecte: boolean;
   /// Destination de la sortie de l'écran de confirmation, calculée au serveur
   /// depuis les rôles. Elle est facultative et retombe sur l'espace client :
@@ -181,6 +193,7 @@ export function TunnelReservation({
   );
   const [photos, setPhotos] = useState<PhotoDeposee[]>(conserve.photos);
   const [panier, setPanier] = useState<LignePanier[]>(conserve.panier);
+  const [cycleId, setCycleId] = useState<number | null>(conserve.cycleId);
 
   /// L'URL fait foi quand elle porte un forfait - c'est elle qui rend le
   /// parcours partageable, et c'est par elle que la landing pré-sélectionne.
@@ -248,13 +261,22 @@ export function TunnelReservation({
         JSON.stringify(
           confirmation
             ? etatVide()
-            : { forfaitId, adresse, zoneId, creneau, photos, panier },
+            : { forfaitId, adresse, zoneId, creneau, photos, panier, cycleId },
         ),
       );
     } catch {
       // Stockage refusé : la reprise ne fonctionnera pas, le tunnel si.
     }
-  }, [confirmation, forfaitId, adresse, zoneId, creneau, photos, panier]);
+  }, [
+    confirmation,
+    forfaitId,
+    adresse,
+    zoneId,
+    creneau,
+    photos,
+    panier,
+    cycleId,
+  ]);
 
   // Tant qu'on n'est pas monté, on rend une attente - jamais un contenu qui
   // dépendrait de l'état conservé. Le serveur et l'hydratation produisent alors
@@ -346,6 +368,7 @@ export function TunnelReservation({
         debut: creneauValide,
         photos: photos.map((photo) => photo.url),
         panier,
+        cycleId,
       });
 
       if (resultat?.validationErrors) {
@@ -505,6 +528,9 @@ export function TunnelReservation({
             produits={produits}
             panier={panier}
             onChangementPanier={setPanier}
+            cycles={cycles}
+            cycleId={cycleId}
+            onChangementCycle={setCycleId}
             estConnecte={estConnecte}
             enCours={enCours}
             onValider={valider}

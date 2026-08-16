@@ -2,6 +2,7 @@
 
 import { ArrowRight, CalendarDays, Info, MapPin, Wrench } from "lucide-react";
 
+import type { CycleClient } from "@/lib/db/queries/cycles";
 import type { ForfaitPublic } from "@/lib/db/queries/forfaits";
 import type { LignePanier, ProduitVendable } from "@/lib/db/queries/produits";
 import {
@@ -17,6 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
 import { EtapeCoordonnees } from "./etape-coordonnees";
+import { EtapeCycle } from "./etape-cycle";
 import { EtapePanier } from "./etape-panier";
 import { EtapePhotos, type PhotoDeposee } from "./etape-photos";
 import { CONTENEUR } from "./etapes";
@@ -64,6 +66,9 @@ export function Recapitulatif({
   produits,
   panier,
   onChangementPanier,
+  cycles,
+  cycleId,
+  onChangementCycle,
   estConnecte,
   enCours,
   onValider,
@@ -78,6 +83,11 @@ export function Recapitulatif({
   produits: readonly ProduitVendable[];
   panier: readonly LignePanier[];
   onChangementPanier: (panier: LignePanier[]) => void;
+  /// Vides pour un visiteur anonyme : la lecture exige une session, et le bloc
+  /// qui les consomme ne sort que dans la branche connectée.
+  cycles: readonly CycleClient[];
+  cycleId: number | null;
+  onChangementCycle: (cycleId: number | null) => void;
   estConnecte: boolean;
   enCours: boolean;
   onValider: () => void;
@@ -141,9 +151,25 @@ export function Recapitulatif({
           </Card>
 
           {estConnecte ? (
-            <Card className="rounded-xl [--card-spacing:--spacing(6)]">
-              <EtapePhotos photos={photos} onChangement={onChangementPhotos} />
-            </Card>
+            <>
+              <Card className="rounded-xl [--card-spacing:--spacing(6)]">
+                <EtapePhotos
+                  photos={photos}
+                  onChangement={onChangementPhotos}
+                />
+              </Card>
+
+              {/* Après les photos, et comme elles réservé à la session ouverte :
+                  `cycles.user_id` est NOT NULL, un visiteur anonyme n'a donc
+                  aucun vélo à désigner. */}
+              <Card className="rounded-xl [--card-spacing:--spacing(6)]">
+                <EtapeCycle
+                  cycles={cycles}
+                  cycleId={cycleId}
+                  onChangement={onChangementCycle}
+                />
+              </Card>
+            </>
           ) : (
             // Les photos n'apparaissent qu'une fois connecté : leur dépôt exige
             // une session, et proposer un champ qui refuserait le fichier serait

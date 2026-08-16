@@ -2,25 +2,23 @@
 
 import { Bike } from "lucide-react";
 import Link from "next/link";
-import { useState, useTransition, type ReactNode } from "react";
+import { useState, useTransition } from "react";
 
 import { rattacherCycle } from "@/lib/actions/cycles/rattacher-cycle";
 import type { CycleClient } from "@/lib/db/queries/cycles";
 import type { InterventionClient } from "@/lib/db/queries/interventions";
 import { CHEMIN_CYCLES } from "@/lib/routes";
 import { BadgeTypeCycle } from "@/components/features/cycles/badge-type-cycle";
+import { SelecteurCycle } from "@/components/features/cycles/selecteur-cycle";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { cn } from "@/lib/utils";
-
-/// La valeur du détachement. Une chaîne sentinelle et non `""` : Radix traite
-/// la chaîne vide comme « aucune option retenue », et le bouton « Aucun vélo »
-/// ne pourrait alors jamais s'afficher coché.
-const AUCUN = "aucun";
 
 /// Bloc « Vélo concerné » du panneau de détail - le périmètre nouveau de
-/// T-V3-16, et le **seul écrivain de `interventions.cycle_id` en v1**.
+/// T-V3-16, et le **premier écrivain de `interventions.cycle_id`**.
+///
+/// ⚠️ **Plus le seul depuis le 2026-08-16** : l'écran C5 du tunnel en désigne
+/// un à la réservation. Le sélecteur commun vit dans
+/// `components/features/cycles/selecteur-cycle.tsx` ; ce qui reste ici est le
+/// câblage de la mutation T+n et la branche de lecture seule.
 ///
 /// ── Une surface qu'aucune maquette ne dessine
 ///
@@ -115,36 +113,18 @@ export function BlocCycle({
           </Button>
         </div>
       ) : (
-        <RadioGroup
-          aria-labelledby="bloc-cycle"
+        <SelecteurCycle
+          idLibelle="bloc-cycle"
+          cycles={cycles}
           // La valeur retenue vient du SERVEUR, jamais d'un état local : après
           // la revalidation, c'est `interventions.cycle_id` qui décide de ce
           // qui est coché, donc l'écran ne peut pas mentir sur ce qui est écrit.
-          value={cycle === null ? AUCUN : String(cycle.id)}
-          onValueChange={(valeur) => {
-            choisir(valeur === AUCUN ? null : Number(valeur));
-          }}
+          // C'est ce qui distingue cet appelant du tunnel, où rien n'est encore
+          // écrit et où la valeur ne peut venir que de l'état local.
+          valeur={cycle?.id ?? null}
+          onChangement={choisir}
           disabled={enCours}
-          className="grid grid-cols-1 gap-2 sm:grid-cols-2"
-        >
-          <Option valeur={AUCUN} id="cycle-aucun">
-            <span className="text-sm font-medium">Aucun vélo</span>
-          </Option>
-
-          {cycles.map((candidat) => (
-            <Option
-              key={candidat.id}
-              valeur={String(candidat.id)}
-              id={`cycle-${String(candidat.id)}`}
-            >
-              <span className="min-w-0 text-sm font-medium">
-                {candidat.brand}
-                {candidat.model ? ` ${candidat.model}` : ""}
-              </span>
-              <BadgeTypeCycle type={candidat.type} />
-            </Option>
-          ))}
-        </RadioGroup>
+        />
       )}
 
       {refus ? (
@@ -153,42 +133,5 @@ export function BlocCycle({
         </p>
       ) : null}
     </section>
-  );
-}
-
-function Option({
-  valeur,
-  id,
-  children,
-}: {
-  valeur: string;
-  id: string;
-  children: ReactNode;
-}) {
-  return (
-    <Label
-      htmlFor={id}
-      className={cn(
-        "flex cursor-pointer items-center justify-between gap-2 rounded-xl border border-border bg-card px-4 py-3 transition-colors",
-        "hover:border-input",
-        "has-[[aria-checked=true]]:border-primary has-[[aria-checked=true]]:bg-primary-fixed/20",
-        "has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50",
-        "has-[:disabled]:opacity-60",
-      )}
-    >
-      {/* Le bouton radio est masqué visuellement, la dalle entière lui sert
-          d'étiquette. `aria-labelledby` pointe sur le libellé visible : Chrome
-          ne calcule aucun nom accessible pour un `<button role="radio">`
-          étiqueté par un `<label for>`, constaté au navigateur sur C2. */}
-      <RadioGroupItem
-        id={id}
-        value={valeur}
-        aria-labelledby={`${id}-libelle`}
-        className="sr-only"
-      />
-      <span id={`${id}-libelle`} className="flex min-w-0 items-center gap-2">
-        {children}
-      </span>
-    </Label>
   );
 }
