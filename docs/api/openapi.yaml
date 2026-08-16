@@ -1,0 +1,322 @@
+openapi: 3.1.0
+
+info:
+  title: HomeCycl'Home - surface HTTP
+  version: "1.0.0"
+  summary: Les trois Route Handlers du dépôt.
+  description: |
+    Cette spécification décrit **uniquement** les Route Handlers présents à
+    `dce9520`. Elle ne décrit pas les Server Actions, qui portent l'essentiel
+    des mutations du produit : leur identifiant est calculé au build et change
+    avec le code, elles ne constituent donc pas un contrat d'intégration
+    stable. Elles sont documentées dans `docs/api.md`.
+
+    Une route n'existe ici que si le canal HTTP lui est nécessaire en soi :
+    flux binaire entrant ou sortant, ou sonde d'infrastructure. Partout
+    ailleurs, le dépôt utilise une Server Action.
+  license:
+    name: Projet pédagogique, usage non commercial
+    identifier: LicenseRef-hch-pedagogique
+
+servers:
+  - url: http://localhost:3000
+    description: Poste de développement
+  - url: https://hch.glanford.eu
+    description: Production
+
+tags:
+  - name: Infrastructure
+    description: Sonde de santé, interrogée par le conteneur et le pipeline.
+  - name: Photos
+    description: Dépôt et lecture des preuves terrain horodatées.
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: hch_session
+      description: |
+        Session JWT signée avec `jose`. Cookie `httpOnly`, `secure`,
+        `sameSite=lax`, durée sept jours. Posé par la Server Action de
+        connexion, jamais par une route de cette spécification.
+
+  responses:
+    PhotoIntrouvable:
+      description: |
+        Corps vide. **Une seule réponse pour quatre causes distinctes** :
+        appelant anonyme, identifiant malformé, photo appartenant à un tiers,
+        fichier absent du disque. Les distinguer renseignerait sur l'existence
+        de ce que le contrôle protège.
+
+  schemas:
+    SanteOk:
+      type: object
+      required: [status, db]
+      properties:
+        status:
+          type: string
+          const: ok
+        db:
+          type: boolean
+          const: true
+
+    SanteEnvDegrade:
+      type: object
+      required: [status, env]
+      properties:
+        status:
+          type: string
+          const: degraded
+        env:
+          type: boolean
+          const: false
+      description: |
+        Une variable d'environnement applicative manque. **Le nom des variables
+        fautives ne figure pas dans la réponse**, cette route étant publique en
+        production ; il part dans les journaux du conteneur, préfixé
+        `[health] environnement incomplet`.
+
+    SanteDbDegrade:
+      type: object
+      required: [status, db]
+      properties:
+        status:
+          type: string
+          const: degraded
+        db:
+          type: boolean
+          const: false
+      description: |
+        PostgreSQL est injoignable. Le détail n'est pas rendu au client : un
+        message d'erreur Prisma porte l'hôte, le port et l'utilisateur de la
+        base.
+
+    UploadAccepte:
+      type: object
+      required: [ok, url]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        url:
+          type: string
+          description: |
+            Chemin interne de la photo ré-encodée en WebP. Il se relit par
+            `GET /api/intervention-photos/{id}` une fois la photo attachée à
+            une intervention, jamais en statique : `uploads/` vit hors de
+            `public/`.
+
+    UploadRefuse:
+      type: object
+      required: [ok, message]
+      properties:
+        ok:
+          type: boolean
+          const: false
+        message:
+          type: string
+          description: Libellé destiné à l'affichage, en français.
+
+paths:
+  /api/health:
+    get:
+      tags: [Infrastructure]
+      operationId: lireSante
+      summary: Sonde de santé de l'application et de sa base
+      description: |
+        Touche réellement la base : une application qui répond mais ne joint
+        pas PostgreSQL est une application cassée, et c'est précisément ce que
+        le rollback automatique doit détecter.
+
+        Deux contrôles, dans cet ordre. L'environnement d'abord, à part de la
+        base : les deux pannes se réparent à des endroits différents et les
+        confondre ferait chercher au mauvais.
+
+        Publique, y compris en production, où elle est servie hors de
+        l'authentification basique de la pile de staging.
+      security: []
+      responses:
+        "200":
+          description: Application debout, base joignable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SanteOk"
+              example:
+                status: ok
+                db: true
+        "503":
+          description: |
+            Environnement incomplet **ou** base injoignable. Le healthcheck du
+            conteneur échoue, ce qui déclenche le rollback inline vers l'image
+            précédente.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/SanteEnvDegrade"
+                  - $ref: "#/components/schemas/SanteDbDegrade"
+              examples:
+                environnementIncomplet:
+                  summary: Une variable applicative manque
+                  value:
+                    status: degraded
+                    env: false
+                baseInjoignable:
+                  summary: PostgreSQL ne répond pas
+                  value:
+                    status: degraded
+                    db: false
+
+  /api/upload-intervention-photo:
+    post:
+      tags: [Photos]
+      operationId: deposerPhotoIntervention
+      summary: Dépose une photo du tunnel de réservation
+      description: |
+        Route Handler et non Server Action parce qu'il reçoit un fichier : une
+        Server Action sérialise sa charge utile, et faire transiter cinq images
+        de cinq mégaoctets par ce canal serait un détournement de mécanisme.
+
+        Le fichier est ré-encodé en WebP et écrit hors de `public/`.
+
+        **Le quota est décompté avant la lecture du corps** : accepter cinq
+        mégaoctets pour les refuser ensuite ne protégerait rien. Il borne le
+        disque, pas le dossier. Le plafond de cinq photos par intervention
+        n'est pas tenu ici, l'intervention n'existant pas encore à ce stade ;
+        il se vérifie à la validation de la réservation.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+            encoding:
+              photo:
+                contentType: image/jpeg, image/png, image/webp
+      responses:
+        "200":
+          description: Photo acceptée, ré-encodée et écrite.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadAccepte"
+        "400":
+          description: Aucun fichier dans le champ `photo`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadRefuse"
+              example:
+                ok: false
+                message: Aucun fichier reçu.
+        "401":
+          description: |
+            Aucune session. Rendu en JSON et non par une redirection :
+            l'appelant est un `fetch`, pas une navigation, et une redirection
+            lui rendrait du HTML qu'il ne sait pas lire.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadRefuse"
+              example:
+                ok: false
+                message: Connectez-vous pour joindre des photos.
+        "413":
+          description: Image trop lourde.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadRefuse"
+        "415":
+          description: Format de fichier refusé.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadRefuse"
+        "422":
+          description: Fichier illisible ou ré-encodage impossible.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadRefuse"
+        "429":
+          description: Quota d'envoi dépassé.
+          headers:
+            Retry-After:
+              description: Délai en secondes avant une nouvelle tentative.
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadRefuse"
+              example:
+                ok: false
+                message: Trop de photos envoyées. Réessayez plus tard.
+
+  /api/intervention-photos/{id}:
+    get:
+      tags: [Photos]
+      operationId: lirePhotoIntervention
+      summary: Sert une photo d'intervention, sous contrôle de propriété
+      description: |
+        `uploads/` vit hors de `public/` et Next n'en sert rien, délibérément.
+        Une photo prise au domicile d'un client ne doit pas être joignable par
+        qui connaît son URL : servir le dossier statiquement aurait fait
+        reposer toute la confidentialité sur le caractère non devinable d'un
+        identifiant, ce qui ne tient pas face aux journaux nginx, aux en-têtes
+        `Referer` et à l'historique du navigateur.
+
+        La garde de propriété vit dans la clause `where` de la requête, elle ne
+        peut donc pas être contournée par un `if` oublié. **Aucun contrôle de
+        rôle** : la règle est « titulaire du rendez-vous », client ou
+        technicien, pas « porteur de `ROLE_TECH` ».
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: |
+            Identifiant de la photo. `photos.id` est un `SERIAL` : tout ce qui
+            n'est pas un entier positif est écarté avant d'atteindre la base.
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: |
+            Le flux de l'image. Toujours du WebP, le dépôt ré-encodant tout ce
+            qui entre. Ni vignette ni redimensionnement : reportés en v2.
+          headers:
+            Cache-Control:
+              description: |
+                `private, max-age=3600`. `private` parce que la réponse dépend
+                de la session : un cache partagé qui la retiendrait la servirait
+                au visiteur suivant. `no-store` serait excessif, le navigateur
+                du propriétaire a le droit de la garder.
+              schema:
+                type: string
+            X-Content-Type-Options:
+              description: |
+                `nosniff`. Empêche le navigateur d'interpréter le flux
+                autrement que comme l'image annoncée.
+              schema:
+                type: string
+          content:
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/PhotoIntrouvable"
