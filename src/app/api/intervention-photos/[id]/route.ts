@@ -21,12 +21,13 @@ import { lirePhoto } from "@/lib/photos/stockage";
 /// hors de `public/`. PLAN S4 §4.5 est amendé côté vault : le strip EXIF reste
 /// obligatoire, au titre de la défense en profondeur.
 ///
-/// ── Un Route Handler de plus, et il est assumé
+/// ── Un Route Handler, et le critère le prévoit
 ///
-/// CLAUDE.md §Server Actions réserve les Route Handlers à trois cas. Celui-ci
-/// est un quatrième, et il n'a pas d'alternative : une Server Action sérialise
-/// sa réponse, elle ne peut pas rendre un flux binaire. Écart signalé en PR
-/// pour write-back.
+/// CLAUDE.md §Server Actions autorise le Route Handler quand le canal HTTP est
+/// nécessaire en soi, flux binaire entrant ou sortant compris. Celui-ci est un
+/// flux sortant : une Server Action sérialise sa réponse, elle ne peut pas
+/// rendre un flux binaire. C'est cette route qui a fait remplacer la liste de
+/// trois cas par le critère (PR #33, 2026-08-11).
 ///
 /// ── Ce qu'il ne fait pas
 ///

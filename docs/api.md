@@ -23,14 +23,15 @@ La conséquence pratique : un Route Handler qui ne relève d'aucun de ces cas
 n'est pas une préférence de style, c'est une divergence à signaler en revue. Le
 dépôt en compte trois, et chacun se justifie contre ce critère :
 
-| Route                            | Cas invoqué              | Tenue du critère                                                                                                                                                                                                      |
-| -------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/api/health`                    | sonde d'infrastructure   | oui, littéralement. Interrogée par le healthcheck du conteneur et par la boucle post-déploiement du pipeline                                                                                                          |
-| `/api/upload-intervention-photo` | flux binaire **entrant** | oui. Faire transiter cinq images de cinq mégaoctets par la sérialisation d'une Server Action serait un détournement de mécanisme                                                                                      |
-| `/api/intervention-photos/[id]`  | flux binaire **sortant** | **quatrième cas, assumé et signalé** dans le code lui-même ([route.ts:24-29](../src/app/api/intervention-photos/%5Bid%5D/route.ts)). Une Server Action sérialise sa réponse, elle ne peut pas rendre un flux d'octets |
+| Route                            | Cas invoqué              | Tenue du critère                                                                                                                                                                                                                                  |
+| -------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/health`                    | sonde d'infrastructure   | oui, littéralement. Interrogée par le healthcheck du conteneur et par la boucle post-déploiement du pipeline                                                                                                                                      |
+| `/api/upload-intervention-photo` | flux binaire **entrant** | oui. Faire transiter cinq images de cinq mégaoctets par la sérialisation d'une Server Action serait un détournement de mécanisme                                                                                                                  |
+| `/api/intervention-photos/[id]`  | flux binaire **sortant** | oui. Une Server Action sérialise sa réponse, elle ne peut pas rendre un flux d'octets. C'est cette route qui a fait remplacer la liste de trois cas par le critère, en T-V3-10 ([route.ts](../src/app/api/intervention-photos/%5Bid%5D/route.ts)) |
 
-Le troisième mérite qu'on s'y arrête, parce qu'il n'était pas prévu par le
-critère. `uploads/` vit hors de `public/` : Next n'en sert rien, délibérément.
+Le troisième mérite qu'on s'y arrête, non parce qu'il dérogerait au critère mais
+parce que c'est lui qui l'a fait écrire. `uploads/` vit hors de `public/` : Next
+n'en sert rien, délibérément.
 Une photo prise au domicile d'un client ne doit pas être joignable par qui
 connaît son URL, et servir le dossier statiquement aurait fait reposer toute la
 confidentialité sur le caractère non devinable d'un UUID, ce qui ne tient pas
