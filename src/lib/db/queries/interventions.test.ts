@@ -26,6 +26,9 @@ const photoCreateMany = vi.fn();
 const serviceFindUniqueOrThrow = vi.fn();
 const addressFindFirst = vi.fn();
 const queryRaw = vi.fn();
+/// Garde de propriété du vélo désigné à C5 (2026-08-16). Elle vit DANS la
+/// transaction : c'est elle que ce faux client doit exposer.
+const cycleFindFirst = vi.fn();
 
 // Annulation (T-V3-11). Elle lit, verrouille, relit puis écrit, le tout dans
 // la transaction : ses quatre appels ont donc leur double ici.
@@ -90,6 +93,7 @@ function creerTx() {
     photo: { createMany: photoCreateMany },
     service: { findUniqueOrThrow: serviceFindUniqueOrThrow },
     address: { findFirst: addressFindFirst },
+    cycle: { findFirst: (args: unknown) => cycleFindFirst(args) },
     auditLog: { create: (args: unknown) => auditCreate(args) },
   };
 
@@ -202,6 +206,9 @@ function parametres(
     techId: "22222222-2222-4222-8222-222222222222",
     appointmentAt: new Date("2027-05-10T07:00:00.000Z"),
     clientId: CLIENT,
+    // Le défaut du tunnel : aucun vélo désigné. Les cas qui en désignent un
+    // passent leur propre valeur par la surcharge.
+    cycleId: null,
     photos: [],
     panier: [],
     ...surcharge,
@@ -222,6 +229,9 @@ beforeEach(() => {
   });
   interventionCreate.mockResolvedValue({ id: 4242 });
   queryRaw.mockResolvedValue([ANTIVOL, CHAMBRE]);
+  // Par defaut le velo designe appartient bien a l'appelant. Les tests du refus
+  // rendent `null` explicitement.
+  cycleFindFirst.mockResolvedValue({ id: 7 });
 });
 
 describe("reserverIntervention - l'intervention et son panier partagent le meme sort", () => {
@@ -289,6 +299,96 @@ describe("reserverIntervention - l'intervention et son panier partagent le meme 
     const creation = interventionCreate.mock.invocationCallOrder[0] ?? 0;
     const ligne = interventionProductCreate.mock.invocationCallOrder[0] ?? 0;
     expect(creation).toBeLessThan(ligne);
+  });
+});
+
+describe("reserverIntervention - le velo designe a C5", () => {
+  // Ajoute le 2026-08-16, quand le tunnel est devenu le SECOND ecrivain de
+  // `interventions.cycle_id`. Le dictionnaire v2.4 ecrivait « reste NULL sur
+  // toute intervention venue du tunnel » : ce bloc est ce qui rend la bascule
+  // verifiable plutot que declaree.
+
+  it("ecrit `cycle_id` quand le velo est celui de l'appelant", async () => {
+    const resultat = await reserverIntervention(parametres({ cycleId: 7 }));
+
+    expect(resultat.ok).toBe(true);
+    expect(interventionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ cycleId: 7 }),
+      }),
+    );
+  });
+
+  it("laisse `cycle_id` NULL quand aucun velo n'est designe", async () => {
+    // L'etat nominal, pas une donnee manquante : la colonne est NULLable et le
+    // rattachement est facultatif.
+    const resultat = await reserverIntervention(parametres({ cycleId: null }));
+
+    expect(resultat.ok).toBe(true);
+    expect(interventionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ cycleId: null }),
+      }),
+    );
+    // Aucune lecture de garde : il n'y a rien a verifier quand rien n'est
+    // designe, et une requete de plus par reservation se paierait sur le chemin
+    // nominal du produit.
+    expect(cycleFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("cherche le velo SUR LE COUPLE (id, proprietaire)", async () => {
+    // 🔴 La FK garantit que le velo existe, pas qu'il est a l'appelant. Sans le
+    // `userId` dans le `WHERE`, un identifiant forge rattacherait le velo d'un
+    // tiers - `cycles.id` est un `SERIAL`, donc enumerable.
+    await reserverIntervention(parametres({ cycleId: 7 }));
+
+    expect(cycleFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 7, userId: CLIENT },
+      }),
+    );
+  });
+
+  it("REFUSE la reservation entiere quand le velo n'est pas le sien", async () => {
+    cycleFindFirst.mockResolvedValue(null);
+
+    const resultat = await reserverIntervention(parametres({ cycleId: 999 }));
+
+    expect(resultat).toMatchObject({
+      ok: false,
+      reason: "cycle_introuvable",
+    });
+    // Reserver en ignorant le velo en silence donnerait au client un
+    // rendez-vous qu'il n'a pas demande sous cette forme.
+    expect(interventionCreate).not.toHaveBeenCalled();
+  });
+
+  it("n'ecrit RIEN du tout quand le velo est refuse", async () => {
+    // 🔴 La propriete qui depend de la POSITION de la garde. Rendre une valeur
+    // depuis le rappel de `$transaction` COMMITE : placee apres la creation de
+    // l'adresse, la garde commiterait une adresse orpheline a chaque refus.
+    // Ce test echoue si quelqu'un descend le bloc de quelques lignes.
+    cycleFindFirst.mockResolvedValue(null);
+
+    await reserverIntervention(parametres({ cycleId: 999 }));
+
+    expect(addressFindFirst).not.toHaveBeenCalled();
+    expect(serviceFindUniqueOrThrow).not.toHaveBeenCalled();
+    expect(photoCreateMany).not.toHaveBeenCalled();
+    expect(interventionProductCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuse le velo AVANT de consommer le stock du panier", async () => {
+    // L'ordre importe : un refus tardif aurait deja decremente le stock, que le
+    // rollback rendrait mais apres avoir fait courir la transaction pour rien.
+    cycleFindFirst.mockResolvedValue(null);
+
+    await reserverIntervention(
+      parametres({ cycleId: 999, panier: [{ productId: 2, quantity: 1 }] }),
+    );
+
+    expect(queryRaw).not.toHaveBeenCalled();
+    expect(productUpdate).not.toHaveBeenCalled();
   });
 });
 

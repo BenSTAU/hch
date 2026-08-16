@@ -488,6 +488,61 @@ describe("reserver - ce qui vient de la session ne vient jamais de la charge uti
   });
 });
 
+describe("reserver - le vélo désigné à C5", () => {
+  beforeEach(() => {
+    banNominale();
+  });
+
+  it("transporte le vélo choisi jusqu'à la transaction", async () => {
+    await reserver(chargeUtile(CRENEAU_VALIDE, { cycleId: 7 }));
+
+    expect(reserverIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({ cycleId: 7 }),
+    );
+  });
+
+  it("vaut `null` quand la charge utile n'en porte aucun", async () => {
+    // Le défaut du schéma. Il laisse valides les appelants antérieurs au
+    // 2026-08-16, et `null` est l'état nominal de la colonne.
+    await reserver(chargeUtile(CRENEAU_VALIDE));
+
+    expect(reserverIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({ cycleId: null }),
+    );
+  });
+
+  it("nomme le refus du vélo, sans le confondre avec un refus de stock", async () => {
+    // 🔴 `messageEchecStock` ne connaît que les motifs de stock : lui passer
+    // `cycle_introuvable` ferait répondre l'écran à côté de la question.
+    reserverIntervention.mockResolvedValue({
+      ok: false,
+      reason: "cycle_introuvable",
+    });
+
+    const resultat = await reserver(
+      chargeUtile(CRENEAU_VALIDE, { cycleId: 999 }),
+    );
+
+    expect(resultat?.data?.ok).toBe(false);
+    if (resultat?.data?.ok === false) {
+      expect(resultat.data.message).toMatch(/vélo/i);
+      // Le créneau n'est pas perdu : rien ne s'est joué dessus, et rafraîchir la
+      // grille ferait reprendre un choix qui reste valable.
+      expect(resultat.data.creneauPerdu).toBe(false);
+    }
+    expect(sendReservationEmail).not.toHaveBeenCalled();
+  });
+
+  it("refuse un cycleId non entier au schéma, sans atteindre la transaction", async () => {
+    const resultat = await reserver(
+      chargeUtile(CRENEAU_VALIDE, { cycleId: 1.5 }),
+    );
+
+    expect(resultat?.validationErrors).toBeDefined();
+    expect(reserverIntervention).not.toHaveBeenCalled();
+  });
+});
+
 describe("reserver - la course perdue et l'email", () => {
   beforeEach(() => {
     banNominale();

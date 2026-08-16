@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import { describe, expect, it, vi } from "vitest";
 
-import { ADRESSE, FORFAITS, PRODUITS } from "@/test/tunnel";
+import { ADRESSE, CYCLES, FORFAITS, PRODUITS } from "@/test/tunnel";
 
 vi.mock("@/lib/actions/auth/signup", () => ({
   signupFormAction: vi.fn(),
@@ -26,8 +26,10 @@ function poser(
   estConnecte: boolean,
   enCours = false,
   panier: { productId: number; quantity: number }[] = [],
+  cycles: typeof CYCLES = CYCLES,
 ) {
   const onValider = vi.fn();
+  const onChangementCycle = vi.fn();
   const { container } = render(
     <Recapitulatif
       forfait={FORFAIT}
@@ -38,6 +40,9 @@ function poser(
       produits={PRODUITS}
       panier={panier}
       onChangementPanier={vi.fn()}
+      cycles={cycles}
+      cycleId={null}
+      onChangementCycle={onChangementCycle}
       estConnecte={estConnecte}
       enCours={enCours}
       onValider={onValider}
@@ -45,7 +50,12 @@ function poser(
       idTitre="titre-c5"
     />,
   );
-  return { container, onValider, utilisateur: userEvent.setup() };
+  return {
+    container,
+    onValider,
+    onChangementCycle,
+    utilisateur: userEvent.setup(),
+  };
 }
 
 describe("Recapitulatif - ce que le visiteur relit", () => {
@@ -168,6 +178,40 @@ describe("Recapitulatif - la validation exige un compte", () => {
     poser(true, true);
 
     expect(screen.getByRole("button", { name: /validation/i })).toBeDisabled();
+  });
+
+  it("n'offre le choix du vélo qu'une fois connecté", () => {
+    // Même régime que les photos, et pour une raison de modèle : `cycles.user_id`
+    // est NOT NULL, un visiteur anonyme ne possède aucun vélo. Le bloc n'aurait
+    // rien à lui montrer.
+    poser(false);
+    expect(screen.queryByText(/vélo concerné/i)).toBeNull();
+
+    poser(true);
+    expect(screen.getByText(/vélo concerné/i)).toBeInTheDocument();
+  });
+
+  it("laisse choisir un vélo et remonte l'identifiant", async () => {
+    const { onChangementCycle, utilisateur } = poser(true);
+
+    await utilisateur.click(screen.getByRole("radio", { name: /Moustache/ }));
+
+    expect(onChangementCycle).toHaveBeenCalledWith(4);
+  });
+
+  it("montre l'état vide sans empêcher de valider", async () => {
+    // Le cas du client qui vient de créer son compte au récapitulatif : il n'a
+    // aucun vélo, et le rattachement est facultatif. Un état vide qui bloquerait
+    // la validation fabriquerait une impasse sur le dernier écran du tunnel.
+    const { onValider, utilisateur } = poser(true, false, [], []);
+
+    expect(screen.queryByRole("radio")).not.toBeInTheDocument();
+
+    await utilisateur.click(
+      screen.getByRole("button", { name: /valider ma réservation/i }),
+    );
+
+    expect(onValider).toHaveBeenCalledTimes(1);
   });
 });
 

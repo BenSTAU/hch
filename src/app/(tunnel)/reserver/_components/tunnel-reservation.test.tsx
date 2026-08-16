@@ -333,6 +333,15 @@ describe("TunnelReservation - fin de parcours", () => {
     await waitFor(() => {
       expect(
         JSON.parse(window.sessionStorage.getItem("hch:tunnel") ?? "null"),
+        // ⚠️ **`cycleId` ajouté le 2026-08-16, règle du test rouge cas 3.**
+        // L'oracle est inchangé - « un tunnel validé n'a plus rien à reprendre » -
+        // mais l'état conservé a gagné un champ, et `toEqual` compare la forme
+        // entière. Le laisser absent aurait rendu le test rouge sur une propriété
+        // qu'il n'a jamais eu pour objet de nier.
+        //
+        // La ligne vaut d'ailleurs pour le vélo ce qu'elle valait déjà pour les
+        // photos : le choix d'une réservation validée ne doit pas revenir dans la
+        // suivante.
       ).toEqual({
         forfaitId: null,
         adresse: null,
@@ -340,6 +349,7 @@ describe("TunnelReservation - fin de parcours", () => {
         creneau: null,
         photos: [],
         panier: [],
+        cycleId: null,
       });
     });
   });
