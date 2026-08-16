@@ -121,7 +121,10 @@ export function Recapitulatif({
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+      {/* `gap-8` et non `gap-4` : la gouttière du bento est celle que la
+          géométrie portée ci-dessus annonce (`c5:166-168`). En `gap-4` la
+          dalle de récapitulatif frôlait la colonne de saisie. */}
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
         <div className="flex flex-col gap-8 lg:col-span-8">
           {/* Avant les photos, comme la maquette, et **visible sans compte** :
               `US-INTERVENTION-PRODUIT-AJOUTER-TUNNEL` s'ouvre sur « authentifié
@@ -132,7 +135,14 @@ export function Recapitulatif({
               repère `region` - la balise ne changeait rien à la sémantique et
               seul le style était dupliqué. `rounded-xl` conservé, la maquette
               du récapitulatif ayant un angle plus serré que le défaut. */}
-          <Card className="rounded-xl [--card-spacing:--spacing(6)]">
+          {/* ⚠️ **`p-6` et non `[--card-spacing:--spacing(6)]`.** `Card` ne pose
+              que le padding VERTICAL (`py-(--card-spacing)`) ; l'horizontal vit
+              dans `CardHeader` et `CardContent`, que ces trois dalles
+              n'utilisent pas - elles enveloppent un `<section>` brut. La
+              variable n'alimentait donc aucune règle `px` et le contenu
+              touchait la bordure. `p-6` l'emporte sur `py-*` par
+              `tailwind-merge`, et c'est la géométrie annoncée plus haut. */}
+          <Card className="rounded-xl p-6">
             <EtapePanier
               produits={produits}
               panier={panier}
@@ -141,14 +151,14 @@ export function Recapitulatif({
           </Card>
 
           {estConnecte ? (
-            <Card className="rounded-xl [--card-spacing:--spacing(6)]">
+            <Card className="rounded-xl p-6">
               <EtapePhotos photos={photos} onChangement={onChangementPhotos} />
             </Card>
           ) : (
             // Les photos n'apparaissent qu'une fois connecté : leur dépôt exige
             // une session, et proposer un champ qui refuserait le fichier serait
             // une promesse qu'on ne tient pas.
-            <Card className="rounded-xl [--card-spacing:--spacing(6)]">
+            <Card className="rounded-xl p-6">
               <EtapeCoordonnees retour={retour} />
             </Card>
           )}
