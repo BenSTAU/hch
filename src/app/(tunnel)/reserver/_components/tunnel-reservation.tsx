@@ -244,6 +244,30 @@ export function TunnelReservation({
       ? creneau.debut
       : null;
 
+  /// 🐛 **Le vélo retenu s'il est encore le sien.** Même mécanique que le
+  /// créneau ci-dessus, et pour un défaut du même genre, trouvé par l'agent
+  /// testeur.
+  ///
+  /// `cycleId` vit dans `sessionStorage`, donc dans l'ONGLET ; la liste des
+  /// vélos vient de la SESSION. Rien ne recoupait les deux. Un client A qui
+  /// désignait son vélo, se déconnectait, puis laissait un client B se
+  /// connecter dans le même onglet, envoyait le `cycleId` de A dans la
+  /// validation de B. Le serveur refusait - c'est son travail - mais B n'avait
+  /// **aucun moyen de s'en sortir** : sans vélo, `EtapeCycle` rend son état
+  /// vide, donc pas de sélecteur, donc pas d'option « Aucun vélo » à cliquer.
+  /// Le tunnel était en impasse sur son dernier geste, exactement le défaut que
+  /// T-V3-09 avait corrigé sur le panier en rupture.
+  ///
+  /// La déduction referme les deux visages d'un coup : la liste vide rend
+  /// `null`, et un identifiant absent de la liste aussi - Radix ne cochait alors
+  /// rien du tout, pas même « Aucun vélo ».
+  ///
+  /// ⚠️ C'est bien la valeur DÉDUITE qui s'affiche et qui part à la validation,
+  /// jamais l'état brut. Celui-ci reste conservé tel quel, comme `creneau` : si
+  /// A se reconnecte, il retrouve son choix.
+  const cycleValide =
+    cycleId !== null && cycles.some((c) => c.id === cycleId) ? cycleId : null;
+
   // Écriture seule : aucun `setState`, donc aucun rendu en cascade.
   //
   // ⚠️ **Un tunnel validé n'a plus rien à reprendre**, et c'est ce même chemin
@@ -368,7 +392,9 @@ export function TunnelReservation({
         debut: creneauValide,
         photos: photos.map((photo) => photo.url),
         panier,
-        cycleId,
+        // `cycleValide` et non `cycleId` : ce qui part est ce que l'écran a
+        // montré. Même raison que `creneauValide` juste au-dessus.
+        cycleId: cycleValide,
       });
 
       if (resultat?.validationErrors) {
@@ -529,7 +555,7 @@ export function TunnelReservation({
             panier={panier}
             onChangementPanier={setPanier}
             cycles={cycles}
-            cycleId={cycleId}
+            cycleId={cycleValide}
             onChangementCycle={setCycleId}
             estConnecte={estConnecte}
             enCours={enCours}

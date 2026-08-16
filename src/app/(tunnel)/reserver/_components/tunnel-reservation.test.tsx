@@ -3,7 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ADRESSE, EnveloppeTunnel, FORFAITS, PRODUITS } from "@/test/tunnel";
+import {
+  ADRESSE,
+  CYCLES,
+  EnveloppeTunnel,
+  FORFAITS,
+  PRODUITS,
+} from "@/test/tunnel";
 
 const verifierAdresse = vi.fn();
 const reserver = vi.fn();
@@ -419,6 +425,141 @@ describe("TunnelReservation - le panier pendant l'aller-retour d'activation", ()
     // Deux unités, et la ligne de prix qui va avec : 85,00 + 2 x 39,90.
     expect(screen.getByText("Antivol en U x 2")).toBeInTheDocument();
     expect(screen.getByText(/164,80/)).toBeInTheDocument();
+  });
+});
+
+describe("TunnelReservation - le vélo désigné pendant l'aller-retour d'activation", () => {
+  // ⚠️ Ajouté par l'agent testeur, 2026-08-16. Exactement le trou relevé sur le
+  // panier le 2026-08-10, transposé : la suite livrée éprouve la LECTURE de
+  // `cycleId` (`recapitulatif.test.tsx` le passe en prop) et son effacement
+  // après validation, mais jamais son ÉCRITURE dans le stockage, ni ce qui part
+  // réellement dans la charge utile de la Server Action.
+
+  /// Un tunnel complet posé directement au récapitulatif, session ouverte. Le
+  /// composer au clavier rejouerait quatre étapes déjà couvertes plus haut ;
+  /// c'est la frontière de conservation qu'on exerce ici.
+  function poserC5(
+    cycles: typeof CYCLES = CYCLES,
+    cycleId: number | null = null,
+  ) {
+    conserverTunnel({
+      forfaitId: 1,
+      adresse: ADRESSE,
+      zoneId: 1,
+      creneau: { debut: CRENEAU, serviceId: 1, zoneId: 1 },
+      photos: [],
+      panier: [],
+      cycleId,
+    });
+
+    const utilisateur = userEvent.setup();
+    const vue = render(
+      <EnveloppeTunnel searchParams="?etape=recapitulatif&forfait=1">
+        <TunnelReservation
+          forfaits={FORFAITS}
+          produits={PRODUITS}
+          cycles={cycles}
+          estConnecte
+        />
+      </EnveloppeTunnel>,
+    );
+
+    return { utilisateur, ...vue };
+  }
+
+  function cycleConserve(): unknown {
+    return (
+      JSON.parse(window.sessionStorage.getItem("hch:tunnel") ?? "{}") as {
+        cycleId?: unknown;
+      }
+    ).cycleId;
+  }
+
+  it("écrit dans le stockage le vélo choisi à l'écran", async () => {
+    const { utilisateur } = poserC5();
+
+    await utilisateur.click(
+      await screen.findByRole("radio", { name: /Moustache/ }),
+    );
+
+    await waitFor(() => {
+      expect(cycleConserve()).toBe(4);
+    });
+  });
+
+  it("écrit le détachement, et non l'absence de champ", async () => {
+    // « Aucun vélo » n'est pas « je n'ai rien dit » : un client qui revient sur
+    // son choix doit retrouver le détachement, pas le vélo qu'il a retiré.
+    const { utilisateur } = poserC5(CYCLES, 7);
+
+    await utilisateur.click(
+      await screen.findByRole("radio", { name: "Aucun vélo" }),
+    );
+
+    await waitFor(() => {
+      expect(cycleConserve()).toBeNull();
+    });
+  });
+
+  it("envoie à la validation le vélo repris du stockage", async () => {
+    const { utilisateur } = poserC5(CYCLES, 7);
+
+    expect(
+      await screen.findByRole("radio", { checked: true }),
+    ).toHaveAccessibleName(/Decathlon Elops 900/);
+
+    await utilisateur.click(
+      screen.getByRole("button", { name: /valider ma réservation/i }),
+    );
+
+    await waitFor(() => {
+      expect(reserver).toHaveBeenCalledWith(
+        expect.objectContaining({ cycleId: 7 }),
+      );
+    });
+  });
+
+  it("n'envoie pas un vélo qui n'est plus dans la liste du visiteur", async () => {
+    // 🔴 Le compte a changé entre la composition et le retour : `sessionStorage`
+    // survit à la déconnexion et vit dans l'ONGLET, la liste des vélos vient de
+    // la SESSION. Le bloc n'affiche alors aucun sélecteur - donc rien qui dise
+    // qu'un vélo est retenu, et rien pour le retirer - et la charge utile en
+    // porte pourtant un. Le serveur refuse à juste titre, mais l'écran n'offre
+    // aucun geste pour sortir du refus : la validation est en impasse.
+    //
+    // Ce qui est envoyé doit être ce qui est montré.
+    const { utilisateur } = poserC5([], 7);
+
+    await screen.findByRole("heading", { name: /finalisez votre/i });
+    expect(screen.queryByRole("radio")).toBeNull();
+
+    await utilisateur.click(
+      screen.getByRole("button", { name: /valider ma réservation/i }),
+    );
+
+    await waitFor(() => {
+      expect(reserver).toHaveBeenCalled();
+    });
+    expect(reserver).toHaveBeenCalledWith(
+      expect.objectContaining({ cycleId: null }),
+    );
+  });
+
+  it("coche toujours une option quand le sélecteur est rendu", async () => {
+    // 🔴 Même bascule de compte, mais le nouveau titulaire possède des vélos.
+    // La valeur conservée ne correspond à aucune option : Radix n'en coche
+    // aucune, pas même « Aucun vélo ». Un groupe de boutons radio contrôlé sans
+    // aucune case cochée annonce « rien de retenu » à un lecteur d'écran, alors
+    // que l'état porte un identifiant qui partira à la validation.
+    const AUTRE_TITULAIRE: typeof CYCLES = [
+      { id: 4, brand: "Moustache", model: null, type: "ELECTRIC", year: null },
+    ];
+
+    poserC5(AUTRE_TITULAIRE, 7);
+
+    await screen.findByRole("radiogroup", { name: /vélo concerné/i });
+
+    expect(screen.getByRole("radio", { checked: true })).toBeInTheDocument();
   });
 });
 

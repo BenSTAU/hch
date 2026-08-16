@@ -205,6 +205,67 @@ describe("reserverSchema — le reste de la charge utile", () => {
   });
 });
 
+describe("reserverSchema - le vélo désigné à C5", () => {
+  // ⚠️ Ajouté par l'agent testeur, 2026-08-16. `reserver.test.ts` n'éprouve
+  // qu'une seule forme rejetée (`1.5`) et le schéma n'est couvert nulle part
+  // ailleurs. C'est pourtant la PREMIÈRE barrière sur un champ que le client
+  // choisit et qui désigne une ligne d'autrui si on le laisse passer :
+  // `cycles.id` est un `SERIAL`, et la Server Action est un endpoint POST
+  // public.
+
+  it("laisse le champ absent valoir « aucun vélo »", () => {
+    // Le défaut. C'est lui qui garde valides les appelants antérieurs au
+    // 2026-08-16, et `null` est l'état nominal de la colonne.
+    const resultat = reserverAvec({});
+
+    expect(resultat.success).toBe(true);
+    if (resultat.success) expect(resultat.data.cycleId).toBeNull();
+  });
+
+  it("accepte `null` explicite, qui est le détachement", () => {
+    const resultat = reserverAvec({ cycleId: null });
+
+    expect(resultat.success).toBe(true);
+    if (resultat.success) expect(resultat.data.cycleId).toBeNull();
+  });
+
+  it("accepte un identifiant entier positif", () => {
+    const resultat = reserverAvec({ cycleId: 7 });
+
+    expect(resultat.success).toBe(true);
+    if (resultat.success) expect(resultat.data.cycleId).toBe(7);
+  });
+
+  it("refuse toute forme qui n'est pas un identifiant de ligne", () => {
+    // `0` et les négatifs : aucune ligne ne les porte, mais les laisser passer
+    // ferait courir une requête de garde par appel pour rien.
+    // `"7"` : une chaîne numérique qui traverserait deviendrait `NaN` ou `7`
+    // selon le maillon, et c'est exactement le genre d'écart qui rend une
+    // garde vacante.
+    // `1e21` et `MAX_SAFE_INTEGER + 1` : au-delà du domaine d'un entier sûr,
+    // donc d'un `SERIAL` PostgreSQL - une valeur qui déborde côté base y lève
+    // une erreur brute, soit un 500 sur une saisie forgée.
+    for (const cycleId of [
+      0,
+      -1,
+      1.5,
+      "7",
+      "",
+      true,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      1e21,
+      Number.MAX_SAFE_INTEGER + 1,
+      [7],
+      { id: 7 },
+    ]) {
+      expect(reserverAvec({ cycleId }).success, JSON.stringify(cycleId)).toBe(
+        false,
+      );
+    }
+  });
+});
+
 describe("listerCreneauxSchema", () => {
   it("accepte un couple forfait/zone bien formé", () => {
     expect(

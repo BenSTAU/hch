@@ -145,9 +145,18 @@ vi.mock("@/lib/db/client", () => ({
   },
 }));
 
+/// ⚠️ **`resoudreCommune` est un espion depuis le 2026-08-16 (agent testeur).**
+/// C'était une fonction nue, donc invisible aux assertions - or elle ÉCRIT :
+/// `upsert` sur `cities` (`queries/adresses.ts:47-58`). C'est la première
+/// écriture de la transaction de réservation, avant même l'adresse, et donc la
+/// vraie borne haute de la garde de propriété du vélo. Sans cet espion, un
+/// refus placé juste après elle laissait toute la suite verte.
+const resoudreCommune = vi.fn();
+const creerAdresse = vi.fn();
+
 vi.mock("@/lib/db/queries/adresses", () => ({
-  resoudreCommune: () => Promise.resolve(69_383),
-  creerAdresse: () => Promise.resolve(77),
+  resoudreCommune: (...args: unknown[]) => resoudreCommune(...args),
+  creerAdresse: (...args: unknown[]) => creerAdresse(...args),
 }));
 
 // La tournee lit `addresses.location`, colonne `Unsupported` que Prisma masque :
@@ -221,6 +230,8 @@ beforeEach(() => {
   rollbacks.length = 0;
   fileDesVerrous = Promise.resolve();
 
+  resoudreCommune.mockResolvedValue(69_383);
+  creerAdresse.mockResolvedValue(77);
   addressFindFirst.mockResolvedValue({ id: 77 });
   serviceFindUniqueOrThrow.mockResolvedValue({
     price: new Prisma.Decimal("85.00"),
@@ -389,6 +400,94 @@ describe("reserverIntervention - le velo designe a C5", () => {
 
     expect(queryRaw).not.toHaveBeenCalled();
     expect(productUpdate).not.toHaveBeenCalled();
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Ajouts de l'agent testeur, 2026-08-16.
+  // ─────────────────────────────────────────────────────────────────────
+
+  it("ne commite AUCUNE commune quand le velo est refuse", async () => {
+    // 🔴 La borne haute reelle de la garde, et le test voisin ne la voyait pas.
+    // `resoudreCommune` fait un `upsert` sur `cities` : c'est la PREMIERE
+    // ecriture de la transaction, avant `addressFindFirst`. Descendre la garde
+    // d'une seule ligne - sous `resoudreCommune`, au-dessus de l'adresse -
+    // laissait « n'ecrit RIEN du tout » entierement vert tout en commitant une
+    // commune neuve a chaque identifiant de velo forge.
+    //
+    // Une commune orpheline est moins couteuse qu'une adresse, mais c'est une
+    // ligne ecrite par un appelant a qui on vient de tout refuser, et
+    // `cities` n'a aucun proprietaire pour la reprendre.
+    cycleFindFirst.mockResolvedValue(null);
+
+    await reserverIntervention(parametres({ cycleId: 999 }));
+
+    expect(resoudreCommune).not.toHaveBeenCalled();
+    expect(creerAdresse).not.toHaveBeenCalled();
+  });
+
+  it("refuse par un RETOUR, pas par une exception qui remonterait en 500", async () => {
+    // Le refus est un motif metier : il traverse l'union discriminee et l'action
+    // en tire un libelle. S'il sortait par un throw - comme `VenteRefusee` -, il
+    // faudrait un `catch` de plus dans le helper, et sans lui l'ecran afficherait
+    // « une erreur est survenue » sur un vélo simplement retire de la liste.
+    //
+    // La contrepartie est ecrite dans le code : la transaction COMMITE, et c'est
+    // sans consequence parce que rien n'y a encore ete ecrit. Ces deux
+    // assertions tiennent ensemble la these de la position - c'est le fait
+    // qu'elle commite qui rend la position non negociable.
+    cycleFindFirst.mockResolvedValue(null);
+
+    const resultat = await reserverIntervention(parametres({ cycleId: 999 }));
+
+    expect(resultat.ok).toBe(false);
+    expect(commits).toHaveLength(1);
+    expect(rollbacks).toHaveLength(0);
+  });
+
+  it("lit le velo DANS la transaction, pas sur le client global", async () => {
+    // Le faux `db` du haut de fichier n'expose aucun modele `cycle` : une garde
+    // qui lirait `db.cycle.findFirst` leverait ici. L'assertion rend la
+    // propriete explicite plutot que de la laisser tenir a un `TypeError`
+    // fortuit - la lecture doit voir l'instantane de la transaction, sinon elle
+    // repond sur un etat que le commit ne partage pas.
+    await reserverIntervention(parametres({ cycleId: 7 }));
+
+    expect(cycleFindFirst).toHaveBeenCalledTimes(1);
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("ne relit pas la ligne pour en tirer l'identifiant a ecrire", async () => {
+    // La garde repond OUI ou NON, elle ne fournit pas la valeur. Ecrire l'`id`
+    // rendu par la lecture au lieu de celui recu ferait dependre l'ecriture d'un
+    // `select` qui pourrait un jour changer de forme, et masquerait une
+    // substitution silencieuse.
+    cycleFindFirst.mockResolvedValue({ id: 4 });
+
+    await reserverIntervention(parametres({ cycleId: 7 }));
+
+    expect(interventionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ cycleId: 7 }),
+      }),
+    );
+  });
+
+  it("ne fait pas dependre le refus de l'existence d'un panier ou de photos", async () => {
+    // Anti-enumeration : le refus doit etre le MEME quel que soit le reste de la
+    // charge utile. Un refus qui ne surviendrait qu'a panier vide donnerait a
+    // qui incremente un signal de plus que le seul motif.
+    cycleFindFirst.mockResolvedValue(null);
+
+    const nu = await reserverIntervention(parametres({ cycleId: 999 }));
+    const charge = await reserverIntervention(
+      parametres({
+        cycleId: 999,
+        panier: [{ productId: 2, quantity: 1 }],
+        photos: ["uploads/11111111-1111-4111-8111-111111111111.webp"],
+      }),
+    );
+
+    expect(nu).toEqual(charge);
   });
 });
 

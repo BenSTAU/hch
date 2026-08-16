@@ -318,9 +318,10 @@ function BlocClient({
               className="size-4 shrink-0 text-muted-foreground"
             />
             {/* Les deux états s'affichent (cadrage du plancher V2, D11) :
-                `interventions.cycle_id` a un écrivain, T-V3-16 côté client, mais
-                le rattachement reste facultatif, donc la colonne est vide sur
-                toute intervention venue du tunnel. */}
+                `interventions.cycle_id` a deux écrivains depuis le 2026-08-16,
+                le tunnel (C5) et le panneau de l'espace client, mais le
+                rattachement reste facultatif sur les deux - l'absence de vélo
+                est un état nominal, pas une donnée manquante. */}
             {cycle ? (
               <span className="font-medium">
                 {cycle.brand}

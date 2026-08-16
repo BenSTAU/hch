@@ -132,8 +132,12 @@ export type ResultatRattachement =
   | { ok: false; reason: "verrouillee" }
   | { ok: false; reason: "cycle_introuvable" };
 
-/// Rattachement d'un vélo à une intervention - **premier et seul écrivain de
-/// `interventions.cycle_id` en v1**.
+/// Rattachement d'un vélo à une intervention, au temps T+n - **premier
+/// écrivain de `interventions.cycle_id`**, et le seul jusqu'au 2026-08-16.
+///
+/// ⚠️ Le tunnel en désigne un à la réservation depuis cette date
+/// (`reserverIntervention`, écran C5). Les deux écrivains partagent la même
+/// garde de propriété sur le couple `(id, userId)` et le même refus unique.
 ///
 /// Les trois gardes vivent ici et non dans l'action : elles décident d'une
 /// écriture, elles appartiennent donc à la transaction qui l'exécute.

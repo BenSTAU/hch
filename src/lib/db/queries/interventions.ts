@@ -170,8 +170,13 @@ export async function reserverIntervention(params: {
       // valeur depuis le callback de `$transaction` **commite** - c'est ce que
       // la sentinelle `VenteRefusee` plus bas existe pour contourner. Ici il n'y
       // a rien à annuler : aucune écriture n'a encore eu lieu, donc un retour
-      // sec suffit. Déplacer ce bloc après la création de l'adresse commiterait
-      // une adresse orpheline à chaque refus.
+      // sec suffit.
+      //
+      // ⚠️ La borne haute n'est PAS la création de l'adresse mais l'appel à
+      // `resoudreCommune` juste dessous, qui fait un `upsert` sur `cities` :
+      // descendre la garde d'un seul cran commiterait une commune neuve à
+      // chaque identifiant sondé. Précision de l'agent testeur, avec l'oracle
+      // qui la tient.
       //
       // La FK garantit que le vélo existe, pas qu'il est à l'appelant : sans
       // cette lecture, un identifiant forgé rattacherait le vélo d'un tiers au
@@ -362,9 +367,10 @@ export type InterventionClient = {
   /// est qu'il n'a pas réglé.
   montantPaye: string | null;
   /// Le vélo désigné par le client, `null` tant qu'aucun ne l'est - et c'est un
-  /// état nominal, pas une donnée manquante : `cycle_id` est NULLable et toute
-  /// intervention venue du tunnel en est dépourvue (dictionnaire §interventions
-  /// champ 14). Même forme que ce que lit l'écran T2 du technicien.
+  /// état nominal, pas une donnée manquante : `cycle_id` est NULLable et le
+  /// rattachement reste facultatif sur les deux surfaces qui l'écrivent, le
+  /// tunnel (C5) et le panneau de l'espace client. Même forme que ce que lit
+  /// l'écran T2 du technicien.
   ///
   /// ⚠️ **Référence vivante, pas instantané.** Contrairement à `price_snapshot`
   /// et `duration_snapshot`, ces trois valeurs sont relues dans `cycles` à
@@ -1011,9 +1017,9 @@ export type InterventionDetail = {
   /// `null` quand l'adresse n'a pas de point (pseudonymisation).
   point: PointWgs84 | null;
   /// `null` tant que rien ne renseigne `cycle_id`. Les deux états s'affichent
-  /// (cadrage du plancher V2, D11) : l'écrivain est T-V3-16, côté client, et le
-  /// rattachement reste facultatif, donc la colonne est vide sur toute
-  /// intervention venue du tunnel.
+  /// (cadrage du plancher V2, D11) : deux surfaces l'écrivent depuis le
+  /// 2026-08-16, le tunnel (C5) et le panneau de l'espace client, et le
+  /// rattachement reste facultatif sur les deux.
   cycle: { brand: string; model: string | null; type: string } | null;
   produits: ProduitDetail[];
   /// Identifiants seuls : le contenu passe par

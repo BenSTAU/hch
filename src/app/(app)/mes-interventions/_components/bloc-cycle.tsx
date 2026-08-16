@@ -59,8 +59,8 @@ export function BlocCycle({
 
   // Hors `PLANNED`, la ligne est une lecture. Et quand il n'y a rien à lire,
   // il n'y a pas de bloc : sur un rendez-vous terminé sans vélo désigné,
-  // « Aucun vélo » n'apprendrait rien - le tunnel n'en demande aucun, c'est
-  // l'état de toutes les interventions qui en viennent.
+  // « Aucun vélo » n'apprendrait rien - le rattachement est facultatif sur les
+  // deux surfaces qui l'écrivent, donc l'absence est un état nominal.
   if (!modifiable) {
     if (!cycle) return null;
 
