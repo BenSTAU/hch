@@ -14,8 +14,6 @@
 // (rollback) ? C'est la seule distinction qui compte, et c'est celle qu'un
 // `$transaction: (cb) => cb(tx)` naïf efface, en rendant vert un code qui
 // commiterait une réservation amputée de sa vente.
-//
-// ⚠️ Ajouté par l'agent testeur en vérification de T-V3-09.
 import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -37,16 +35,11 @@ const txInterventionFindUniqueOrThrow = vi.fn();
 const txInterventionUpdate = vi.fn();
 const auditCreate = vi.fn();
 
-/// ⚠️ **Modele de verrouillage etendu par l'agent testeur, 2026-08-11.**
-///
-/// Le faux client etait un objet UNIQUE partage par toutes les transactions, et
-/// son `$queryRaw` ne faisait rien : deux annulations concurrentes s'y
-/// croisaient sans que rien ne s'y oppose. **Aucune assertion n'observait donc
-/// le verrou** - le seul test de concurrence stubbait la relecture au lieu de
-/// faire courir deux appels, et le `SELECT … FOR UPDATE` pouvait disparaitre du
-/// helper sans faire bouger un seul test. Or la relecture SEULE ne protege de
-/// rien : deux transactions la passent toutes les deux avant que l'une ait
-/// commite.
+/// ⚠️ **Ce double doit donner son PROPRE client a chaque transaction.** Un
+/// objet unique partage rendrait le `SELECT … FOR UPDATE` inobservable : il
+/// pourrait disparaitre du helper sans faire bouger un seul test, alors que la
+/// relecture SEULE ne protege de rien, deux transactions la passant toutes les
+/// deux avant que l'une ait commite.
 ///
 /// Ce qui est modele ici est le regime reel de PostgreSQL, comme dans
 /// `photos.test.ts` :
@@ -145,7 +138,7 @@ vi.mock("@/lib/db/client", () => ({
   },
 }));
 
-/// ⚠️ **`resoudreCommune` est un espion depuis le 2026-08-16 (agent testeur).**
+/// ⚠️ **`resoudreCommune` est un espion depuis le 2026-08-16.**
 /// C'était une fonction nue, donc invisible aux assertions - or elle ÉCRIT :
 /// `upsert` sur `cities` (`queries/adresses.ts:47-58`). C'est la première
 /// écriture de la transaction de réservation, avant même l'adresse, et donc la
@@ -401,10 +394,6 @@ describe("reserverIntervention - le velo designe a C5", () => {
     expect(queryRaw).not.toHaveBeenCalled();
     expect(productUpdate).not.toHaveBeenCalled();
   });
-
-  // ─────────────────────────────────────────────────────────────────────
-  // Ajouts de l'agent testeur, 2026-08-16.
-  // ─────────────────────────────────────────────────────────────────────
 
   it("ne commite AUCUNE commune quand le velo est refuse", async () => {
     // 🔴 La borne haute reelle de la garde, et le test voisin ne la voyait pas.
@@ -704,7 +693,7 @@ describe("listerInterventionsAVenir", () => {
   });
 
   it("DEMANDE le velo au select, sans quoi le selecteur serait vide en permanence", async () => {
-    // Ajoute par l'agent testeur (T-V3-16). C'est exactement le defaut que
+    // C'est exactement le defaut que
     // cette tache existe pour refermer, mais dans l'autre sens : T-V2-02
     // affichait une colonne que personne n'ecrivait, et retirer cette ligne du
     // `select` rendrait une colonne ecrite que personne ne lit. Le symptome
@@ -722,7 +711,7 @@ describe("listerInterventionsAVenir", () => {
   });
 
   it("descend le velo rattache jusqu'au DTO, id compris", async () => {
-    // Ajoute par l'agent testeur (T-V3-16). L'`id` en fait partie et ce n'est
+    // L'`id` en fait partie et ce n'est
     // pas accessoire : c'est lui qui coche la bonne dalle du selecteur. Sans
     // lui, l'ecran afficherait le velo dans la liste mais « Aucun velo » en
     // valeur retenue.
@@ -854,8 +843,6 @@ describe("listerInterventionsPassees", () => {
   });
 
   it("ramene un numero de page fractionnaire a un entier", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-11. RED au moment de l'ecriture.
-    //
     // Meme famille que le test ci-dessus, et meme motif : le numero vient de
     // l'URL, donc de n'importe qui. `passees/page.tsx:53` le lit par
     // `Number(parametres.page) || 1`, qui rend `2.3` pour `?page=2.3` ; ici,
@@ -894,11 +881,6 @@ describe("listerInterventionsPassees", () => {
     expect(page.interventions[0]?.cancellationReason).toBe("Client absent");
   });
 });
-
-// ⚠️ Les deux tests de `chargerInterventionDuClient` ont été retirés avec la
-// fonction, au 2026-08-11 : l'agent testeur a constaté qu'elle n'avait aucun
-// appelant, et ils couvraient donc du code qui ne tournait jamais en
-// production. Ce n'est pas un oracle rendu vert - c'est un sujet qui a disparu.
 
 describe("compterInterventionsClient", () => {
   it("compte les deux onglets sur le meme client", async () => {
@@ -1106,8 +1088,6 @@ describe("annulerInterventionDuClient", () => {
   });
 
   it("prend le verrou sur la BONNE ligne, et AVANT de la relire", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
-    //
     // Le test voisin (« verrouille la ligne APRES la garde de propriete »)
     // n'affirme que le NEGATIF : aucun verrou quand la lecture filtree ne rend
     // rien. Rien n'affirmait le positif, et rien n'affirmait l'ordre - le
@@ -1133,7 +1113,7 @@ describe("annulerInterventionDuClient", () => {
   });
 
   it("n'annule QU'UNE FOIS sous deux annulations concurrentes", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-11. Le test que la suite n'avait
+    // Le test que la suite n'avait
     // pas : celui qui fait REELLEMENT courir deux transactions.
     //
     // Le module s'attribue la propriete en toutes lettres (`interventions.ts`
@@ -1313,7 +1293,7 @@ describe("listerTourneeDuJour - les bornes de la journee", () => {
   });
 
   it("couvre les 23 heures de la nuit ou l'heure d'ete arrive", async () => {
-    // ⚠️ **Ajout de l'agent testeur, 2026-08-12.** La DoD nomme « les deux nuits
+    // ⚠️ La DoD nomme « les deux nuits
     // de bascule » et la suite n'en eprouvait qu'UNE, celle d'octobre. Les deux
     // ne se prouvent pas l'une l'autre : la journee de 25 heures ne casse
     // qu'une borne haute calculee en « + 24 h », la journee de 23 heures casse
@@ -1349,7 +1329,7 @@ describe("listerTourneeDuJour - les bornes de la journee", () => {
   });
 
   it("passe le changement de MOIS et d'ANNEE sans deborder", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-12. `ajouterJours` fabrique la borne
+    // `ajouterJours` fabrique la borne
     // haute ; un incrementeur naif sur le champ `jour` produirait un « 32
     // decembre » que `Date.UTC` normalise silencieusement - ou pas, selon
     // l'implementation. Le 31 decembre est aussi le jour ou une tournee mal
@@ -1563,7 +1543,7 @@ describe("listerTourneeDuJour - la projection", () => {
   });
 
   it("ne rend QUE des valeurs stables a la serialisation", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-12. Le module s'attribue en toutes
+    // Le module s'attribue en toutes
     // lettres la propriete « les deux chemins portent exactement la meme
     // forme » - `initialData` au rendu, retour de la Server Action au polling -
     // et le seul oracle existant ne couvrait qu'`appointmentAt`.
@@ -1738,15 +1718,12 @@ describe("listerTourneeAVenir - la fenetre 7 j / 30 j", () => {
       client: { nom: "Sophie Dumas", telephone: "+33612345678" },
       point: null,
     });
-    // Le libelle que le client redige pour lui-meme ne traverse pas : retire du
-    // `select` par l'agent testeur en T-V2-01, minimisation.
+    // Le libelle que le client redige pour lui-meme ne traverse pas.
     expect(JSON.stringify(intervention)).not.toContain("label");
   });
 });
 
 describe("la frontiere entre « Aujourd'hui » et « Cette semaine »", () => {
-  // 🔴 **Ajout de l'agent testeur, et rien ne tenait cette propriete.**
-  //
   // Les deux fenetres sont eprouvees separement, chacune contre des litteraux
   // ISO ecrits a la main. Rien ne les relie : deux oracles justes pris un a un
   // laisseraient passer un trou d'une heure entre les deux onglets - un
@@ -1909,7 +1886,7 @@ describe("listerHistoriqueTech", () => {
   });
 
   it("durcit un numero de page bricole", async () => {
-    // Meme famille de defaut que celle relevee par l'agent testeur sur C10 :
+    // Meme famille de defaut que sur C10 :
     // `?page=2.3` traversait `Math.max` intact et produisait un `skip`
     // fractionnaire que Prisma refuse - 500 sur un parametre d'URL.
     for (const [demandee, attendu] of [
@@ -2335,7 +2312,7 @@ describe("demarrerInterventionDuTech", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-// ⚠️ Ajouts de l'agent testeur, 2026-08-13 - ce que le harnais de T-V2-02 ne
+// ⚠️ Ce que le harnais de T-V2-02 ne
 // modelisait pas.
 // ─────────────────────────────────────────────────────────────────────────
 

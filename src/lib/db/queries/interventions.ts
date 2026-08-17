@@ -175,8 +175,7 @@ export async function reserverIntervention(params: {
       // ⚠️ La borne haute n'est PAS la création de l'adresse mais l'appel à
       // `resoudreCommune` juste dessous, qui fait un `upsert` sur `cities` :
       // descendre la garde d'un seul cran commiterait une commune neuve à
-      // chaque identifiant sondé. Précision de l'agent testeur, avec l'oracle
-      // qui la tient.
+      // chaque identifiant sondé.
       //
       // La FK garantit que le vélo existe, pas qu'il est à l'appelant : sans
       // cette lecture, un identifiant forgé rattacherait le vélo d'un tiers au
@@ -202,10 +201,9 @@ export async function reserverIntervention(params: {
       );
 
       // Réutiliser l'adresse déjà connue plutôt qu'en créer une par
-      // réservation : le libellé vient de la BAN, il est canonique, donc deux
-      // réservations au même endroit donnent exactement la même rue et la même
-      // commune. Sans ce filtre, un client fidèle accumule des lignes
-      // indiscernables dans son sélecteur. Relevé par l'agent testeur.
+      // réservation : le libellé vient de la BAN, donc il est canonique. Sans
+      // ce filtre, un client fidèle accumule des lignes indiscernables dans son
+      // sélecteur.
       const existante = await tx.address.findFirst({
         where: {
           userId: params.clientId,
@@ -243,13 +241,10 @@ export async function reserverIntervention(params: {
           techId: params.techId,
           addressId,
           serviceId: params.serviceId,
-          // ⚠️ **Le tunnel écrit `cycle_id` depuis le 2026-08-16.** Le
-          // dictionnaire v2.4 écrivait *« reste NULL sur toute intervention
-          // venue du tunnel »* et désignait le panneau de `/mes-interventions`
-          // comme seul écrivain (point clos le 2026-08-12) ; l'arbitrage du
-          // 2026-08-16 rouvre le point et promeut le sélecteur de C5. La
-          // colonne reste NULLable et le choix facultatif - `null` est l'état
-          // nominal, pas une donnée manquante.
+          // ⚠️ **Le tunnel écrit `cycle_id`**, contre [[mcd-dictionnaire]] v2.4
+          // qui le disait réservé au panneau de `/mes-interventions`. Écart à
+          // verser au write-back. La colonne reste NULLable et le choix
+          // facultatif : `null` est l'état nominal, pas une donnée manquante.
           //
           // Le vélo n'est **pas figé en instantané**, contrairement à
           // `price_snapshot` et `duration_snapshot` : c'est une référence
@@ -429,23 +424,20 @@ const SELECTION_CLIENT = {
     },
     orderBy: { productId: "asc" },
   },
-  // Le vélo désigné, depuis T-V3-16 qui en est le premier écrivain. Sans
-  // `year` : le panneau nomme le vélo, il ne le décrit pas - la fiche complète
-  // est en C11.
+  // Sans `year` : le panneau nomme le vélo, il ne le décrit pas. La fiche
+  // complète est en C11.
   cycle: { select: { id: true, brand: true, model: true, type: true } },
   // Les identifiants seuls : le contenu passe par
   // `GET /api/intervention-photos/[id]`, jamais par un chemin de fichier rendu
   // au navigateur.
   photos: { select: { id: true }, orderBy: { id: "asc" } },
-  // Le montant réellement encaissé, que T-V3-10 ne pouvait pas lire faute de
-  // table `payments` (PR #33). `status` accompagne le montant et n'est pas
-  // décoratif : la ligne `UNPAID` du refus de paiement porte 0, et sans le
-  // discriminant elle se lirait « payé 0,00 € ».
+  // `status` accompagne le montant et n'est pas décoratif : la ligne `UNPAID`
+  // du refus de paiement porte 0, et sans le discriminant elle se lirait
+  // « payé 0,00 € ».
   //
   // ⚠️ Ni `recorded_by`, ni `paid_at`, ni `method` : rien de tout ça n'a de
   // lecteur sur l'écran du client, et l'identité du technicien qui a saisi est
-  // une donnée d'exploitation. Même minimisation que le retrait d'`address.label`
-  // du `select` de la tournée (PR #41 note 2).
+  // une donnée d'exploitation.
   payment: { select: { amountSnapshot: true, status: true } },
 } satisfies Prisma.InterventionSelect;
 
@@ -540,16 +532,12 @@ export const TAILLE_PAGE_PASSEES = 10;
 /// Fenêtre `appointment_at` d'un couple de jours civils, ancrée sur
 /// `Europe/Paris`.
 ///
-/// 🐛 **Corrige le bug UTC du filtre de C10** (point ouvert du 2026-08-11), et
-/// c'est la raison pour laquelle les deux bornes sont des **jours civils** et
-/// non des `Date` : l'appelant construisait `new Date(\`${valeur}T00:00:00Z\`)`,
-/// donc minuit **UTC**, et le filtre « du 11 août » écartait les rendez-vous du
-/// 11 entre 00 h 00 et 02 h 00 en été. La borne haute passait de son côté par
-/// « +24 h », qui perd ou duplique une heure les deux nuits de bascule.
-///
-/// `instantUtc` et `ajouterJours` sont exactement ce que `listerTourneeDuJour`
-/// utilise depuis le cadrage du plancher V2 (D1) : un seul mécanisme de bornage
-/// dans le module, plus deux.
+/// ⚠️ Les deux bornes sont des **jours civils** et non des `Date` : minuit UTC
+/// n'est pas minuit à Paris, et un filtre « du 11 août » construit sur
+/// `T00:00:00Z` écarte les rendez-vous du 11 entre 00 h et 02 h en été. Une
+/// borne haute en « +24 h » perd ou duplique une heure les nuits de bascule.
+/// `instantUtc` et `ajouterJours` sont le mécanisme unique de bornage du
+/// module, partagé avec `listerTourneeDuJour`.
 ///
 /// La borne haute reste **exclusive au lendemain** et non inclusive au jour
 /// saisi : `<= le 11` écarterait toute la journée du 11, ce qui est faux pour
@@ -579,16 +567,11 @@ export async function listerInterventionsPassees(params: {
   au?: JourCivil;
   page?: number;
 }): Promise<PagePassees> {
-  // 🐛 `Math.trunc` en plus du plancher, relevé par l'agent testeur. Le numéro
-  // vient de l'URL, donc de n'importe qui : `?page=2.3` traversait `Math.max`
-  // intact, et `skip` valait `12.999999999999998`. Prisma type `skip` en `Int`
-  // et refuse un flottant, donc 500 sur un paramètre bricolé ; et le numéro
-  // fractionnaire ressortait dans `PagePassees`, où `cible === page` ne pouvait
-  // plus être vrai - plus aucune page marquée `aria-current` (RGAA A).
-  //
-  // Même motif que le plancher à 1, qui ne couvrait que la moitié négative du
-  // cas. `Number.isFinite` ferme les deux dernières formes, `NaN` et `Infinity`,
-  // que `Math.max` propagerait telles quelles.
+  // ⚠️ Le numéro vient de l'URL, donc de n'importe qui, et les trois gardes
+  // couvrent trois formes distinctes. Sans `Math.trunc`, `?page=2.3` donne un
+  // `skip` flottant que Prisma refuse (500) et un `cible === page` jamais vrai,
+  // donc plus aucun `aria-current` (RGAA A) ; sans le plancher, le négatif
+  // passe ; sans `Number.isFinite`, `NaN` et `Infinity` traversent `Math.max`.
   const demandee = params.page ?? 1;
   const page = Number.isFinite(demandee)
     ? Math.max(1, Math.trunc(demandee))
@@ -692,18 +675,17 @@ export type InterventionTournee = {
     /// pas de FK cassée), donc la ligne existe et doit se rendre.
     telephone: string | null;
   };
-  /// ⚠️ **Sans `label`**, contrairement à `InterventionClient`. C'est un libellé
-  /// que le client rédige pour lui-même - « Domicile », « Chez ma mère » - et
-  /// aucun composant de cet écran ne le lit. Il traversait jusqu'au navigateur
-  /// du technicien sans consommateur : relevé par l'agent testeur, et c'est
-  /// exactement la minimisation dont ce module se réclame ailleurs.
+  /// ⚠️ **Sans `label`**, contrairement à `InterventionClient` : c'est un
+  /// libellé que le client rédige pour lui-même, qu'aucun composant de cet
+  /// écran ne lit, et qui traverserait sans consommateur jusqu'au navigateur du
+  /// technicien.
   adresse: {
     street: string;
     zipCode: string;
     city: string;
   };
-  /// `null` quand l'adresse n'a pas de point - pseudonymisation, là encore.
-  /// C'est la garde de pin qu'exige la DoD case 11.
+  /// `null` quand l'adresse n'a pas de point, cas de la pseudonymisation :
+  /// c'est ce qui garde la carte de poser un marqueur sans coordonnées.
   point: PointWgs84 | null;
   produits: ProduitTournee[];
 };
@@ -782,11 +764,9 @@ function projeterTournee(
 /// deux nuits de changement d'heure durent 23 ou 25 heures, et une tournée
 /// bornée en heures perdrait ou dupliquerait un rendez-vous ces jours-là.
 ///
-/// C'est exactement le défaut du filtre de l'écran C10, qui construisait
-/// `new Date(\`${valeur}T00:00:00.000Z\`)` en dur (point ouvert du 2026-08-11).
-/// Cadrage du plancher V2, D1 - la note de la SPEC qui renvoie à une clé
-/// `app_settings.timezone` est fausse : cette clé n'existe pas, et PLAN S2 §T5
-/// tranche le stockage tout-UTC.
+/// ⚠️ La note de la SPEC qui renvoie à une clé `app_settings.timezone` est
+/// fausse : cette clé n'existe pas, et PLAN S2 §T5 tranche le stockage
+/// tout-UTC. Écart à verser au write-back.
 ///
 /// ── Bornée par le JOUR, pas par le statut
 ///
@@ -843,10 +823,9 @@ async function lireTournee(params: {
   return lignes.map((ligne) => projeterTournee(ligne, points));
 }
 
-/// Onglet « Cette semaine » - `US-INTERVENTIONS-LISTER-TECH-A-VENIR`, promue en
-/// v1 le 2026-08-12 et portée par T-V2-05.
+/// Onglet « Cette semaine » - `US-INTERVENTIONS-LISTER-TECH-A-VENIR`.
 ///
-/// ── Elle commence DEMAIN, pas maintenant
+/// ⚠️ Elle commence DEMAIN, pas maintenant.
 ///
 /// L'US écrit « mes interventions des **jours suivants** (7 j / 30 j) », et
 /// aujourd'hui a son propre onglet. Faire commencer la fenêtre à `NOW()` ferait
@@ -863,11 +842,7 @@ async function lireTournee(params: {
 ///
 /// ⚠️ Conséquence assumée : une intervention future **annulée** ne figure dans
 /// aucune de ces deux vues et apparaît dans « Historique », qui retient les
-/// statuts terminaux sans borne de date. C'est exactement le régime déjà
-/// accepté côté client depuis l'arbitrage du 2026-08-11.
-///
-/// Aucune migration : l'index `@@index([techId, appointmentAt])` de la 008
-/// couvre n'importe quelle plage.
+/// statuts terminaux sans borne de date. Même régime que côté client.
 export async function listerTourneeAVenir(params: {
   techId: string;
   /// Le jour courant. La fenêtre part du lendemain.
@@ -958,12 +933,9 @@ export async function listerHistoriqueTech(params: {
 /// Produit attaché, vu sur le DÉTAIL. Il porte son prix, contrairement à
 /// `ProduitTournee`.
 ///
-/// `US-INTERVENTION-AFFICHER` §Cas nominal l'exige nommément (« produits
-/// attachés (nom + quantité + `unit_price_snapshot`) »), et Constitution §3.1
-/// n'y fait pas obstacle : elle interdit au technicien de **modifier** les
-/// prix, « interdit fonctionnel, pas seulement masqué dans l'UI », jamais de
-/// les lire. Il encaissera ce total en T-V2-03, le découvrir au moment de
-/// tendre le terminal serait un mauvais enchaînement.
+/// ⚠️ Le technicien LIT les prix, et Constitution §3.1 n'y fait pas obstacle :
+/// elle lui interdit de les **modifier**, jamais de les lire. C'est lui qui
+/// encaisse ce total.
 export type ProduitDetail = ProduitTournee & {
   /// Prix unitaire figé à la vente (Constitution §4.1), à deux décimales.
   unitPriceSnapshot: string;
@@ -1084,10 +1056,8 @@ function projeterDetail(
   point: PointWgs84 | null,
 ): InterventionDetail {
   // Même formule que `projeter()` : `price_snapshot` du forfait plus la somme
-  // des `unit_price_snapshot × quantité`. Elle est écrite mot pour mot dans les
-  // deux US produits, et le paiement de T-V2-03 se préréglera dessus (cadrage
-  // du plancher V2, D9). `Prisma.Decimal` et non un flottant, c'est un montant
-  // qui sera encaissé.
+  // des `unit_price_snapshot × quantité`. `Prisma.Decimal` et non un flottant,
+  // c'est un montant qui sera encaissé.
   const total = ligne.products.reduce(
     (somme, produit) =>
       somme.plus(produit.unitPriceSnapshot.times(produit.quantity)),
@@ -1180,37 +1150,19 @@ export type ResultatDemarrage =
   | { ok: false; reason: "transition_illegale"; statutCourant: string };
 
 /// Passe une intervention planifiée en `IN_PROGRESS` -
-/// `US-INTERVENTION-DEMARRER`.
+/// `US-INTERVENTION-DEMARRER`. Le refus est **serveur et typé** ; le `409` que
+/// la SPEC écrit n'a plus de référent depuis le pivot Next full-stack
+/// (ADR-002 v2), les mutations rendant des unions discriminées.
 ///
-/// ── Le refus est typé, il n'est pas un code HTTP
+/// ⚠️ **Le verrou n'est pas décoratif.** Deux démarrages concurrents
+/// passeraient tous deux la lecture de statut sous READ COMMITTED et
+/// écriraient DEUX entrées d'audit sur la même transition : le second `UPDATE`
+/// est inoffensif, la trace ne l'est pas. Il est pris **après** la garde de
+/// propriété, sans quoi un appelant qui incrémente des identifiants
+/// verrouillerait le rendez-vous d'un tiers.
 ///
-/// La SPEC §Cas d'erreur écrit `409 « Transition impossible depuis ce
-/// statut »`. Ce statut n'a plus de référent : les mutations passent par des
-/// Server Actions qui rendent des unions discriminées, pas par une API REST
-/// (reste d'une rédaction antérieure au pivot Next full-stack, ADR-002 v2).
-/// L'exigence réelle est conservée mot pour mot : le refus est **serveur** et
-/// **typé**, et il ne vit pas dans l'UI.
-///
-/// ── Le verrou n'est pas décoratif, et c'est le même que celui de l'annulation
-///
-/// Deux démarrages concurrents de la même intervention passeraient tous les
-/// deux la lecture de statut sous READ COMMITTED, et écriraient **deux** entrées
-/// d'audit sur la même transition. Le second `UPDATE` est inoffensif, la trace
-/// ne l'est pas : `audit_logs` est la pièce qu'on produit en cas de
-/// contestation, et elle daterait deux fois un démarrage unique.
-///
-/// Le verrou est pris **après** la garde de propriété, jamais avant : un
-/// appelant qui incrémente des identifiants ne doit pas pouvoir verrouiller le
-/// rendez-vous d'un tiers.
-///
-/// ── Effet de bord sur un tiers, et il est voulu
-///
-/// Le passage en `IN_PROGRESS` ferme le panier du client :
-/// `STATUT_MODIFIABLE = "PLANNED"` dans `queries/produits.ts` et dans
-/// `queries/photos.ts` refuse dès lors l'ajout et le retrait de produits comme
-/// le dépôt de photos. Il n'y a **rien à aligner**, ce verrou existe déjà
-/// (arbitrage B7 Q2a) ; l'oracle qui le prouve vit dans
-/// `tests/e2e/detail-intervention.spec.ts`.
+/// Effet de bord voulu : `IN_PROGRESS` ferme le panier du client,
+/// `queries/produits.ts` et `queries/photos.ts` n'acceptant que `PLANNED`.
 export async function demarrerInterventionDuTech(params: {
   interventionId: number;
   techId: string;
@@ -1264,10 +1216,9 @@ export async function demarrerInterventionDuTech(params: {
     // trace écrite à côté survit à un rollback, ou manque alors que l'écriture
     // a eu lieu (`src/lib/audit/log.ts`).
     //
-    // ⚠️ Le champ s'appelle **`details`**. `US-INTERVENTION-DEMARRER` §Cas
-    // nominal écrit `metadata.transition` : ce nom n'existe pas dans
-    // `AuditEntry`, et c'est la troisième occurrence de l'erreur dans la SPEC
-    // (la PR #39 l'avait déjà corrigée deux fois sur T-V3-12).
+    // ⚠️ Le champ s'appelle **`details`**, quand la SPEC écrit
+    // `metadata.transition` : ce nom n'existe pas dans `AuditEntry`. Écart à
+    // verser au write-back.
     await writeAuditLog(
       {
         entityType: "interventions",
@@ -1431,12 +1382,3 @@ export async function annulerInterventionDuClient(params: {
     };
   });
 }
-
-// ⚠️ `chargerInterventionDuClient` a été écrite ici puis **retirée** au
-// 2026-08-11, sur constat de l'agent testeur : aucun appelant. Le panneau de
-// détail sélectionne côté client dans la liste déjà chargée, il ne recharge
-// rien. Elle aurait servi T-V3-11, qui devra lire l'intervention à annuler dans
-// sa Server Action - et c'est exactement le motif de la retirer : le panneau du
-// même écran écrit qu'« une place gardée pour une tâche future est un
-// mort-vivant si la tâche glisse ». Trois lignes à réécrire le jour où un
-// appelant existe, sur le modèle de `SELECTION_CLIENT` et `projeter`.

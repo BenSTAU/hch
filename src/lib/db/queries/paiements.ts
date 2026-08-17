@@ -90,14 +90,10 @@ export type DemandeCloture =
 /// un appelant qui incrémente des identifiants ne doit pas pouvoir verrouiller
 /// le rendez-vous d'un tiers.
 ///
-/// ── Aucun preread photo, et c'est un écart assumé
-///
-/// Les deux US exigent au moins une photo attachée au titre de l'invariant
-/// Constitution §2.5. L'exigence est **reportée en v1** (cadrage du plancher V2,
-/// D8) : son moyen de dépôt est `US-INTERVENTION-PHOTOS-DEPOSER` (T-V2-04), qui
-/// est sacrifiable, et l'étape photo du tunnel est facultative. Implémentée
-/// sans elle, la clôture deviendrait impossible sur toute intervention sans
-/// photo client. Restaurée par T-V2-04.
+/// ⚠️ **Aucun contrôle de photo attachée**, alors que les deux US l'exigent au
+/// titre de Constitution §2.5. L'étape photo du tunnel étant facultative, le
+/// poser rendrait la clôture impossible sur toute intervention sans photo
+/// client. Écart assumé, à refermer avec le dépôt côté technicien.
 export async function cloturerInterventionDuTech(params: {
   interventionId: number;
   techId: string;

@@ -36,10 +36,9 @@ export type ProduitVendable = {
   stock: number;
 };
 
-/// `cache()` de React : le tunnel lit ce catalogue au rendu de la page, et la
-/// vue de détail d'intervention le relira dans le même rendu quand T-V3-10
-/// montera le bloc T+n. Sans lui, deux requêtes identiques par visite, sur une
-/// base jointe par tunnel SSH.
+/// `cache()` de React : le tunnel et la vue de détail d'intervention lisent ce
+/// catalogue dans le même rendu. Sans lui, deux requêtes identiques par visite,
+/// sur une base jointe par tunnel SSH.
 export const listProduitsVendables = cache(
   async (): Promise<ProduitVendable[]> => {
     const produits = await db.product.findMany({

@@ -91,7 +91,7 @@ export async function updateAppSettings(
       // valeur stockée ne respecte pas son `value_type` - posée par un seed,
       // une migration ou un UPDATE SQL manuel - rendrait le formulaire entier
       // insoumettable, y compris pour des champs sans rapport, puisque le lot
-      // est tout-ou-rien. Relevé par l'agent testeur sur T-J0-05 (B6).
+      // est tout-ou-rien.
       if (!validateSettingValue(row.valueType, entry.value).ok) {
         invalidKeys.push(entry.key);
         continue;
@@ -162,14 +162,12 @@ export async function lireContactSociete(): Promise<{
 /// « chaque page rappelle : nom entreprise, SIRET, coordonnées ».
 ///
 /// Cinq clés d'`app_settings` et non des constantes : la LCEN impose que ces
-/// mentions soient exactes, et c'est l'administrateur qui les tient à jour
-/// depuis le back-office (T-J0-05). Un SIRET en dur dans le code aurait vieilli
-/// sans que personne le voie.
+/// mentions soient exactes, et un SIRET en dur vieillirait sans que personne le
+/// voie.
 ///
-/// Toutes facultatives, comme `lireContactSociete` : la colonne est NULLable et
-/// un administrateur peut vider un champ. La page affiche ce qui existe, et
-/// signale ce qui manque plutôt que d'afficher un trou silencieux - une mention
-/// légale absente est une non-conformité, pas un détail de présentation.
+/// Toutes facultatives, la colonne étant NULLable. La page signale ce qui
+/// manque plutôt que d'afficher un trou : une mention légale absente est une
+/// non-conformité, pas un détail de présentation.
 export type IdentiteSociete = {
   nom: string | null;
   siret: string | null;
