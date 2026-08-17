@@ -14,8 +14,6 @@ import { cn } from "@/lib/utils";
 /// panier vit donc **dans** le tunnel, sur l'écran de validation, et pas dans
 /// une boutique séparée.
 ///
-/// ── Géométrie portée
-///
 ///   · dalle `rounded-xl p-6`, titre `headline-sm` avec la mention
 ///     « (facultatif) » en 14 px atone (`c5:172`) ;
 ///   · cartes `border rounded-xl p-4`, prix en `headline-sm`, sélecteur de
@@ -23,8 +21,6 @@ import { cn } from "@/lib/utils";
 ///     (`c5:196-206`) ;
 ///   · carte choisie soulignée `border-primary` sur `primary-fixed/10`, badge
 ///     « Ajouté » en haut à droite (`c5:183-185`).
-///
-/// ── Ce qui ne se porte pas
 ///
 ///  1. **Les vignettes produit** (`c5:188-190`). Elles pointent
 ///     `lh3.googleusercontent.com`, que le bloc *Global* de [[maquettage]]
@@ -39,8 +35,6 @@ import { cn } from "@/lib/utils";
 ///     du seed de T-V3-01, générique par construction : le dépôt bascule
 ///     public.
 ///  4. **Material Symbols** → Lucide, règle transverse.
-///
-/// ── Ce que le panier n'est pas
 ///
 /// Composer un panier ne **retient** rien : le stock affiché est celui du
 /// moment, et il peut partir avant la validation. Le refus arrive alors à la

@@ -1,12 +1,9 @@
 // La carte de la tournee - colonne droite de l'ecran **T1**.
 //
-// ⚠️ **Ajout de l'agent testeur, 2026-08-12. Ce module n'avait AUCUN test**, et
-// il n'a jamais ete execute : aucune cle `HCH_MAPS_API_KEY` n'existe sur le
-// poste ni sur les deux piles, donc `montrable` est faux partout et le composant
-// rend `null`. Le seul oracle existant (`tournee-vue.test.tsx`, « ne monte pas la
-// carte sans cle Maps ») eprouve exactement le chemin ou ce fichier ne fait rien.
+// ⚠️ Sans `HCH_MAPS_API_KEY`, `montrable` est faux et le composant rend
+// `null` : le chemin nominal ne s'execute nulle part hors de ces tests.
 //
-// Ce que ces tests couvrent, et qui n'avait aucune surface :
+// Ce qu'ils couvrent :
 //
 //   · **la garde de pin** de la DoD case 11 - une adresse sans point ne produit
 //     pas de marqueur, et son intervention reste dans la liste ;
@@ -17,8 +14,6 @@
 //   · **la reprise apres un echec de script**, que le commentaire du module
 //     declare « rejouable » ;
 //   · **RGAA A** sur la region de la carte.
-//
-// ── Le double de `google.maps`, et ce qu'il modelise
 //
 // L'API n'est pas installable en test : elle arrive par un `<script>` distant
 // que jsdom ne charge pas. Le double ci-dessous ne simule pas Google Maps, il en
@@ -32,16 +27,10 @@
 // ⚠️ Le double **injecte sa commande sans lire les options**, et c'est
 // delibere : un double qui obeirait a `zoomControl` ne prouverait plus rien de
 // ce que le composant fait des commandes qu'il ne controle pas.
-//
-// ── Trois constats corriges depuis l'ecriture de ce fichier
-//
-// B1 (reprise apres echec de script) et B2 (`aria-hidden-focus`) etaient rouges
-// a l'ecriture, verts depuis le correctif de T-V2-01. Puis le 2026-08-12, cle
-// renseignee, la premiere execution reelle a donne `google.maps.Map is not a
-// constructor` : le harnais lui-meme tenait `load` pour le signal de
-// disponibilite de l'API, donc il modelisait la premisse du bug. Corrige dans
-// `declencher()`, qui porte la justification. **Dix-sept tests verts contre un
-// double faux** - c'est la lecon du fichier.
+// ⚠️ `declencher()` distingue le chargement du script de la disponibilite
+// de l'API. Tenir `load` pour les deux modelise la premisse du bug plutot
+// que le bug, et rend vert un composant qui appelle `new google.maps.Map`
+// sur un global inexistant.
 import { render, screen, waitFor } from "@testing-library/react";
 import { axe } from "jest-axe";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -501,27 +490,11 @@ describe("CarteTournee - le rafraichissement de 30 secondes", () => {
   });
 
   it("renumerote les pins quand un rendez-vous SANS point s'insere avant eux", async () => {
-    // 🔴 **ROUGE a l'ecriture - constat n°2 de l'agent testeur, 2026-08-12.**
-    //
-    // C'est le defaut B3 qui revient par la porte de derriere. Le label d'un pin
-    // est son rang dans la tournee ENTIERE (`interventions.indexOf`), la
-    // correction meme de B3 - mais la cle de memoisation de l'effet,
-    // `signature`, n'est construite qu'a partir de `points`, donc **des seules
-    // interventions qui portent un point**.
-    //
-    // Consequence : un rendez-vous SANS point qui s'insere avant un pin - client
-    // pseudonymise par T-V3-12, `addresses.location` NULLable depuis la
-    // migration 015 - decale la numerotation attendue **sans faire bouger la
-    // signature**. L'effet ne rejoue pas, la carte n'est pas reconstruite, et le
-    // pin « 1 » designe desormais le DEUXIEME rendez-vous de la journee. Un
-    // numero qui ment, exactement ce que B3 avait fait corriger.
-    //
-    // Le chemin est celui du polling de 30 s, pas une manipulation : c'est
-    // l'administrateur qui ajoute une intervention en cours de journee, cas que
-    // la DoD de T-V2-01 donne comme motif du polling.
-    //
-    // ⚠️ Le rendre vert n'est pas l'affaire de l'agent testeur : la cle de
-    // l'effet vit dans du code de production.
+    // ⚠️ **La cle de memoisation de l'effet doit voir les interventions
+    // SANS point.** Le label d'un pin est son rang dans la tournee ENTIERE :
+    // une signature construite sur les seuls `points` ne bougerait pas quand
+    // un rendez-vous sans coordonnees s'insere avant, et le pin « 1 »
+    // designerait le deuxieme rendez-vous de la journee.
     const CarteTournee = await chargerComposant();
 
     const vue = render(
@@ -675,20 +648,14 @@ describe("CarteTournee - le demontage et les pannes", () => {
   });
 
   it("REPREND apres un echec de chargement du script", async () => {
-    // ⚠️ **Test ROUGE a l'ecriture, et le module affirme le contraire** :
-    // « Rejouable : on oublie la promesse echouee, sinon un incident reseau
-    // ponctuel condamnerait la carte pour toute la duree de l'onglet. »
+    // ⚠️ **Oublier la promesse echouee ne suffit pas : la balise `<script>` en
+    // echec doit quitter le `<head>`.** Sinon la tentative suivante retrouve
+    // son `id`, resout immediatement sans rien recharger, et
+    // `new google.maps.Map` s'execute sur un global `google` inexistant -
+    // l'onglet reste sur « Chargement de la carte… » jusqu'au F5.
     //
-    // Ce qui se produit : `chargement = undefined` est bien remis, mais la
-    // balise `<script>` en echec **reste dans le `<head>`**. La tentative
-    // suivante retrouve cet `id`, resout IMMEDIATEMENT sans rien recharger, et
-    // `new google.maps.Map` s'execute alors que le global `google` n'existe
-    // toujours pas. L'onglet reste sur « Chargement de la carte… » jusqu'au F5 -
-    // exactement l'etat que le commentaire dit avoir evite.
-    //
-    // Scenario, sans rien d'artificiel : le premier chargement echoue (quota
-    // Maps, referer refuse, coupure Wi-Fi du technicien en tournee), puis le
-    // polling de 30 s fait bouger la signature et rejoue l'effet.
+    // Scenario reel : le chargement echoue (quota Maps, referer refuse, Wi-Fi
+    // coupe en tournee), puis le polling de 30 s rejoue l'effet.
     const CarteTournee = await chargerComposant();
 
     const vue = render(

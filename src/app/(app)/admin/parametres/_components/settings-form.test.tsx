@@ -207,8 +207,7 @@ describe("SettingsForm — soumission", () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// Sondes ajoutées par l'agent testeur (T-J0-05).
+// Sondes ajoutées par l'agent testeur.
 //
 // Le fichier corrige lui-même un montage incomplet (`mockResolvedValue` par
 // défaut dans `beforeEach`). La correction est juste et n'affaiblit aucun
@@ -217,7 +216,6 @@ describe("SettingsForm — soumission", () => {
 // **tous** les cas non stubés passent désormais par la branche « succès sans
 // changement ». Les tests ci-dessous couvrent les branches que ce défaut
 // rendait invisibles.
-// ───────────────────────────────────────────────────────────────────────────
 
 describe("SettingsForm — état de la valeur", () => {
   it("affiche un champ vide quand la valeur est NULL en base", () => {

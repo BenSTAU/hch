@@ -17,8 +17,6 @@ import { ProchaineIntervention } from "./prochaine-intervention";
 
 /// Tournée du jour - `US-INTERVENTIONS-LISTER-TECH-DU-JOUR`, écran **T1**.
 ///
-/// ── Ce qui se porte de la maquette, et ce qui saute
-///
 /// Portés : le titre « Aujourd'hui - <jour> », les chips de synthèse, la colonne
 /// de lignes horodatées à gauche, la carte à droite, l'étiquette de statut.
 ///
@@ -46,8 +44,6 @@ import { ProchaineIntervention } from "./prochaine-intervention";
 /// de Benjamin en recettant cet écran. Trois de ses six entrées sont donc
 /// posées ; les trois autres restent absentes, faute d'US.
 ///
-/// ── Les lignes sont cliquables depuis T-V2-02
-///
 /// Chaque ligne ouvre `/interventions/[id]` quel que soit son statut, et les
 /// lignes `PLANNED` portent en plus le bouton « Démarrer ». Le motif complet
 /// vit avec la ligne, dans
@@ -57,8 +53,6 @@ import { ProchaineIntervention } from "./prochaine-intervention";
 /// ne montre que des rendez-vous à partir de demain, et « Historique » que des
 /// statuts terminaux. Un bouton « Démarrer » sur l'intervention de jeudi
 /// prochain n'aurait aucun sens terrain.
-///
-/// ── Le rafraîchissement
 ///
 /// Rendu au serveur, passé en `initialData`, repollé toutes les 30 secondes :
 /// l'administrateur peut modifier ou annuler une intervention pendant la

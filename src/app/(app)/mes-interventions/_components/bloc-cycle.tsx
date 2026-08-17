@@ -20,21 +20,15 @@ import { Button } from "@/components/ui/button";
 /// `components/features/cycles/selecteur-cycle.tsx` ; ce qui reste ici est le
 /// câblage de la mutation T+n et la branche de lecture seule.
 ///
-/// ── Une surface qu'aucune maquette ne dessine
-///
 /// C11 est la page « Mes vélos » ; le rattachement vit ici, dans le panneau de
 /// détail de `/mes-interventions`, et **aucune maquette ne le porte** (L5). Rien
 /// n'y est donc inventé au-delà d'un sélecteur de vélo et de son état vide :
 /// pas de vignette, pas de suggestion, pas d'historique par vélo.
 ///
-/// ── Le détachement fait partie du contrat
-///
 /// « Aucun vélo » est une entrée du sélecteur, pas un geste séparé. `cycle_id`
 /// est NULLable et le rattachement est déclaré facultatif : sans détachement,
 /// une erreur de désignation serait définitive, ce qui contredirait
 /// « facultatif ».
-///
-/// ── Aucun état optimiste
 ///
 /// Trois gardes serveur peuvent refuser (propriété de l'intervention, statut,
 /// propriété du vélo), et la seconde est atteignable en usage normal : un

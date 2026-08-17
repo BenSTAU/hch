@@ -13,8 +13,6 @@ import { CONTENEUR } from "./etapes";
 
 /// Étape 2 du tunnel - écran **C3** (`c3-tunnel-adresse/code.html`).
 ///
-/// ── Géométrie portée
-///
 ///   · bandeau de rappel du forfait pleine largeur, `py-3`, filet bas
 ///     (`c3:143-147`) ;
 ///   · hero aligné à gauche, `mb-12 max-w-2xl`, titre `headline-xl` 48 px sur
@@ -23,8 +21,6 @@ import { CONTENEUR } from "./etapes";
 ///     et colonne de résultat sur **7** (`c3:155-157`, `c3:237`) ;
 ///   · dalles `rounded-2xl p-6 shadow-sm`, carte de résultat au filet gauche de
 ///     4 px (`c3:247`), pastille d'icône `rounded-full p-3`.
-///
-/// ── Ce qui ne se porte pas, et pourquoi
 ///
 ///  1. **La carte.** [[adr-015-provider-carto|ADR-015 v2]] retire la
 ///     cartographie du parcours client : l'iframe de `c3:239-245` disparaît, et

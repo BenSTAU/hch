@@ -8,8 +8,6 @@ import { formatHeure } from "@/lib/format";
 /// Carte de la tournée - colonne droite de l'écran **T1**, seule surface non
 /// admin à porter Maps JS ([[adr-015-provider-carto|ADR-015 v2]], tranchage D5).
 ///
-/// ── Quatre raisons de ne rien monter, et toutes rendent la main à la liste
-///
 ///   1. la clé manque (`HCH_MAPS_API_KEY` est facultative) ;
 ///   2. aucune intervention n'a de point (`addresses.location` est NULLable) ;
 ///   3. le script ne charge pas (quota, referer refusé, réseau) ;

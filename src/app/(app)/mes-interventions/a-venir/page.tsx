@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 ///
 /// ⚠️ **`requireEspaceClient()` : un technicien et un administrateur reçoivent
 /// 403.** Constitution §3.1 pose trois rôles exclusifs avec des parcours
-/// dédiés, amendée le 2026-08-14 en granularité par route.
+/// dédiés en granularité par route.
 ///
 /// La garde vit dans la page et non dans `layout.tsx`, qui est partagé : le
 /// Partial Rendering ne rejoue pas un layout en navigation client (CLAUDE.md
@@ -67,7 +67,7 @@ export default async function InterventionsAVenirPage() {
           maintenant={maintenant}
           vide={{
             // Libellé de l'US §Cas nominal, au cadratin dans la SPEC et au
-            // point ici (CLAUDE.md §Typographie). Écart signalé en PR.
+            // point ici (CLAUDE.md §Typographie). Écart à verser au write-back.
             message: "Vous n'avez pas de rendez-vous prévu.",
             href: CHEMIN_RESERVATION,
             libelle: "Réserver un créneau",

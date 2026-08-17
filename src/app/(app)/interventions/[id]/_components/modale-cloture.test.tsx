@@ -95,7 +95,7 @@ describe("ModaleCloture - la surface qui nomme son effet", () => {
   });
 
   it("le declencheur annonce qu'il ouvre une boite de dialogue", async () => {
-    // 🐛 Relevé par l'agent testeur sur le bloc d'annulation (PR #33) :
+    // 🐛 Relevé par l'agent testeur sur le bloc d'annulation :
     // `DialogTrigger` pose `aria-haspopup="dialog"`, un bouton nu ne le fait
     // pas, et `jest-axe` ne le signale pas.
     monter();
@@ -377,21 +377,11 @@ describe("ModaleCloture - ce qu'elle fait des reponses", () => {
   });
 
   it("annonce un montant LISIBLE quand le technicien a saisi une virgule", async () => {
-    // 🔴 **Ajout de l'agent testeur, 2026-08-14. ROUGE a l'ecriture.**
-    //
-    // Le champ accepte deliberement la virgule - c'est ecrit dans
-    // `modale-cloture.tsx` (« un clavier mobile francais la propose en
-    // premier ») et dans `encaissement.ts`, et l'E2E « un montant ajuste est
-    // celui qui est encaisse » prouve que « 42,50 » atteint la base en 42.50.
-    //
-    // Le TOAST, lui, ne compose pas la valeur normalisee : il compose l'etat
-    // local du champ, brut. `formatPrixEuros` fait `Number("85,10")`, qui vaut
-    // `NaN`, et `Intl` rend « NaN € ». Le technicien lit donc « Intervention
-    // cloturee, NaN € encaisses » sur le seul geste irreversible du parcours,
-    // au moment precis ou il verifie le chiffre qu'il vient de figer.
-    //
-    // Le test existant ne le voyait pas : il ne clot que sur la valeur
-    // preréglee, qui porte un point parce qu'elle vient de `toFixed(2)`.
+    // ⚠️ **Le toast doit composer la valeur NORMALISEE, pas l'etat brut du
+    // champ.** Celui-ci accepte deliberement la virgule ; `formatPrixEuros`
+    // ferait `Number("85,10")`, donc `NaN`, et le technicien lirait
+    // « Intervention cloturee, NaN € encaisses » sur le seul geste
+    // irreversible du parcours.
     const utilisateur = await ouvrir();
 
     await utilisateur.clear(champMontant());

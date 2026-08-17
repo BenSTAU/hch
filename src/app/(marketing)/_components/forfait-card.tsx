@@ -10,8 +10,6 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 /// Une carte du catalogue public — C1 §Des forfaits transparents
 /// (`code.html:308-398`).
 ///
-/// ── Géométrie portée
-///
 ///   · dalle `surface-container-low`, **`p-6`** (`padding-card` du brief) et
 ///     `rounded-2xl`, colonne en `gap-6` ;
 ///   · titre en `headline-sm` (20 px), prix en `headline-lg` (32 px, extra-bold,
@@ -23,8 +21,6 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 /// `import type` sur `ForfaitPublic` : le module de requête porte
 /// `import "server-only"`, et seul le type traverse — il est effacé à la
 /// compilation, aucun code serveur n'est tiré ici.
-///
-/// ── Deux éléments de la maquette qui ne se portent pas
 ///
 ///  1. **Les puces de prestation.** C1 (`code.html:317-330`) liste « Diagnostic
 ///     30 points », « 2 Pneus renforcés inclus », « Recyclage anciens pneus » :

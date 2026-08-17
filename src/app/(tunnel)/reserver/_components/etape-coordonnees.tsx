@@ -13,7 +13,7 @@ import {
 } from "@/lib/actions/auth/signup";
 
 /// Bloc « Vos coordonnées » de l'écran **C5**, qui **est** le formulaire
-/// d'inscription (PLAN S4 §4.3, aligné le 2026-08-09).
+/// d'inscription (PLAN S4 §4.3).
 ///
 /// Le tunnel s'explore sans compte, mais la validation en exige un créé,
 /// activé et connecté (Constitution §3.2). C'est ici que le visiteur bascule.
@@ -25,8 +25,6 @@ import {
 /// La case « J'accepte les CGV » de la maquette **n'est pas portée** : elle
 /// suppose une page hors périmètre v1. La mention RGPD la remplace, même
 /// traitement que C6.
-///
-/// ── Géométrie portée (`c5:259-284`)
 ///
 ///   · dalle du bento de gauche, titre `headline-sm` et sous-titre `body-sm` ;
 ///   · formulaire en `grid md:grid-cols-2`, gouttières `gap-x-4 gap-y-6`.

@@ -339,7 +339,7 @@ describe("InterventionsVue - panneau de detail", () => {
   it("nomme le total « Montant » tant qu'aucun paiement n'est enregistre", () => {
     // 🔄 **Ce test disait « jamais Montant paye », et il a ete REMPLACE par son
     // symetrique ci-dessous, pas supprime.** Sa version d'origine figeait
-    // l'absence de la table `payments`, que T-V3-10 (PR #33) subissait : la
+    // l'absence de la table `payments`, que T-V3-10 subissait : la
     // moitie negative reste vraie et garde tout son sens, elle couvre desormais
     // les trois etats sans encaissement plutot que l'absence d'une table.
     render(
@@ -353,7 +353,7 @@ describe("InterventionsVue - panneau de detail", () => {
   });
 
   it("bascule sur « Montant paye » et sur le montant ENCAISSE des qu'un paiement existe", () => {
-    // Report recu de T-V3-10 (PR #33), ferme ici : l'US des passees demande
+    // Report recu de T-V3-10, ferme ici : l'US des passees demande
     // `payments.amount_snapshot`, pas le total calcule.
     //
     // Les deux chiffres different volontairement dans cette fixture. Le
@@ -478,8 +478,6 @@ describe("InterventionsVue - panneau de detail", () => {
   });
 
   it("ne chiffre AUCUN montant sur une intervention annulee", () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-11. RED au moment de l'ecriture.
-    //
     // Deux sources disent la meme chose, et le code fait l'inverse :
     //
     //   · `US-INTERVENTIONS-LISTER-CLIENT-PASSEES` §Cas nominal enumere « ...
@@ -567,8 +565,6 @@ describe("InterventionsVue - le statut gouverne les actions", () => {
   });
 
   it("monte le bloc d'annulation sur une planifiee dans la fenetre", () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
-    //
     // La DoD 6 de T-V3-11 dit « le bloc annulation est **monte** dans la
     // coquille de C8 ». Apres la reecriture de l'oracle « ne porte NI bouton
     // d'annulation NI reference inventee », plus AUCUN test unitaire ne le
@@ -587,8 +583,6 @@ describe("InterventionsVue - le statut gouverne les actions", () => {
   });
 
   it("ne propose NI bouton NI bandeau d'annulation hors du statut PLANNED", () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
-    //
     // `US-INTERVENTION-ANNULER-CLIENT` §Cas d'erreur : « le bouton "Annuler"
     // n'est pas affiche sur la liste » des que le statut n'est plus `PLANNED`.
     // Le test voisin ne couvrait que les produits et les photos, et la moitie

@@ -6,8 +6,6 @@ import { CONTENEUR } from "./etapes";
 
 /// Barre d'actions basse - `c2:265-274`, `c3:309-321`, `c4:225-234`.
 ///
-/// ── Géométrie portée
-///
 ///   · barre `fixed` en bas, fond `surface-container-lowest`, filet supérieur,
 ///     ombre montante `0 -4px 20px rgba(0,0,0,.05)` ;
 ///   · `py-4`, gouttières 20 / 64 px, contenu `max-w-7xl`, action de retour à

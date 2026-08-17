@@ -112,7 +112,6 @@ describe("ConnexionView — retours d'un autre parcours", () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // DoD T-V3-03 : « `jest-axe` : zéro violation sur la page de connexion (AA
 // v1) ». Ajout de l'agent testeur — la case n'avait AUCUN test qui la couvre.
 //

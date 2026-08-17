@@ -12,15 +12,13 @@ import { ModaleCloture } from "./modale-cloture";
 /// Bloc « Statut actuel » de la maquette **T2**, et hub d'actions de
 /// `US-INTERVENTION-AFFICHER`.
 ///
-/// ── Les actions dépendent de l'état, et rien n'est rendu inerte
-///
 /// La SPEC §Cas nominal donne trois jeux : `PLANNED` propose « Démarrer
 /// intervention », `IN_PROGRESS` propose le dépôt de photos et la clôture,
 /// `DONE` et `CANCELLED` sont en lecture seule.
 ///
 /// ⚠️ **Le jeu d'`IN_PROGRESS` est incomplet, et c'est un écart assumé** : la
 /// clôture arrive avec T-V2-03, « Déposer des photos » est
-/// `US-INTERVENTION-PHOTOS-DEPOSER` (T-V2-04) et n'est pas livrée. Le bouton
+/// `US-INTERVENTION-PHOTOS-DEPOSER` et n'est pas livrée. Le bouton
 /// manquant n'est pas posé désactivé : ce serait le bouton inerte que la DoD
 /// interdit nommément, et c'est le raisonnement qui avait déjà laissé les
 /// lignes de T-V2-01 non cliquables tant que cette route-ci n'existait pas.
@@ -29,8 +27,6 @@ import { ModaleCloture } from "./modale-cloture";
 /// elle-même (« Intervention démarrée à 13:32 »). Un écran qui dit où il en est
 /// renseigne, et l'heure de démarrage est ce que le technicien relit au moment
 /// de clôturer.
-///
-/// ── Deux éléments de la maquette ne sont pas portés
 ///
 /// « Arrivée prévue entre 13:30 et 13:40 » suppose une fenêtre d'arrivée de dix
 /// minutes qui n'existe dans aucune US, aucun champ et aucun calcul : chiffre

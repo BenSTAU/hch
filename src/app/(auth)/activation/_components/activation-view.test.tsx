@@ -152,7 +152,6 @@ describe("ActivationView — issues", () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
 // Entrée `?renvoi=1` — ajoutée par T-V3-03, livrée SANS TEST. Ajouts de
 // l'agent testeur.
 //
@@ -167,7 +166,6 @@ describe("ActivationView — issues", () => {
 // renvoi n'était atteignable qu'en cliquant un lien EXPIRÉ, donc en l'ayant
 // encore sous la main. C'est exactement ce qu'on ne peut pas supposer de
 // quelqu'un qui n'a jamais reçu son email.
-// ───────────────────────────────────────────────────────────────────────────
 describe("ActivationView — entrée directe par le renvoi", () => {
   it("offre le formulaire de renvoi sans jeton", () => {
     render(<ActivationView demandeRenvoi />);

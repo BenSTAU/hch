@@ -27,7 +27,7 @@ export default async function ActivationPage({
     <ActivationView
       token={typeof token === "string" ? token : undefined}
       // `?renvoi=1` vient du lien posé sous le formulaire de connexion
-      // (T-V3-03). Il ne porte aucune donnée et n'ouvre aucun droit : il
+      // Il ne porte aucune donnée et n'ouvre aucun droit : il
       // choisit l'écran, et le quota reste décompté côté action.
       demandeRenvoi={renvoi === "1"}
       // Destination de retour, posée par le lien d'email quand l'inscription

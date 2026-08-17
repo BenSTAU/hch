@@ -6,8 +6,6 @@ import { lirePhoto } from "@/lib/photos/stockage";
 
 /// Lecture d'une photo d'intervention, **sous contrôle de propriété**.
 ///
-/// ── Pourquoi une route, et pourquoi celle-ci
-///
 /// `uploads/` vit hors de `public/` : Next n'en sert rien, et c'est voulu. Une
 /// photo prise au domicile d'un client ne doit pas être joignable par qui
 /// connaît son URL. Servir le dossier statiquement aurait fait reposer toute la
@@ -21,15 +19,11 @@ import { lirePhoto } from "@/lib/photos/stockage";
 /// hors de `public/`. PLAN S4 §4.5 est amendé côté vault : le strip EXIF reste
 /// obligatoire, au titre de la défense en profondeur.
 ///
-/// ── Un Route Handler, et le critère le prévoit
-///
 /// CLAUDE.md §Server Actions autorise le Route Handler quand le canal HTTP est
 /// nécessaire en soi, flux binaire entrant ou sortant compris. Celui-ci est un
 /// flux sortant : une Server Action sérialise sa réponse, elle ne peut pas
 /// rendre un flux binaire. C'est cette route qui a fait remplacer la liste de
-/// trois cas par le critère (PR #33, 2026-08-11).
-///
-/// ── Ce qu'il ne fait pas
+/// trois cas par le critère.
 ///
 /// Pas de vignette, pas de redimensionnement. `photo_metadata` et les
 /// thumbnails sont reportés en v2 (ADR-011), et l'image sort telle qu'elle a

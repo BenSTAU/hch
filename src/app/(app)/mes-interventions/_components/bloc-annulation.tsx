@@ -31,19 +31,15 @@ export type ContactSociete = {
 /// Bloc « Annuler cette intervention » du panneau de détail -
 /// `US-INTERVENTION-ANNULER-CLIENT`, écran **C8**.
 ///
-/// ── Deux états, une seule source pour la bascule
-///
 /// `annulationOuverte` est la fonction que le helper métier applique côté
 /// serveur. L'écran ne recalcule pas sa propre fenêtre : deux expressions de la
 /// même règle finiraient par diverger, et l'écart s'appellerait « le bouton
 /// était actif mais ça n'a pas marché ».
 ///
-/// ── L'horloge vient du serveur
-///
 /// `maintenant` descend de la page, il n'est pas lu au rendu. Un `new Date()`
 /// ici rendrait une valeur au serveur et une autre à l'hydratation, donc un
 /// bouton potentiellement actif d'un côté et inactif de l'autre - la divergence
-/// d'hydratation payée sur le stepper du tunnel (PR #29 note 8).
+/// d'hydratation payée sur le stepper du tunnel.
 ///
 /// Corollaire assumé : un onglet resté ouvert pendant que la fenêtre se referme
 /// continue de proposer le bouton. C'est le double filet qui tranche - l'action

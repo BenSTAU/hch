@@ -18,8 +18,6 @@ export const metadata: Metadata = {
 
 /// Mentions légales - `US-RGPD`, écran **C13**, onglet 1.
 ///
-/// ── Les articles 4 et 5 sont écrits ici, pas portés
-///
 /// La maquette liste six articles dans son sommaire et n'en rend que quatre :
 /// le contenu passe directement de l'article 3 à l'article 6
 /// (`code.html:168-214`). Les deux manquants sont **Contact** et **Cookies**,
@@ -27,10 +25,8 @@ export const metadata: Metadata = {
 /// PLAN S4 §4.1 de ne pas afficher de bannière. Divergence signalée par la
 /// table §Écrans de la phase, traitée ici.
 ///
-/// ── L'éditeur vient de la base
-///
 /// Les cinq valeurs sont celles qu'un administrateur tient à jour dans le
-/// back-office (T-J0-05). La page est donc **dynamique** au sens de Next :
+/// back-office. La page est donc **dynamique** au sens de Next :
 /// aucune mise en cache, parce que la LCEN impose que ces mentions soient
 /// exactes et qu'une mention légale servie depuis un cache périmé est une
 /// mention légale fausse.

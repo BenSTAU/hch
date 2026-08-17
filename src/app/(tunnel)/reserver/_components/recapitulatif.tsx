@@ -25,8 +25,6 @@ import { CONTENEUR } from "./etapes";
 
 /// Étape 4 du tunnel - écran **C5** (`c5-tunnel-panier/code.html`).
 ///
-/// ── Géométrie portée
-///
 ///   · titre `headline-lg` 32 px, chapô `body-lg mt-2`, bloc `mb-10`
 ///     (`c5:162-165`) ;
 ///   · bento `lg:grid-cols-12`, colonne de saisie sur **8** en `gap-8`, colonne
@@ -36,8 +34,6 @@ import { CONTENEUR } from "./etapes";
 ///   · encart de prix `rounded-lg p-4 mb-6`, total en `headline-lg` sur
 ///     `tertiary-fixed`, appel à l'action pleine largeur `py-4 rounded-xl` en
 ///     `headline-sm` (`c5:320-352`).
-///
-/// ── Ce qui ne se porte pas
 ///
 ///  1. **La case « J'accepte les CGV »** (`c5:340-348`). Page hors périmètre v1,
 ///     la mention RGPD de PLAN S4 §4.3 la remplace - même traitement que C6.

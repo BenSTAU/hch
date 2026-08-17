@@ -17,8 +17,6 @@ import {
 /// n'en pose qu'une pour la même raison (leçon `T-T2-16` d'Argo, aucun lien mort
 /// dans une navigation permanente).
 ///
-/// ── Les libellés suivent la maquette, les chemins suivent l'US
-///
 /// « Cette semaine » mène à `/interventions/a-venir`, et l'écart est voulu : la
 /// règle du produit est que la route porte l'identifiant de l'US
 /// (`US-INTERVENTIONS-LISTER-TECH-A-VENIR`), pas le libellé de l'onglet. Côté

@@ -27,13 +27,9 @@ export const metadata: Metadata = {
 /// valeurs possibles sont `DONE` et `CANCELLED`, que l'étiquette de chaque
 /// ligne porte déjà.
 ///
-/// ── Aucune Server Action, et c'est vérifié par test
-///
 /// Comme « Cette semaine » : la lecture est un RSC, le filtre et la pagination
 /// vivent dans l'URL. Aucun endpoint POST public n'est donc créé ici, et la
 /// garde est `requireTech()`.
-///
-/// ── Les trois paramètres viennent de l'URL, donc de n'importe qui
 ///
 /// `lireJourCivil` refuse ce qui n'est pas une date réelle - `2026-02-31` passe
 /// une regex de format et serait roulé au 3 mars par `Date.UTC`. `lirePage`

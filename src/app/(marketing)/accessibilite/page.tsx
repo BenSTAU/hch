@@ -14,21 +14,17 @@ export const metadata: Metadata = {
 /// Déclaration d'accessibilité - `US-RGPD`, PLAN S4 §2.3, écran **C13**,
 /// onglet 3.
 ///
-/// ── Elle remplace les CGV de la maquette
-///
 /// C13 nomme son troisième onglet « Conditions Générales de Vente ». Le triplet
 /// de PLAN S4 §4.2 fait foi contre les trois autres qui circulaient dans les
 /// artefacts (audit V3, item 6) : c'est cette page-ci, et elle est la seule des
 /// trois portée par une obligation de forme.
-///
-/// ── Elle nomme une non-conformité que personne n'aurait trouvée en la lisant
 ///
 /// La bordure des champs de saisie a été arbitrée le 2026-08-08 en faveur de la
 /// maquette, au prix d'un écart connu à WCAG 1.4.11, pour 3:1 requis. Ni
 /// `jest-axe` ni `@axe-core/playwright` ne le signalent : axe-core en jsdom ne
 /// calcule aucun contraste, et aucune règle axe ne couvre 1.4.11.
 ///
-/// 🐛 **Le ratio publié était faux** (agent testeur, B6). La DoD T-V3-12 et la
+/// 🐛 **Le ratio publié était faux**. La DoD T-V3-12 et la
 /// note (4) de la PR #17 écrivent « 1,06:1 », valeur qui ne correspond à aucune
 /// des deux surfaces réelles : le fond `secondary` du champ donne **1,11:1**
 /// sur une carte blanche et **1,05:1** sur le fond de page. Mesuré au

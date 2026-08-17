@@ -16,15 +16,11 @@ import { cn } from "@/lib/utils";
 /// et les lignes `photos` naissent dans la transaction de validation ; au T+n
 /// elle préexiste, donc **l'écriture est immédiate**.
 ///
-/// ── Les vignettes passent par une route contrôlée
-///
 /// `uploads/` vit hors de `public/`, rien n'y est servi statiquement. Chaque
 /// vignette interroge `GET /api/intervention-photos/[id]`, qui vérifie en base
 /// que la photo est sur une intervention de ce client. Arbitré le 2026-08-11 :
 /// une photo prise au domicile de quelqu'un ne doit pas dépendre du seul
 /// caractère non devinable de son URL.
-///
-/// ── Pas de suppression
 ///
 /// ⚠️ **Aucune US ne décrit le retrait d'une photo après validation.** Le bouton
 /// « supprimer » que la SPEC mentionne porte sur les vignettes du tunnel, *avant*

@@ -7,8 +7,6 @@ import { ONGLETS_TOURNEE, type CleOnglet } from "./onglets";
 /// Onglets porteurs de l'espace technicien, en tête de contenu - sur le modèle
 /// d'`en-tete-espace.tsx` côté client.
 ///
-/// ── Ils REMPLACENT la barre latérale, ils ne la doublent pas
-///
 /// ⚠️ **`md:hidden`, et c'est le point.** T1 n'a aucune barre d'onglets : ses
 /// trois vues vivent dans la barre latérale, et rien d'autre. Mais cette barre
 /// disparaît sous 768 px (`<nav class="hidden md:flex …">`, `code.html:125`)
@@ -20,14 +18,10 @@ import { ONGLETS_TOURNEE, type CleOnglet } from "./onglets";
 /// trois vues, une rangée que la maquette n'a pas. Chacune règne sur sa
 /// tranche - onglets en dessous, barre latérale au-dessus.
 ///
-/// ── Des liens, pas un composant `Tabs`
-///
 /// Les trois vues sont trois **routes**. Un `Tabs` Radix bascule des panneaux
 /// dans une même page : pas d'URL, donc pas de page partageable, pas de retour
 /// arrière, et plus de cible pour le `next=` de la redirection de connexion. Le
 /// motif ARIA d'une navigation est un `nav` de liens avec `aria-current`.
-///
-/// ── Sans compteurs, contrairement au modèle client
 ///
 /// `en-tete-espace.tsx` affiche « À venir (2) · Passées (5) ». Ici deux motifs
 /// s'y opposent, et aucun n'est une préférence : le compteur d'« Aujourd'hui »

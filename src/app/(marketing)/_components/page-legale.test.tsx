@@ -148,7 +148,7 @@ describe("PageLegale - structure", () => {
   it("rappelle l'éditeur et l'hébergeur sur toutes les pages, pas seulement les mentions", () => {
     // `US-RGPD` §Critères : « **chaque page** rappelle nom entreprise, SIRET,
     // coordonnées, hébergeur ». Seules les mentions légales le portaient - écart
-    // relevé par l'agent testeur (E1). Le rappel vit dans la coquille pour que
+    // Le rappel vit dans la coquille pour que
     // les trois pages ne puissent pas diverger.
     monter(CHEMIN_ACCESSIBILITE);
 

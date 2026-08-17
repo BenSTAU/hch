@@ -34,8 +34,6 @@ import { HubStatut } from "./_components/hub-statut";
 /// Détail d'une intervention - `US-INTERVENTION-AFFICHER` et
 /// `US-INTERVENTION-DEMARRER`, écran **T2**.
 ///
-/// ── La garde vit ICI, dans la page
-///
 /// `requireTech()` et non un contrôle dans le layout de l'espace : le Partial
 /// Rendering ne rejoue pas un layout en navigation client, un contrôle posé
 /// là-haut deviendrait obsolète sans que rien ne le signale (CLAUDE.md
@@ -44,8 +42,6 @@ import { HubStatut } from "./_components/hub-statut";
 ///
 /// Le rôle ne suffit pas : la **propriété** se joue dans la clause `where` de
 /// `chargerInterventionDuTech`, qui reçoit l'identifiant de session.
-///
-/// ── 403 sur l'intervention d'un collègue, et 403 aussi sur l'inexistante
 ///
 /// `US-INTERVENTION-AFFICHER` §Cas d'erreur écrit 403 deux fois, et c'est ce que
 /// la page rend. Elle le rend **aussi** pour un identifiant qui n'existe pas,
@@ -317,7 +313,7 @@ function BlocClient({
               aria-hidden="true"
               className="size-4 shrink-0 text-muted-foreground"
             />
-            {/* Les deux états s'affichent (cadrage du plancher V2, D11) :
+            {/* Les deux états s'affichent :
                 `interventions.cycle_id` a deux écrivains depuis le 2026-08-16,
                 le tunnel (C5) et le panneau de l'espace client, mais le
                 rattachement reste facultatif sur les deux - l'absence de vélo

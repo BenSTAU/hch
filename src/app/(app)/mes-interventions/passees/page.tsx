@@ -26,8 +26,6 @@ export const metadata: Metadata = {
 /// filtre par période. Les blocs de mutation du panneau s'effacent d'eux-mêmes,
 /// gouvernés par le statut de la ligne et non par la route.
 ///
-/// ── Ce qui n'est pas porté de C10
-///
 /// Les trois cartes de statistiques, « Exporter historique (PDF) », le
 /// téléchargement de facture, « Réserver à nouveau », les filtres par statut et
 /// par technicien, et le badge « PREMIÈRE INTERVENTION » - aucun critère

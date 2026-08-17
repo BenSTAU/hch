@@ -25,16 +25,12 @@ import { BlocProduits } from "./bloc-produits";
 
 /// Liste et panneau de détail - cœur de **C8**, réutilisé par **C10**.
 ///
-/// ── Un seul composant pour les deux onglets
-///
 /// L'US des passées demande que « chaque ligne soit cliquable et ouvre un récap
 /// sommaire » ; celle des à-venir, qu'elle « ouvre le détail avec les actions
 /// autorisées ». C'est le même panneau : ce qui change est la présence des
 /// blocs de mutation, gouvernée par le statut et non par l'onglet. Un second
 /// composant aurait dupliqué le récapitulatif, donc laissé deux vérités sur le
 /// calcul du total.
-///
-/// ── La sélection vit dans l'URL
 ///
 /// `?intervention=<id>` via `nuqs`, comme CLAUDE.md §State l'impose pour tout ce
 /// qui doit être partageable. Un état local rendrait le panneau impossible à
@@ -70,7 +66,7 @@ export function InterventionsVue({
   /// d'annulation, et toutes deux sont rendues au serveur puis hydratées. Un
   /// `new Date()` au rendu produirait deux valeurs, donc potentiellement deux
   /// résultats : c'est la divergence d'hydratation payée sur le stepper du
-  /// tunnel (PR #29 note 8).
+  /// tunnel.
   maintenant: Date;
   vide: { message: string; href: string; libelle: string };
 }) {
@@ -254,8 +250,6 @@ function CarteIntervention({
 }
 
 /// Panneau de détail - la surface où T-V3-09 et T-V3-11 viennent se poser.
-///
-/// ── Ce qui n'est pas porté de C8
 ///
 ///   · **« Réf: INT-2026-0847 »** : `interventions.id` est un `SERIAL`, ce
 ///     format de référence n'existe nulle part au modèle et l'inventer

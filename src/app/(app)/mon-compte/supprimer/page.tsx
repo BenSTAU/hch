@@ -31,8 +31,6 @@ export const metadata: Metadata = {
 /// Droit à l'oubli - `US-COMPTE-SUPPRIMER`, second point d'entrée de l'US
 /// (`US-RGPD` → « Exercer mon droit à l'oubli »).
 ///
-/// ── Pourquoi une route autonome plutôt que le bloc « Zone dangereuse » de C12
-///
 /// L'écran C12 appartient à T-V3-07, qui passe **après** cette tâche et qui est
 /// sacrifiable en rang 3. La règle des écrans composites (arbitrage du
 /// 2026-08-10) veut que la tâche postérieure monte son propre bloc : T-V3-07

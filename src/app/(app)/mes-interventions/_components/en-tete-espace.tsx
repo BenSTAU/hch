@@ -4,8 +4,6 @@ import { cn } from "@/lib/utils";
 
 /// Titre et onglets de l'espace client — bandeau commun à **C8** et **C10**.
 ///
-/// ── Des liens, pas un composant `Tabs`
-///
 /// « À venir » et « Passées » sont deux **routes** (`/mes-interventions/a-venir`
 /// et `/mes-interventions/passees`), nommées comme telles par les deux US dans
 /// leurs critères d'erreur. Un `Tabs` Radix bascule des panneaux dans une même
@@ -13,8 +11,6 @@ import { cn } from "@/lib/utils";
 /// retour arrière, et le `next=` de la redirection de connexion n'aurait plus
 /// de cible. Le motif ARIA correct pour une navigation est un `nav` de liens
 /// avec `aria-current`, et c'est ce qui est écrit ici.
-///
-/// ── Ce qui n'est pas porté
 ///
 /// La cloche et la roue dentée de C8 (aucune US), et sur C10 le bouton
 /// « Exporter historique (PDF) » et les trois cartes de statistiques

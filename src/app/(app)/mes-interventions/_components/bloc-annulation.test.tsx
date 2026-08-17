@@ -202,8 +202,6 @@ describe("BlocAnnulation - dans la fenetre", () => {
   });
 
   it("n'envoie QU'UNE annulation sur deux clics rapproches", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
-    //
     // Le pendant a l'ecran du verrou de ligne : deux envois pour la meme
     // intervention ecrivent deux entrees d'audit et deux emails au technicien
     // (le second `UPDATE` etant, lui, inoffensif). Le serveur les rattrape
@@ -270,8 +268,6 @@ describe("BlocAnnulation - dans la fenetre", () => {
   });
 
   it("ne laisse pas la page inerte quand la modale disparait sous elle", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
-    //
     // Ce refus-la est le seul qui DEMONTE la modale au lieu de la fermer : le
     // composant rend le bandeau de contact, et le `Dialog` ouvert s'en va avec
     // lui dans le meme rendu. Or une modale Radix pose `pointer-events: none`
@@ -310,8 +306,6 @@ describe("BlocAnnulation - dans la fenetre", () => {
 
 describe("BlocAnnulation - hors fenetre", () => {
   it("ferme le self-service a EXACTEMENT H-24, comme le serveur", () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
-    //
     // La borne exacte est testee dans le module pur et dans la transaction ;
     // elle ne l'etait sur AUCUNE des deux surfaces d'ecran. C'est pourtant la
     // seule valeur ou les deux formulations de l'US (`> 24 h` au nominal,
@@ -397,8 +391,6 @@ describe("BlocAnnulation - accessibilite", () => {
   });
 
   it("nomme « Fermer » le bouton de fermeture de la modale", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
-    //
     // `dialog.tsx:78-83` traduit le « Close » du registry shadcn et demande que
     // le report soit refait si le fichier est regenere - exactement la consigne
     // qui accompagne le `Sheet` de la coquille publique, et celle-la EST tenue
