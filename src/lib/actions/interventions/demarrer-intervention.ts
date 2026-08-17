@@ -10,42 +10,29 @@ import { cheminIntervention, CHEMIN_TOURNEE_DU_JOUR } from "@/lib/routes";
 import { techActionClient } from "@/lib/safe-action";
 import { demarrerInterventionSchema } from "@/lib/validations/interventions";
 
-/// Démarrage d'une intervention par son technicien -
-/// `US-INTERVENTION-DEMARRER`, écran **T2**.
+/// Démarrage d'une intervention par son technicien,
+/// `US-INTERVENTION-DEMARRER`, écran **T2**. Les gardes de propriété et de
+/// statut vivent dans le helper métier : elles décident d'une écriture, donc
+/// appartiennent à sa transaction.
 ///
-/// Les deux gardes de décision vivent dans le helper métier, pas ici :
-/// propriété et statut décident d'une écriture, elles appartiennent donc à la
-/// transaction qui l'exécute. Cette action-ci orchestre - rôle, validation,
-/// contexte, invalidation.
+/// `techActionClient` applique `requireTech()` en middleware, donc avant Zod :
+/// un appelant anonyme n'atteint jamais la forme du schéma. La garde de la
+/// page ne couvre pas cet appel, `src/proxy.ts` laissant passer `Next-Action`.
 ///
-/// ── Elle porte sa propre garde de rôle, et ce n'est pas une redondance
-///
-/// `techActionClient` applique `requireTech()` en **middleware**, donc avant la
-/// validation Zod : un appelant anonyme n'atteint jamais la forme du schéma.
-/// La garde de la page ne couvre pas cet appel, `src/proxy.ts` laissant
-/// délibérément passer `Next-Action` (rediriger un POST d'action casse le
-/// client). Une Server Action exportée est un endpoint POST public
-/// (ADR-006 v2).
-///
-/// ⚠️ **Le rôle ne suffit pas**, et c'est le second étage : `requireTech()`
-/// prouve que l'appelant est technicien, pas que l'intervention est la sienne.
-/// La propriété se joue dans la clause `where` de `demarrerInterventionDuTech`,
-/// qui reçoit `ctx.tech.id` et jamais un identifiant venu de la charge utile.
+/// ⚠️ **Le rôle ne suffit pas** : il prouve que l'appelant est technicien, pas
+/// que l'intervention est la sienne. La propriété se joue dans la clause
+/// `where` de `demarrerInterventionDuTech`, qui reçoit `ctx.tech.id`.
 
-/// Le libellé rendu à l'écran pour chacun des deux refus.
-///
-/// `switch` exhaustif sur le discriminant : ajouter une branche à
-/// `ResultatDemarrage` sans la traiter ici ne compile pas.
+/// Le libellé rendu à l'écran pour chacun des deux refus. `switch` exhaustif :
+/// ajouter une branche à `ResultatDemarrage` sans la traiter ne compile pas.
 function messageRefus(
   echec: Extract<ResultatDemarrage, { ok: false }>,
 ): string {
   switch (echec.reason) {
     case "introuvable":
-      // Même libellé que les mutations produits, et pour le même motif :
-      // l'intervention inconnue et celle d'un collègue ne se distinguent pas.
+      // L'intervention inconnue et celle d'un collègue ne se distinguent pas.
       return "Intervention introuvable.";
     case "transition_illegale":
-      // La SPEC §Cas d'erreur écrit « Transition impossible depuis ce statut ».
       // Le statut courant est nommé plutôt que sous-entendu : le technicien
       // vient de cliquer, il doit savoir ce qui a changé sous ses yeux.
       return echec.statutCourant === "IN_PROGRESS"
@@ -66,10 +53,9 @@ export const demarrerIntervention = techActionClient
       maintenant: new Date(),
     });
 
-    // Les refus revalident aussi, et pour la raison démontrée sur l'annulation
-    // (PR #33) : les deux disent que la vue de l'appelant est PÉRIMÉE. Sans
-    // invalidation, l'écran garde « Planifiée » et son bouton, et le technicien
-    // réessaie indéfiniment contre une liste fausse.
+    // Les refus revalident AUSSI : ils disent que la vue de l'appelant est
+    // périmée. Sans invalidation, l'écran garde « Planifiée » et son bouton, et
+    // le technicien réessaie indéfiniment contre une liste fausse.
     revalidatePath(cheminIntervention(parsedInput.interventionId));
     revalidatePath(CHEMIN_TOURNEE_DU_JOUR);
 

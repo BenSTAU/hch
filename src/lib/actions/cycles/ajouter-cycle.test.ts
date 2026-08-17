@@ -55,10 +55,9 @@ describe("ajouterCycle", () => {
     await ajouterCycle(SAISIE);
 
     expect(revalidatePath).toHaveBeenCalledWith("/mon-compte/cycles");
-    // 🐛 Et l'espace client, relevé par l'agent testeur : le sélecteur de
-    // rattachement du panneau de détail liste ces mêmes vélos, donc un vélo
-    // créé pour le rendez-vous de demain n'y apparaissait qu'à la navigation
-    // suivante. DoD 517, « après CHAQUE mutation ».
+    // Et l'espace client : le sélecteur de rattachement du panneau de détail
+    // liste ces mêmes vélos, donc un vélo créé pour le rendez-vous de demain
+    // n'y apparaîtrait qu'à la navigation suivante.
     expect(revalidatePath).toHaveBeenCalledWith("/mes-interventions/a-venir");
   });
 
@@ -77,13 +76,10 @@ describe("ajouterCycle", () => {
   });
 
   it("rend des refus AU FORMAT que l'écran sait lire", async () => {
-    // Ajouté par l'agent testeur. `cycles-vue.tsx` lit `erreurs[champ]._errors[0]`
-    // (`premierRefus`), et cette forme est un défaut de next-safe-action, pas un
-    // contrat écrit ici : si elle basculait en « flattened », le parseur
-    // retournerait `null` sans lever, et l'écran n'afficherait plus que
-    // « Vérifiez les champs signalés » sur les quatre champs. Aucun test ne
-    // reliait les deux surfaces - celui de l'écran mocke l'action et celui de
-    // l'action ne regarde pas la forme.
+    // ⚠️ `cycles-vue.tsx` lit `erreurs[champ]._errors[0]`, forme qui est un
+    // défaut de next-safe-action et non un contrat écrit ici : en « flattened »
+    // le parseur rendrait `null` sans lever, et l'écran n'afficherait plus que
+    // « Vérifiez les champs signalés ». Ce test relie les deux surfaces.
     const resultat = await ajouterCycle({ ...SAISIE, brand: "", year: 1800 });
 
     expect(resultat?.validationErrors).toMatchObject({
@@ -93,10 +89,9 @@ describe("ajouterCycle", () => {
   });
 
   it("borne la marque à 100 caractères, avant la colonne VARCHAR(100)", async () => {
-    // Ajouté par l'agent testeur. `cycles.brand` est un `VARCHAR(100)` : sans
-    // cette borne applicative, une saisie plus longue partirait à Prisma, qui
-    // lèverait, et `handleServerError` la rendrait en « Une erreur est
-    // survenue » - un refus de saisie déguisé en panne.
+    // `cycles.brand` est un `VARCHAR(100)` : sans cette borne applicative, une
+    // saisie plus longue ferait lever Prisma et `handleServerError` la rendrait
+    // en « Une erreur est survenue », un refus de saisie déguisé en panne.
     const resultat = await ajouterCycle({
       ...SAISIE,
       brand: "x".repeat(101),

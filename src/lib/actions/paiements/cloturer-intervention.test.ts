@@ -3,15 +3,10 @@
 // La cloture - `US-INTERVENTION-MARQUER-FAITE` couplee a
 // `US-PAIEMENT-ENREGISTRER`, ecran T4.
 //
-// Ce que ce fichier eprouve n'est PAS la transaction ni le verrou : les deux
-// vivent dans le helper metier et y sont testes. C'est l'orchestration, plus la
-// validation croisee que le schema porte :
-//
-//   · le TECHNICIEN vient de la session, jamais de la charge utile - une Server
-//     Action exportee est un endpoint POST public (ADR-006 v2) ;
-//   · les bornes du montant, sur les deux branches ;
-//   · le 9e email part sur la branche nominale SEULE (D10) ;
-//   · l'invalidation couvre les quatre ecrans que la cloture deplace.
+// Eprouve l'orchestration et la validation croisee du schema, pas la
+// transaction ni le verrou : le TECHNICIEN vient de la session, les bornes du
+// montant tiennent sur les deux branches, l'email part sur la branche nominale
+// seule, et l'invalidation couvre les quatre ecrans que la cloture deplace.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getCurrentUser = vi.fn();
@@ -180,16 +175,9 @@ describe("cloturerIntervention - les bornes du montant", () => {
   });
 
   it("refuse un depassement de DECIMAL(10,2), par la FORME et non par une borne", async () => {
-    // 📐 **Le nom d'origine de ce test disait la propriete mais pas le
-    // mecanisme**, releve par l'agent testeur. Il passait par une borne
-    // numerique `<= 99999999.99` qui etait INATTEIGNABLE : le motif de
-    // `normaliserMontant` n'accepte que huit chiffres avant la virgule, donc
-    // rien de plus grand ne l'atteignait jamais. Le garde a ete retire, la
-    // propriete est inchangee - au-dela de la capacite, la base rejetterait
-    // l'ecriture avec une erreur de depassement numerique que rien ne
-    // traduirait en message lisible.
-    //
-    // Neuf chiffres : un de trop pour le motif.
+    // Le refus vient du MOTIF de `normaliserMontant`, qui n'accepte que huit
+    // chiffres avant la virgule, et non d'une borne numerique - qui serait
+    // inatteignable. Neuf chiffres : un de trop pour le motif.
     const resultat = await cloturerIntervention({
       ...DEMANDE,
       montant: "100000000",
@@ -302,7 +290,7 @@ describe("cloturerIntervention - la branche de refus", () => {
 
   it("distingue « requis » de « trop court »", async () => {
     // Dire « requis » a qui vient d'ecrire quelque chose est une reponse
-    // fausse. Lecon de l'agent testeur sur l'annulation client.
+    // fausse.
     const vide = await cloturerIntervention({ ...REFUS, motif: "" });
     const court = await cloturerIntervention({ ...REFUS, motif: "no" });
 

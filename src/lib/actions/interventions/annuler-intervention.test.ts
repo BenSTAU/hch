@@ -2,14 +2,9 @@
 //
 // L'annulation client - `US-INTERVENTION-ANNULER-CLIENT`, golden path GP-03.
 //
-// Ce que ce fichier eprouve n'est PAS la fenetre H-24 ni les gardes : elles
-// vivent dans le helper metier et y sont testees. C'est l'orchestration, et
-// elle porte trois proprietes qu'aucune autre surface ne couvre :
-//
-//   · le proprietaire vient de la SESSION, jamais de la charge utile ;
-//   · les DEUX onglets sont invalides, la ligne changeant de liste ;
-//   · le technicien est prevenu HORS du chemin de reponse, et un envoi
-//     impossible ne transforme pas une annulation reussie en erreur.
+// Eprouve l'orchestration, pas la fenetre H-24 ni les gardes, qui vivent dans
+// le helper metier : le proprietaire vient de la SESSION, les DEUX onglets
+// sont invalides, et le technicien est prevenu HORS du chemin de reponse.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getCurrentUser = vi.fn();
@@ -84,14 +79,8 @@ describe("annulerIntervention", () => {
 
   it("passe a la transaction un instant pris ICI, entre l'appel et le retour", async () => {
     // Les gardes en dependent : le lire deux fois les ferait decider sur deux
-    // valeurs differentes, et la borne H-24 est justement l'endroit ou l'ecart
-    // se voit.
-    //
-    // ⚠️ Le titre promettait « une seule fois » pour une assertion qui ne
-    // regardait que le TYPE - releve par l'agent testeur. Encadrer l'appel est
-    // ce qui distingue reellement un instant pris ici d'une valeur heritee
-    // d'ailleurs, et il n'existe pas d'autre observable : la fonction ne rend
-    // pas son horloge.
+    // valeurs differentes, et la borne H-24 est ou l'ecart se voit. Encadrer
+    // l'appel est le seul observable, la fonction ne rendant pas son horloge.
     const avant = Date.now();
     await annulerIntervention({ interventionId: 847, motif: "Empechement" });
     const apres = Date.now();
@@ -139,16 +128,10 @@ describe("annulerIntervention", () => {
   });
 
   it("n'envoie rien quand la transaction refuse, mais rafraichit la vue perimee", async () => {
-    // ⚠️ **Regle du test rouge, cas 3** - oracle corrige apres le constat de
-    // l'agent testeur, qui a releve le defaut que cet oracle GARDAIT.
-    //
-    // Il assertait `revalidatePath` jamais appelee sur un refus. La propriete
-    // qu'il voulait tenir est « rien n'a ete ecrit, personne n'a ete prevenu »,
-    // et elle reste affirmee ci-dessous. Mais l'absence d'invalidation n'en
-    // faisait pas partie : `non_annulable` signifie precisement que le statut a
-    // change SOUS l'appelant - le technicien vient de demarrer l'intervention -
-    // et sa liste affiche encore « Planifiee » avec son bouton. Le test
-    // protegeait un ecran perime.
+    // La propriete est « rien n'a ete ecrit, personne n'a ete prevenu », et
+    // l'invalidation n'en fait pas partie : `non_annulable` signifie que le
+    // statut a change SOUS l'appelant, dont la liste affiche encore
+    // « Planifiee » avec son bouton.
     annulerInterventionDuClient.mockResolvedValue({
       ok: false,
       reason: "non_annulable",
@@ -210,18 +193,10 @@ describe("annulerIntervention", () => {
   });
 
   it("refuse l'appelant sans session AVANT toute lecture du schema", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
-    //
-    // Rien n'eprouvait la garde d'authentification de cette action : le double
-    // de `getCurrentUser` rendait toujours un utilisateur. Or c'est le seul
-    // rempart - `src/proxy.ts` ne fait qu'un redirect optimiste sur la presence
-    // d'un cookie, et une Server Action exportee reste joignable depuis
-    // n'importe ou (ADR-006 v2).
-    //
-    // La charge utile est volontairement invalide : ce que le test affirme est
-    // l'ORDRE promis par `safe-action.ts` - middleware, PUIS validation Zod,
-    // PUIS corps. Un anonyme ne doit pas pouvoir cartographier le schema en
-    // lisant les messages de refus.
+    // Le middleware d'`authActionClient` est le seul rempart : `src/proxy.ts`
+    // ne fait qu'un redirect optimiste, et une Server Action exportee reste
+    // joignable (ADR-006 v2). Charge utile volontairement invalide, pour
+    // affirmer l'ORDRE middleware puis Zod puis corps.
     getCurrentUser.mockRejectedValue(new Error("NEXT_REDIRECT"));
 
     const resultat = await annulerIntervention({

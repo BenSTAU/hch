@@ -1,15 +1,13 @@
 // @vitest-environment node
 //
-// Server Action d'inscription — `US-COMPTE-CREER`. Rappel d'ADR-006 v2 repris
-// dans `src/lib/safe-action.ts` : **une Server Action exportée est un endpoint
-// POST public**, donc appelable avec n'importe quelle charge utile.
+// Server Action d'inscription, `US-COMPTE-CREER`. Une Server Action exportée
+// est un endpoint POST public (ADR-006 v2), donc appelable avec n'importe
+// quelle charge utile.
 //
-// Ce que ce fichier surveille avant tout : les trois issues de l'inscription —
-// email libre, compte existant non activé, compte existant déjà activé —
-// doivent être **indiscernables de l'extérieur**. Même redirection, même écran,
-// aucun canal d'erreur distinct. C'est l'anti-énumération de la Constitution
-// §4.2 appliquée à un formulaire que la SPEC, elle, décrit avec deux messages
-// différents (module-1-utilisateurs.md:160 et :165) — écart signalé en PR.
+// Propriété centrale : les trois issues (email libre, compte non activé,
+// compte déjà activé) sont **indiscernables de l'extérieur**. Même redirection,
+// aucun canal d'erreur distinct (Constitution §4.2). Écart assumé avec
+// [[module-1-utilisateurs]], qui décrit deux messages.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const hashPassword = vi.fn();
@@ -282,18 +280,10 @@ describe("signup — compte désactivé par un administrateur", () => {
 });
 
 describe("signup — échec d'envoi", () => {
-  // ── Oracles RETOURNÉS le 2026-08-08, arbitrage B2 ───────────────────────────
-  //
-  // Ces trois tests exigeaient l'inverse : que l'échec d'envoi soit signalé à
-  // l'écran et suspende la redirection (ADR-017 §Contraintes, « échec bruyant »).
-  // L'agent testeur a montré que ce message est un ORACLE : il ne peut naître que
-  // sur un chemin ayant TENTÉ un envoi, donc jamais sur « compte déjà activé ».
-  // Benjamin a tranché pour la Constitution §4.2 — réponse uniforme, bruit dans
-  // les logs. Ce que voulait ADR-017 reste tenu autrement : la trace côté
-  // exploitant (`src/lib/email/dispatch.ts`) et le renvoi d'activation côté
-  // client, livré par cette même tâche.
-  //
-  // Les oracles ci-dessous sont donc l'inverse des précédents, à dessein.
+  // Un échec d'envoi signalé à l'écran serait un ORACLE : il ne peut naître
+  // que sur un chemin ayant TENTÉ un envoi, donc jamais sur « compte déjà
+  // activé ». Réponse uniforme (Constitution §4.2), bruit côté exploitant
+  // seulement, cf. `src/lib/email/dispatch.ts`.
 
   it("redirige quand même, transport en panne ou non", async () => {
     sendActivationEmail.mockRejectedValue(new Error("EAUTH"));
@@ -340,27 +330,10 @@ describe("signup — échec d'envoi", () => {
 });
 
 describe("signup — le canal d'échec d'envoi face à l'anti-énumération", () => {
-  // ── Ajouté par l'agent testeur (T-V3-02). ROUGE ATTENDU ────────────────────
-  //
-  // `src/lib/validations/auth.ts:44-46` affirme d'EMAIL_DELIVERY_FAILED_MESSAGE
-  // qu'il est le « seul message qui ne dépend PAS de l'existence du compte : il
-  // dépend du transport ». Le flot de `signup.ts` dit autre chose : le message
-  // naît de `envoye === false`, et `envoye` ne peut valoir `false` que sur un
-  // chemin qui a TENTÉ un envoi. Le chemin « déjà activé » n'en tente aucun
-  // (signup.ts:66-95 ne s'exécute pas), donc il redirige toujours.
-  //
-  // Avec un transport en panne — scénario qu'ADR-017 §Conséquences nomme
-  // explicitement, « révocation silencieuse possible » de Google —, le
-  // formulaire devient l'oracle exact que la Constitution §4.2 interdit :
-  //   · réponse en erreur   ⇒ l'email était libre, ou en attente d'activation
-  //   · redirection normale ⇒ l'email a un compte activé
-  //
-  // ⚠️ Ce test met en évidence un ARBITRAGE, pas une bourde : fermer le canal
-  // demande soit de taire l'échec (contre ADR-017), soit de le rendre visible
-  // sur les trois chemins (message affiché sans qu'aucun envoi n'ait été
-  // tenté). L'agent testeur ne tranche pas ce dilemme — il le rend rouge pour
-  // qu'il soit tranché. Si Benjamin arbitre pour « bruyant d'abord », ce
-  // `describe` est à supprimer avec une note, pas à rendre vert en douce.
+  // ⚠️ Le chemin « déjà activé » ne tente aucun envoi, donc il redirige
+  // toujours. Un échec de transport visible ferait du formulaire l'oracle que
+  // la Constitution §4.2 interdit : erreur ⇒ email libre ou en attente,
+  // redirection ⇒ email déjà activé.
   it("reste indiscernable quand le transport est en panne", async () => {
     sendActivationEmail.mockRejectedValue(new Error("EAUTH"));
 
@@ -399,22 +372,10 @@ describe("signup — le canal d'échec d'envoi face à l'anti-énumération", ()
 });
 
 describe("signup — course sur l'index unique de `users.email`", () => {
-  // ── Ajouté par l'agent testeur (T-V3-02). ROUGE ATTENDU ────────────────────
-  //
-  // `findAccountForSignup` puis `createLocalAccount` ne sont pas atomiques
-  // entre eux : la transaction de `createLocalAccount` couvre ses trois
-  // écritures (db/queries/auth.ts:97), pas la lecture qui l'a précédée. Deux
-  // soumissions concurrentes du même email libre passent donc toutes deux le
-  // `if (!compte)` de signup.ts:55, et la seconde heurte
-  // `users_email_key` (P2002).
-  //
-  // Le bouton désactivé pendant la soumission (signup-form.tsx:216) couvre le
-  // double-clic, pas ce cas : une Server Action exportée est un endpoint POST
-  // public, et rien n'oblige l'appelant à passer par le formulaire.
-  //
-  // Attendu : la même issue que les autres chemins — l'email est pris, donc la
-  // redirection de confirmation. Constaté : `handleServerError` produit « Une
-  // erreur est survenue », un quatrième comportement observable.
+  // La lecture et l'insertion ne sont pas atomiques entre elles : deux
+  // soumissions concurrentes du même email libre passent toutes deux le
+  // contrôle, et la seconde heurte `users_email_key` (P2002). Le bouton
+  // désactivé ne couvre que le double-clic, pas un POST direct sur l'action.
   it("ne répond pas par une erreur serveur quand l'insertion perd la course", async () => {
     createLocalAccount.mockRejectedValue(
       Object.assign(

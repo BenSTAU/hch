@@ -43,10 +43,9 @@ export const updateSettings = adminActionClient
       // Pas de revalidation : rien n'a été écrit, et invalider le cache
       // laisserait croire le contraire.
       //
-      // `invalidKeys` accompagne le message pour que le formulaire puisse
-      // marquer les champs fautifs (`aria-invalid`) et les nommer par leur
-      // libellé plutôt que par leur clé technique — RGAA 11.10, relevé par
-      // l'agent testeur.
+      // `invalidKeys` accompagne le message pour que le formulaire marque les
+      // champs fautifs (`aria-invalid`) et les nomme par leur libellé plutôt
+      // que par leur clé technique (RGAA 11.10).
       return {
         error: refusalMessage(result),
         invalidKeys: result.reason === "invalid_values" ? result.keys : [],

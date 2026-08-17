@@ -1,22 +1,13 @@
 // @vitest-environment node
 //
-// Server Action de validation d'une réservation - le cœur du produit, et la
-// seule surface de T-V3-08 qui n'avait AUCUN test avant ce fichier.
+// Server Action de validation d'une réservation, le cœur du produit. Tout est
+// appelé sans passer par les quatre écrans du tunnel : une Server Action
+// exportée est un endpoint POST public (ADR-006 v2).
 //
-// Rappel d'ADR-006 v2, porté par `src/lib/safe-action.ts:8-11` : **une Server
-// Action exportée est un endpoint POST public**. Tout ce qui est testé ici est
-// donc appelé sans passer par les quatre écrans du tunnel - c'est exactement ce
-// que l'écran ne peut pas prouver, et ce que `tests/e2e/gp-02-*.spec.ts`
-// n'atteint pas (il s'arrête après l'autocomplétion, DoD oblige).
-//
-// La BAN passe par **MSW** et non par un `vi.mock` du module : ADR-014 §Stack
-// veut la frontière RÉSEAU mockée, pas la fonction qui la traverse. Le vrai
-// `geocoderAdresse` s'exécute donc, avec son filtre `housenumber` et son
-// `limit=1`.
-//
-// Ce qui reste mocké est ce qui exige un PostgreSQL : PostGIS, les deux helpers
-// de `db/queries`, la lecture des horaires. La dérivation de la grille, elle,
-// est RÉELLE - c'est elle l'oracle du « ce créneau n'existe pas ».
+// La BAN passe par **MSW** et non par un `vi.mock` du module, ADR-014 §Stack
+// voulant la frontière RÉSEAU mockée. Le vrai `geocoderAdresse` s'exécute donc,
+// et la dérivation de la grille est RÉELLE : c'est elle l'oracle du « ce
+// créneau n'existe pas ». Seul ce qui exige un PostgreSQL reste mocké.
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 

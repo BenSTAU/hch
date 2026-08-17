@@ -2,38 +2,15 @@
 //
 // Canal auxiliaire temporel du RENVOI d'activation.
 //
-// ── Ajouté par l'agent testeur (T-V3-02). ROUGE ATTENDU ──────────────────────
+// Le chemin inéligible s'arrête après deux lectures, là où le chemin éligible
+// paie en plus un remplacement de jeton et un envoi. La réponse est identique,
+// mais l'anti-énumération de la Constitution §4.2 porte sur ce qu'un attaquant
+// OBSERVE, et la durée en fait partie. Le quota de 3/24 h ne la ferme pas : il
+// est indexé par email, et une seule mesure par adresse suffit à classer.
 //
-// `signup.timing.test.ts` existe et fait son travail : l'inscription paie
-// bcrypt sur ses trois chemins (signup.ts:49), et son résiduel SMTP est déclaré.
-// `resendActivation` est l'autre porte du même parcours, et elle n'a **aucun**
-// équivalent de ce durcissement :
-//
-//   chemin éligible   → consumeRateLimit · findAccountForSignup ·
-//                       replacePendingEmailVerificationToken · sendActivationEmail
-//   chemin inéligible → consumeRateLimit · findAccountForSignup, puis `return`
-//
-// (`activate.ts:82-116`.) Le second s'arrête après deux lectures, sans rien
-// payer pour compenser. La réponse est bien identique — `activate.test.ts` le
-// prouve — mais l'anti-énumération de la Constitution §4.2 porte sur ce qu'un
-// attaquant OBSERVE, et la durée en fait partie. C'est la classe de fuite
-// mesurée à 1 300×-16 000× sur la connexion en T-J0-04
-// (`src/lib/auth/authenticate.timing.test.ts`), rouverte par une troisième
-// porte après celle que `signup` a fermée.
-//
-// Le quota de 3/24 h ne la ferme pas : il est indexé PAR EMAIL
-// (`activation:<email>`, rate-limit.ts:27). Balayer un million d'adresses
-// distinctes ne consomme jamais qu'un jeton sur chacune, et une seule mesure
-// par adresse suffit à classer.
-//
-// ⚠️ Ce que ce fichier mesure, et ce qu'il ne mesure pas. Les mocks n'ont aucun
-// coût réel : les latences ci-dessous sont INJECTÉES, et elles modélisent la
-// production plutôt qu'elles ne la mesurent — un aller-retour Postgres par le
-// tunnel SSH, un aller-retour `smtp.gmail.com`. Le test ne prouve donc pas une
-// valeur d'écart ; il prouve que l'écart est STRUCTUREL, c'est-à-dire qu'il
-// existe pour tout couple de latences non nulles. Les constantes sont
-// volontairement modestes : à 0 ms de SMTP le test passerait encore, ce qui
-// serait le seul cas où la conclusion serait fausse.
+// ⚠️ **Les latences sont INJECTÉES, pas mesurées.** Ce fichier ne prouve
+// aucune valeur d'écart : il prouve que l'écart est STRUCTUREL, donc qu'il
+// existe pour tout couple de latences non nulles.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /// Un aller-retour vers Postgres à travers le tunnel SSH (CLAUDE.md §Deux postes
@@ -65,17 +42,10 @@ vi.mock("@/lib/email/activation", () => ({
   sendActivationEmail: (input: unknown) => sendActivationEmail(input),
 }));
 
-// ── Ajouté par la session principale en réponse à ce constat (B3) ────────────
-//
-// `src/lib/email/dispatch.ts` n'existait pas quand ce fichier a été écrit : c'est
-// la couture posée POUR fermer le canal qu'il mesure. Elle confie l'envoi à
-// `after()` de Next, donc hors du chemin de réponse. Le mock reproduit la seule
-// propriété qui compte ici — lancé, jamais attendu.
-//
-// **L'oracle du fichier n'est pas touché** : les deux seuils `< 3` et les
-// latences injectées sont ceux de l'agent testeur, inchangés. Sans ce mock,
-// `after()` s'exécuterait hors de tout contexte de requête Next, ce que la
-// documentation ne définit pas.
+// `dispatchEmail` confie l'envoi à `after()` de Next, hors du chemin de
+// réponse. Le mock reproduit la seule propriété qui compte ici, lancé et
+// jamais attendu : sans lui, `after()` s'exécuterait hors de tout contexte de
+// requête Next, ce que la documentation ne définit pas.
 vi.mock("@/lib/email/dispatch", () => ({
   dispatchEmail: (_libelle: string, envoyer: () => Promise<void>) => {
     void envoyer().catch(() => undefined);

@@ -6,31 +6,22 @@ import { ENTITE_SESSION, writeAuditLog } from "@/lib/audit/log";
 import { AFTER_LOGOUT } from "@/lib/auth/after-login";
 import { destroySession, readSessionToken } from "@/lib/auth/session";
 
-/// Server Action de déconnexion.
+/// Server Action de déconnexion. Sans `next-safe-action` : la règle du dépôt
+/// vise les actions *avec input* (CLAUDE.md §Server Actions), celle-ci n'en a
+/// aucun.
 ///
-/// **Sans `next-safe-action`, délibérément** : la règle du dépôt vise les
-/// actions *avec input* (CLAUDE.md §Server Actions), et celle-ci n'en a aucun.
-/// Lui donner un schéma reviendrait à faire valider par Zod le `FormData` vide
-/// que React transmet à `<form action={…}>`, pour un canal d'erreur qui ne
-/// serait jamais emprunté.
-///
-/// **La destruction n'est conditionnée à rien** : la subordonner à un jeton
+/// **La destruction n'est conditionnée à rien.** La subordonner à un jeton
 /// valide empêcherait d'effacer un cookie expiré ou signé avec un secret depuis
-/// remplacé — celui-là même dont on veut se débarrasser, et que `src/proxy.ts`
-/// continue de prendre pour une session. La lecture ajoutée par T-V3-10 ne sert
-/// **qu'à** nommer l'acteur de la trace, elle ne décide de rien.
+/// remplacé, celui-là même dont on veut se débarrasser. La lecture ne sert
+/// qu'à nommer l'acteur de la trace.
 ///
-/// Ordre : lire, détruire, tracer. La lecture doit précéder la destruction, il
-/// n'y a plus d'acteur après. La trace doit la suivre, parce qu'un échec
-/// d'écriture du journal ne doit pas laisser une session debout — se déconnecter
-/// est l'acte de sécurité, l'auditer n'en est que la mémoire.
-///
-/// Jeton illisible : **aucune écriture**. `audit_logs.actor_id` est une vraie FK
-/// NOT NULL, et un cookie corrompu ne désigne personne. Arbitré le 2026-08-11.
+/// ⚠️ Ordre imposé : lire, détruire, tracer. Il n'y a plus d'acteur après la
+/// destruction, et un échec d'écriture du journal ne doit pas laisser une
+/// session debout. Jeton illisible, aucune écriture : `audit_logs.actor_id`
+/// est une FK NOT NULL.
 ///
 /// La destination vit dans `src/lib/auth/after-login.ts` : un fichier
-/// `"use server"` n'exporte que des fonctions asynchrones, une constante y fait
-/// échouer le build.
+/// `"use server"` n'exporte que des fonctions asynchrones.
 export async function logout(): Promise<void> {
   const session = await readSessionToken();
 
