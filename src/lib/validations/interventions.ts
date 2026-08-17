@@ -123,7 +123,7 @@ export const annulerInterventionSchema = z.object({
   motif: z
     .string()
     .trim()
-    // Deux bornes, deux messages. 🐛 Relevé par l'agent testeur : un motif de
+    // Deux bornes, deux messages. 🐛: un motif de
     // deux caractères renvoyait « Motif d'annulation requis. », libellé que
     // l'US §Cas d'erreur réserve au champ VIDE. Dire « requis » à qui vient
     // d'écrire quelque chose est une réponse fausse.

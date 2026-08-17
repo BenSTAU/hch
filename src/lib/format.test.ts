@@ -154,7 +154,7 @@ describe("formatDelaiRelatif", () => {
   });
 
   it("bascule EXACTEMENT au quatorzieme jour", () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-11. La bascule jours/semaines
+    // La bascule jours/semaines
     // n'etait eprouvee qu'a 21 jours, loin de sa borne : elle pouvait glisser
     // d'un jour dans les deux sens sans qu'un test bouge. La valeur ne vient
     // d'aucune source (la maquette C8 ecrit « Dans X jours/semaines » sans dire
@@ -168,8 +168,6 @@ describe("formatDelaiRelatif", () => {
   });
 
   it("compte le jour du FUSEAU D'EXPLOITATION, pas le jour UTC", () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-11.
-    //
     // Minuit et demi a Lyon, le 12 aout : le rendez-vous du 12 a 9 h est
     // « Aujourd'hui ». Compte en jours UTC, il serait « Demain » - le client
     // lirait la veille de son rendez-vous qu'il a lieu le lendemain. Aucun
@@ -182,7 +180,7 @@ describe("formatDelaiRelatif", () => {
   });
 
   it("ne compte pas l'heure gagnee au passage a l'heure d'hiver", () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-11. Le 25 octobre 2026 dure
+    // Le 25 octobre 2026 dure
     // 25 heures a Paris. Un ecart en millisecondes divise par 86 400 000
     // rendrait 2,04 jours ici : arrondi, il retombe sur ses pieds, mais un
     // `Math.floor` ou un decalage horaire moins favorable ne le ferait pas.

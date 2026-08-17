@@ -1,17 +1,12 @@
 /// Quotas de dépôt des photos client — [[module-3-interventions]] §Quotas.
 ///
-/// **Module pur** : aucun import, aucun `server-only`. C'est sa raison d'être.
-/// Les deux écrans de dépôt sont des composants **clients** (la zone de dépôt du
-/// tunnel et celle du panneau de détail), et `stockage.ts`, où ces constantes
-/// vivaient, tire `sharp` puis `node:fs` : un composant client qui l'importe
-/// fait échouer le build sur `Can't resolve 'fs'`.
+/// **Module pur, sans `server-only`, et c'est sa raison d'être** : les deux
+/// écrans de dépôt sont des composants clients, et `stockage.ts` tire `sharp`
+/// puis `node:fs`, donc un client qui l'importe casse le build sur
+/// `Can't resolve 'fs'`. Un quota recopié dans chaque écran divergerait du
+/// quota appliqué, et le défaut ne se verrait qu'au refus.
 ///
-/// L'alternative était de recopier les valeurs dans chaque écran, ce que
-/// `etape-photos.tsx` faisait déjà de son côté. Un quota affiché qui diverge du
-/// quota appliqué fait promettre à l'interface ce que le serveur refuse, et le
-/// défaut ne se voit qu'au moment du refus.
-///
-/// ⚠️ Ne rien mettre ici qui ne soit **qu'**une valeur. Ce module part dans le
+/// ⚠️ Ne rien mettre ici qui ne soit **qu'**une valeur : ce module part dans le
 /// paquet envoyé au navigateur.
 
 /// Cinq photos par intervention. Compté **dans la transaction** d'écriture

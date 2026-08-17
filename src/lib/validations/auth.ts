@@ -58,9 +58,8 @@ export const SIGNUP_ACKNOWLEDGED_MESSAGE =
   "Si un compte existe pour cet email, un email d'activation vient d'être envoyé";
 
 // Il n'existe **aucun** message d'échec d'envoi côté utilisateur, et c'est une
-// décision : l'arbitrage du 2026-08-08 (constat B2 de l'agent testeur T-V3-02)
-// donne la Constitution §4.2 gagnante contre l'échec bruyant côté utilisateur
-// d'ADR-017. Un tel message ne pourrait naître que sur un chemin ayant TENTÉ un
+// décision : la Constitution §4.2 l'emporte sur l'échec bruyant côté
+// utilisateur d'ADR-017. Un tel message ne pourrait naître que sur un chemin ayant TENTÉ un
 // envoi, donc jamais sur « compte déjà activé » - il classerait les adresses.
 // Le bruit d'ADR-017 vit désormais dans les logs (`src/lib/email/dispatch.ts`),
 // et le recours côté client est le renvoi d'activation.

@@ -7,8 +7,6 @@ import { describe, expect, it } from "vitest";
 /// `vitest.setup.ts` n'aurait fait échouer strictement personne — le garde
 /// serait tombé en silence, et le premier appel réseau du projet serait parti
 /// sur internet depuis la CI sans que rien ne le signale.
-///
-/// Ajouté par l'agent testeur (T-J0-09).
 describe("MSW — interception réseau de la suite Vitest", () => {
   it("refuse tout appel sortant non déclaré", async () => {
     // L'endpoint token de Google : celui-là même qu'ADR-014 §2 nomme comme le

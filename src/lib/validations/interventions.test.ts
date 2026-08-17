@@ -206,7 +206,7 @@ describe("reserverSchema — le reste de la charge utile", () => {
 });
 
 describe("reserverSchema - le vélo désigné à C5", () => {
-  // ⚠️ Ajouté par l'agent testeur, 2026-08-16. `reserver.test.ts` n'éprouve
+  // ⚠️ `reserver.test.ts` n'éprouve
   // qu'une seule forme rejetée (`1.5`) et le schéma n'est couvert nulle part
   // ailleurs. C'est pourtant la PREMIÈRE barrière sur un champ que le client
   // choisit et qui désigne une ligne d'autrui si on le laisse passer :
@@ -342,7 +342,7 @@ describe("annulerInterventionSchema", () => {
 });
 
 describe("annulerInterventionSchema - le message distingue vide et trop court", () => {
-  // 🐛 Releve par l'agent testeur : un `min(3)` seul renvoyait « Motif
+  // 🐛: un `min(3)` seul renvoyait « Motif
   // d'annulation requis. » pour deux caracteres, libelle que l'US §Cas d'erreur
   // reserve au champ VIDE. Dire « requis » a qui vient d'ecrire quelque chose
   // est une reponse fausse, et c'est le genre d'ecart qu'on ne voit qu'a

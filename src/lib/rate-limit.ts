@@ -2,8 +2,7 @@ import "server-only";
 
 import { db } from "@/lib/db/client";
 
-/// Compteur anti-abus, PLAN S4 §11, table `rate_limits` (migration 014,
-/// T-V3-01). Deux régimes cohabitent depuis l'amendement du 2026-08-09 :
+/// Compteur anti-abus, PLAN S4 §11, table `rate_limits`. Deux régimes :
 ///
 /// - **fenêtre glissante** pour les renvois d'activation et les demandes de
 ///   réinitialisation. Un plafond d'envois quotidien, où une tentative sortie
@@ -12,13 +11,11 @@ import { db } from "@/lib/db/client";
 ///   verrou de 10 minutes, puis le compteur repart de zéro. `peekLoginLockout`
 ///   sert ce seul usage.
 ///
-/// La table n'a **aucune clé étrangère**, et c'est le cœur de la décision. Un
-/// compteur porté par des colonnes de `users` n'existerait pas pour un email
-/// inconnu : « trop de tentatives » ne s'afficherait que pour les comptes
-/// existants, ce qui en fait un oracle d'énumération, la fuite exacte que le
-/// durcissement à temps constant de T-J0-04 a fermée. Ce module ne consulte donc
-/// jamais `users` : il ne sait pas si la clé désigne un compte, et ne doit pas le
-/// savoir.
+/// ⚠️ La table n'a **aucune clé étrangère**, et c'est le cœur de la décision :
+/// un compteur porté par des colonnes de `users` n'existerait pas pour un email
+/// inconnu, donc « trop de tentatives » ne s'afficherait que pour les comptes
+/// existants - un oracle d'énumération. Ce module ne consulte jamais `users`,
+/// il ne sait pas si la clé désigne un compte et ne doit pas le savoir.
 
 export const ACTIVATION_RESEND_LIMIT = 3;
 export const ACTIVATION_RESEND_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -108,30 +105,25 @@ async function peekFenetreGlissante(
   return { allowed: true };
 }
 
-/// Lit l'état du verrou de connexion, régime **ferme** (SPEC §298-300 amendée le
-/// 2026-08-09). Réservé au préfixe `login:`.
+/// Lit l'état du verrou de connexion, régime **ferme** (SPEC §298-300).
+/// Réservé au préfixe `login:`.
 ///
 /// La connexion ne peut pas décompter à l'entrée : la SPEC compte les
 /// tentatives ÉCHOUÉES, et on ne sait pas si l'authentification échoue avant de
-/// l'avoir tentée. Décompter d'avance ferait tomber le plafond sur les
-/// connexions réussies, cinq connexions légitimes d'affilée, un technicien qui
-/// change d'appareil, et le compte se ferme.
+/// l'avoir tentée. Décompter d'avance fermerait le compte au bout de cinq
+/// connexions légitimes d'affilée.
 ///
-/// Trois différences avec la fenêtre glissante, et elles sont le fond de
-/// l'amendement :
+/// ⚠️ Trois écarts avec la fenêtre glissante, tous nécessaires :
 ///
-/// 1. aucune borne d'âge à la lecture. Une ligne appartient au cycle courant
-///    tant que le verrou n'a pas expiré, quel que soit son âge ;
-/// 2. l'échéance est datée sur le **5e** échec, celui qui arme le verrou, et
-///    non sur le premier. Insister ne la repousse donc pas ;
-/// 3. à l'expiration le compteur est **effacé**, pas seulement ignoré. Sinon la
-///    tentative suivante retomberait sur un compteur plein et rearmerait le
-///    verrou toute seule.
+/// 1. aucune borne d'âge à la lecture, une ligne appartenant au cycle courant
+///    tant que le verrou n'a pas expiré ;
+/// 2. l'échéance est datée sur le **5e** échec et non sur le premier, sinon
+///    insister la repousserait ;
+/// 3. à l'expiration le compteur est **effacé** et pas seulement ignoré, sinon
+///    la tentative suivante rearmerait le verrou toute seule.
 ///
-/// Conséquence assumée : le compteur n'oublie plus au fil du temps. Quatre
-/// échecs anciens et un récent bloquent, là où la fenêtre de 15 minutes avait
-/// laissé passer. Seuls une connexion réussie (`clearRateLimit`) ou la purge des
-/// 24 h les effacent.
+/// Conséquence assumée : le compteur n'oublie plus au fil du temps. Seuls une
+/// connexion réussie ou la purge des 24 h l'effacent.
 export async function peekLoginLockout(
   key: string,
   limit: number,

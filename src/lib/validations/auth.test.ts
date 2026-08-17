@@ -1,4 +1,4 @@
-// Schéma de connexion et message de refus — ajoutés par l'agent testeur.
+// Schéma de connexion et message de refus.
 //
 // `src/lib/validations/auth.ts` n'avait aucun test, alors qu'il porte deux
 // choses que la SPEC contraint mot pour mot : le message unique de refus

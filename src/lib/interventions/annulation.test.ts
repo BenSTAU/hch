@@ -35,9 +35,7 @@ describe("annulationOuverte", () => {
   });
 
   it("accepte une milliseconde avant la borne, et refuse une milliseconde apres", () => {
-    // Le voisinage immediat de H-24, des deux cotes. Le titre disait « refuse »
-    // pour une assertion qui vaut `true`, dans le fichier dont c'est tout le
-    // sujet - releve par l'agent testeur.
+    // Le voisinage immediat de H-24, des deux cotes.
     const justeAvant = new Date(RDV.getTime() - FENETRE_ANNULATION_MS - 1);
     const justeApres = new Date(RDV.getTime() - FENETRE_ANNULATION_MS + 1);
 

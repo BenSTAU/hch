@@ -140,7 +140,6 @@ export function deriverCreneaux(params: {
   ///
   /// Inatteignable avec les horaires seedés (08:00-18:00 n'enjambe pas le
   /// trou), mais la CRUD `app_settings` laisse saisir n'importe quelle plage.
-  /// Relevé par l'agent testeur.
   const instantsRetenus = new Set<number>();
   const depart = jourLocal(maintenant, fuseau);
 
