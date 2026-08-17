@@ -82,7 +82,7 @@ async function empreinteDesDates(page: Page): Promise<string[]> {
 /// lieu de le rendre muet.
 let empreinteInitiale: string[] | null = null;
 
-/// Ajouté par l'agent testeur (T-J0-09). La lecture seule de production était
+/// La lecture seule de production était
 /// garantie par la seule absence d'écriture dans les tests — une propriété
 /// négative, qu'aucune assertion ne tenait. Ces deux tests l'énoncent :
 /// après le passage complet du smoke, aucune ligne d'`app_settings` n'a bougé.

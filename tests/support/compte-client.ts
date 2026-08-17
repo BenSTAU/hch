@@ -64,7 +64,7 @@ export async function creerClientActive(
     where: { email },
     // Les deux colonnes, pas une seule : `is_active` rouvre la connexion,
     // `email_verified_at` distingue « jamais activé » de « fermé par un
-    // administrateur » (T-V3-02, constat B1 de l'agent testeur).
+    // administrateur ».
     data: { isActive: true, emailVerifiedAt: new Date() },
     select: { id: true },
   });

@@ -47,7 +47,7 @@ function motDePasseAdmin(): string {
 /// quatre derniers chiffres de l'horloge donnent une chance sur 10 000 de
 /// retomber dessus. Le formulaire répondrait alors « Aucune modification à
 /// enregistrer », la barrière rougirait, et aucun code ne serait en cause.
-/// Mesuré par l'agent testeur sur T-J0-09 ; en local `retries` vaut 0, donc le
+/// Mesuré : en local `retries` vaut 0, donc le
 /// dé n'était relancé par personne.
 ///
 /// Plage de fiction réservée par l'ARCEP, comme le seed : aucune donnée
@@ -168,7 +168,7 @@ test("la page de connexion ne présente aucune violation axe", async ({
   // RGAA niveau A sur toute l'application, AA sur le parcours de connexion
   // (PLAN S4 §2). La conformité se prouve par un test, elle ne se déclare pas.
   //
-  // `wcag21a` / `wcag21aa` ajoutés par l'agent testeur (T-J0-09) : le RGAA 4.1
+  // `wcag21a` / `wcag21aa` : le RGAA 4.1
   // transpose WCAG **2.1**, et les seuls tags `wcag2*` laissaient hors du
   // champ les règles propres à la 2.1 — `autocomplete-valid` notamment, qui
   // porte sur un formulaire d'identification. Zéro violation supplémentaire
@@ -181,7 +181,7 @@ test("la page de connexion ne présente aucune violation axe", async ({
   expect(resultats.violations).toEqual([]);
 });
 
-/// Ajouté par l'agent testeur (T-J0-09). L'écran d'administration n'était
+/// L'écran d'administration n'était
 /// audité qu'en jsdom (`settings-form.test.tsx` §« audit outillé »), où
 /// axe-core ne peut PAS évaluer les contrastes : sans moteur de rendu, la
 /// règle `color-contrast` sort en `incomplete` et ne compte pas comme

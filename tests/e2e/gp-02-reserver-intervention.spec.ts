@@ -167,7 +167,7 @@ test("un visiteur anonyme ne peut pas valider, et aucune intervention n'est cré
 }) => {
   // La garde vit dans la SERVER ACTION, pas dans le matcher de `src/proxy.ts` :
   // `/reserver` reste publique, seule la validation exige un compte
-  // (Constitution §3.2, alignée le 2026-08-09).
+  // (Constitution §3.2).
   //
   // Le test attaque l'action DIRECTEMENT, sans passer par l'écran : une Server
   // Action exportée est un endpoint POST public, et masquer le bouton ne
@@ -344,8 +344,7 @@ test("un client activé traverse le tunnel et réserve", async ({ page }) => {
   }
 });
 
-/// ─────────────────────────────────────────────────────────────────────────
-/// Le vélo désigné à C5 - ajouté par l'agent testeur, 2026-08-16.
+/// Le vélo désigné à C5.
 ///
 /// ⚠️ **La seule preuve sur une VRAIE base que le tunnel écrit
 /// `interventions.cycle_id`.** Tout ce qui existait ailleurs tourne contre un
@@ -360,7 +359,6 @@ test("un client activé traverse le tunnel et réserve", async ({ page }) => {
 /// forgé, mais elle ne dit rien de ce que le serveur RENVOIE au navigateur -
 /// et un tunnel qui listerait les vélos de tout le monde exposerait la marque
 /// et le modèle d'un tiers avant même qu'on tente d'en désigner un.
-/// ─────────────────────────────────────────────────────────────────────────
 
 test("le vélo désigné à C5 arrive dans interventions.cycle_id", async ({
   page,
@@ -499,7 +497,7 @@ test("C5 ne propose jamais le vélo d'un autre client", async ({ page }) => {
 test("un tunnel repris sous un AUTRE compte n'engage pas le vélo du premier", async ({
   page,
 }) => {
-  // 🔴 Ajouté par l'agent testeur, 2026-08-16. `sessionStorage` vit dans
+  // ⚠️ `sessionStorage` vit dans
   // l'ONGLET et survit à la déconnexion ; la liste des vélos vient de la
   // SESSION, relue à chaque rendu de la page. Les deux se désynchronisent dès
   // qu'un second compte reprend l'onglet - poste partagé, démonstration au

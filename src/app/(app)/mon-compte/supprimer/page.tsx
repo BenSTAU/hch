@@ -48,15 +48,10 @@ export const metadata: Metadata = {
 export default async function SupprimerComptePage() {
   const user = await getCurrentUser();
 
-  // 🐛 **La sortie suit le rôle depuis T-V2-05.** Elle pointait
-  // `CHEMIN_ESPACE_CLIENT` en dur : depuis que `requireEspaceClient()` y répond
-  // 403 à un technicien et à un administrateur, le seul lien de sortie d'une
-  // route **volontairement ouverte à tous les rôles** menait à un refus.
-  //
-  // C'est la règle que la tâche s'applique déjà à `user-menu.tsx`, et qu'elle
-  // avait manquée ici : fermer un espace oblige à revoir tout ce qui y menait,
-  // à commencer par les pages qu'on a pris soin de laisser ouvertes. Trouvé par
-  // l'agent testeur.
+  // ⚠️ **La sortie suit le ROLE, jamais `CHEMIN_ESPACE_CLIENT` en dur.**
+  // `requireEspaceClient()` repond 403 a un technicien et a un administrateur :
+  // un lien fige ferait mener a un refus le seul chemin de sortie d'une route
+  // volontairement ouverte a tous les roles.
   const espace = espacePrincipal(user.roles);
 
   return (

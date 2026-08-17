@@ -287,7 +287,7 @@ test("le refus de paiement annule l'intervention et trace un UNPAID", async ({
   expect(paiement.paidAt).toBeNull();
   expect(paiement.amountSnapshot.toFixed(2)).toBe("0.00");
 
-  // ⚠️ **Ajout de l'agent testeur, 2026-08-14.** La DoD ecrit « entree
+  // ⚠️ La DoD ecrit « entree
   // `audit_logs` dans la meme transaction **sur les deux branches** », et
   // seule la branche nominale la relisait en base. Le refus est justement
   // celle qui compte le plus en cas de contestation : c'est la trace de qui a
@@ -411,7 +411,7 @@ test("le client voit « Montant paye » et le montant reellement encaisse", asyn
   // `payments` ; il lit desormais `amount_snapshot`.
   //
   // Deux contextes, parce que les deux espaces sont cloisonnes : le technicien
-  // ne voit pas l'espace client (T-V2-05), et c'est justement pour ca que la
+  // ne voit pas l'espace client, et c'est justement pour ca que la
   // propagation ne s'observe nulle part ailleurs.
   const titulaire = await creerCompte(db, "cloture-vue-client", [
     "ROLE_CLIENT",
@@ -481,7 +481,7 @@ test("le client lit le motif du refus, et aucun montant", async ({
 test("le toast de cloture atteint reellement l'ecran du technicien", async ({
   page,
 }) => {
-  // 🐛 **Ajout de l'agent testeur, 2026-08-14 - l'oracle manquant du correctif
+  // 🐛 **l'oracle manquant du correctif
   // embarque ici.**
   //
   // Cette PR corrige un bug de T-V2-02 : aucun `<Toaster>` n'etait monte dans
@@ -531,7 +531,7 @@ test("la modale de cloture ne presente aucune violation RGAA A", async ({
 test("le panneau de refus non plus ne presente aucune violation RGAA A", async ({
   page,
 }) => {
-  // ⚠️ **Ajout de l'agent testeur, 2026-08-14.** La DoD demande T4 « RGAA A »
+  // ⚠️ La DoD demande T4 « RGAA A »
   // et la revue nomme **deux panneaux**. Le scan en page ne couvrait que celui
   // d'encaissement ; celui de refus n'etait vu que par `jest-axe` sous jsdom,
   // qui n'evalue ni les contrastes ni rien qui depende de la feuille de style

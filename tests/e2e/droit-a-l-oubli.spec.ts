@@ -238,7 +238,7 @@ test.describe("Droit à l'oubli - la pseudonymisation", () => {
     await seConnecterClient(page, email);
 
     // Le chemin que `US-COMPTE-SUPPRIMER` §Cas nominal nomme en second, et le
-    // seul qui existe tant que l'écran C12 (T-V3-07) n'est pas livré.
+    // seul qui existe tant que l'écran C12 n'est pas livré.
     await page.goto("/politique-confidentialite");
     await page.getByRole("link", { name: "Supprimer mon compte" }).click();
     await expect(page).toHaveURL(/\/mon-compte\/supprimer$/);
@@ -343,8 +343,6 @@ test.describe("Droit à l'oubli - la pseudonymisation", () => {
   test("l'adresse email redevient disponible pour un nouveau compte", async ({
     page,
   }) => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-12.
-    //
     // Le droit à l'oubli **efface**, il ne bannit pas : quelqu'un qui se
     // ravise doit pouvoir revenir. C'est `emailPseudonyme` qui libère l'index
     // unique de `users.email` en déplaçant l'ancienne adresse sur
@@ -439,8 +437,6 @@ test.describe("Droit à l'oubli - l'anti-rejeu au niveau de la base", () => {
   test("un second effacement ne peut pas s'appliquer à une ligne déjà pseudonymisée", async ({
     page,
   }) => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-12.
-    //
     // `pseudonymiserCompte` ne prend AUCUN verrou de ligne, contrairement à
     // `annulerInterventionDuClient` et `ajouterPhoto` : son anti-rejeu est
     // entièrement porté par le `deletedAt: null` du `where` de l'update

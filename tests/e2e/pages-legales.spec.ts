@@ -112,7 +112,7 @@ test.describe("Mentions légales - le contenu vient de la base", () => {
     //
     // ⚠️ Porté sur l'**article 1** et non sur la page entière depuis le
     // 2026-08-12 : le rappel d'éditeur ajouté au pied de la coquille (écart E1
-    // relevé par l'agent testeur) affiche les mêmes valeurs, et le mode strict
+    //) affiche les mêmes valeurs, et le mode strict
     // de Playwright en résolvait deux. La propriété visée reste la même, et
     // elle est même mieux localisée qu'avant.
     const editeur = page.getByRole("region", {
@@ -170,7 +170,7 @@ test.describe("Politique de confidentialité - ce qu'elle déclare", () => {
 
     // Second point d'entrée nommé par `US-COMPTE-SUPPRIMER` §Cas nominal, et
     // celui qui rend le droit à l'oubli atteignable même si l'écran C12
-    // (T-V3-07, sacrifiable) n'est jamais livré.
+    // n'est jamais livré.
     await expect(
       page.getByRole("link", { name: "Supprimer mon compte" }),
     ).toHaveAttribute("href", "/mon-compte/supprimer");
@@ -197,7 +197,7 @@ test.describe("Politique de confidentialité - ce qu'elle déclare", () => {
     // c'est ce mot-là qui doit apparaître.
     await expect(page.getByText(/pseudonymis/i).first()).toBeVisible();
 
-    // ⚠️ **La moitié manquante de cet oracle**, relevée par l'agent testeur en
+    // ⚠️ **La moitié manquante de cet oracle** en
     // PR #39 : il vérifiait la PRÉSENCE de « pseudonymis », jamais l'ABSENCE
     // d'une promesse de disparition, alors que son nom promet l'inverse. Les
     // trois formules ci-dessous sont exactement celles que S4 §4.4 interdit.
@@ -250,7 +250,7 @@ test.describe("Déclaration d'accessibilité", () => {
     await page.goto("/accessibilite");
 
     await expect(page.getByText(/partiellement conforme/i)).toBeVisible();
-    // La bordure des champs, arbitrée le 2026-08-08 en faveur de la maquette.
+    // La bordure des champs, non conforme et assumée en faveur de la maquette.
     // Aucune barrière ne la détecte : ni axe en jsdom (aucun contraste calculé)
     // ni axe au navigateur (aucune règle pour 1.4.11). Cette page est le seul
     // endroit du produit où elle est écrite.
@@ -271,8 +271,6 @@ test.describe("Déclaration d'accessibilité", () => {
   });
 });
 
-/// ⚠️ Ajout de l'agent testeur, 2026-08-12.
-///
 /// Une déclaration de conformité partielle est le seul endroit du produit où un
 /// chiffre engage l'éditeur devant un tiers, et c'est le seul chiffre qu'aucune
 /// barrière ne recalculait : ni `jest-axe` (aucun contraste en jsdom) ni
