@@ -1,8 +1,6 @@
 // Configuration du CLI Prisma.
 //
-// Elle existe pour une raison précise : le CLI ne lit PAS `.env.local`, alors
-// que c'est le fichier que prescrivent le vault et CLAUDE.md — le seul qui
-// diffère entre le PC maison et le PC Shadow. Sans ce chargement explicite,
+// ⚠️ Le CLI Prisma ne lit PAS `.env.local`. Sans ce chargement explicite,
 // `prisma migrate dev` échoue sur un DATABASE_URL absent pendant que
 // `pnpm dev` fonctionne, et l'erreur ne pointe pas vers sa cause.
 //
