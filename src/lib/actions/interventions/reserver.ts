@@ -20,27 +20,18 @@ import { trouverZoneCouvrante } from "@/lib/geo/postgis";
 import { authActionClient } from "@/lib/safe-action";
 import { reserverSchema } from "@/lib/validations/interventions";
 
-/// Validation d'une réservation - **le cœur du produit**.
+/// Validation d'une réservation, **le cœur du produit**.
 ///
-/// **La garde d'authentification vit ICI**, dans la Server Action, et non dans
-/// le matcher de `src/proxy.ts` : `/reserver` reste publique, le tunnel
-/// s'explore sans compte. C'est la validation seule qui exige un compte créé,
-/// activé et connecté (Constitution §3.2, alignée le 2026-08-09 - restauration
-/// de la décision B6 Q2 du 2026-07-06).
-///
-/// Mettre la garde dans le proxy fermerait tout le tunnel ; la mettre dans
-/// l'écran ne protégerait rien, une Server Action exportée étant un endpoint
-/// POST public.
-///
-/// Le tunnel aboutit à une intervention planifiée **sans intervention
-/// humaine** (Constitution §1.2) : pas de file de leads, pas de rappel.
+/// **La garde d'authentification vit ICI**, pas dans le matcher de
+/// `src/proxy.ts` : `/reserver` reste publique, le tunnel s'explore sans
+/// compte, et la validation seule exige un compte activé (Constitution §3.2).
+/// Dans le proxy elle fermerait tout le tunnel ; dans l'écran elle ne
+/// protégerait rien, une Server Action exportée étant un endpoint POST public.
 
 const MESSAGE_INDISPONIBLE =
   "Service de géolocalisation temporairement indisponible, réessayez.";
-/// ⚠️ Ces deux libellés portaient un **trait d'union sec** depuis [PR #32], là
-/// où la SPEC écrit un cadratin. CLAUDE.md §Typographie nomme ce remplacement
-/// « le pire des remplacements » : la virgule est la bonne substitution.
-/// Correction hors périmètre de T-V3-10, signalée en PR.
+/// Virgule là où la SPEC écrit un cadratin, que CLAUDE.md §Typographie
+/// interdit. Écart de forme signalé en PR pour write-back.
 const MESSAGE_INTROUVABLE = "Adresse introuvable, vérifiez les informations.";
 const MESSAGE_HORS_ZONE = "Aucun service disponible à cette adresse.";
 const MESSAGE_FORFAIT_INCONNU = "Ce forfait n'est plus proposé.";
@@ -108,10 +99,9 @@ export const reserver = authActionClient
       }),
     ]);
 
-    // La grille est recalculée côté serveur, et le créneau soumis doit s'y
-    // trouver. Sans cette vérification, un appel direct à l'action réserverait
-    // un dimanche à 3 h du matin - la Server Action est un endpoint POST
-    // public, l'écran ne protège rien.
+    // La grille est recalculée côté serveur et le créneau soumis doit s'y
+    // trouver : sans ça, un appel direct à l'action réserverait un dimanche à
+    // 3 h du matin.
     const disponibles = affecterCreneaux(
       deriverCreneaux({
         horaires,
@@ -131,9 +121,8 @@ export const reserver = authActionClient
       };
     }
 
-    // Re-résolu à l'instant de l'écriture plutôt que repris du tour de grille :
-    // les deux donnent le même technicien, mais celui-ci le dit explicitement
-    // au lieu de dépendre de l'ordre d'un tableau construit plus haut.
+    // Re-résolu à l'instant de l'écriture plutôt que repris du tour de grille,
+    // pour ne pas dépendre de l'ordre d'un tableau construit plus haut.
     const techId = affecterPremierLibre(creneau, techniciens);
     if (!techId) {
       return {
@@ -159,13 +148,10 @@ export const reserver = authActionClient
       cycleId: parsedInput.cycleId,
     });
 
-    // Le vélo désigné à C5 n'est plus le sien, ou ne l'a jamais été. Traité
-    // AVANT le refus de vente : `messageEchecStock` ne connaît que les motifs
-    // de stock, et lui passer celui-ci le ferait répondre à côté.
-    //
-    // La réservation entière est refusée plutôt que validée sans le vélo : le
-    // client a désigné une monture, réserver en l'ignorant en silence lui
-    // ferait croire à un rendez-vous qu'il n'a pas demandé.
+    // Traité AVANT le refus de vente : `messageEchecStock` ne connaît que les
+    // motifs de stock. La réservation entière est refusée plutôt que validée
+    // sans le vélo, l'ignorer en silence ferait croire à un rendez-vous que le
+    // client n'a pas demandé.
     if (!resultat.ok && resultat.reason === "cycle_introuvable") {
       return {
         ok: false as const,
@@ -174,13 +160,9 @@ export const reserver = authActionClient
       };
     }
 
-    // Un produit du panier est parti pendant la composition. Composer un panier
-    // ne RETIENT rien : aucune source ne promet le contraire, et un stock tenu
-    // pendant une visite abandonnée est un stock invendable.
-    //
-    // Le panier n'est pas corrigé dans le dos du client - il lit ce qui manque
-    // et décide. Note (3) de PR #30 : ne jamais imputer au client un état que
-    // le tunnel a produit seul.
+    // Composer un panier ne RETIENT rien : un stock tenu pendant une visite
+    // abandonnée est un stock invendable. Le panier n'est pas corrigé dans le
+    // dos du client, il lit ce qui manque et décide.
     if (!resultat.ok && resultat.reason !== "creneau_pris") {
       return {
         ok: false as const,
@@ -189,10 +171,8 @@ export const reserver = authActionClient
       };
     }
 
-    // La course perdue face à la contrainte d'exclusion : deux clients ont
-    // validé le même créneau à quelques millisecondes d'écart. La base a
-    // arbitré, le tunnel a une réponse à donner - et la grille rafraîchie
-    // montre ce qui reste.
+    // Course perdue face à la contrainte d'exclusion : deux clients ont validé
+    // le même créneau à quelques millisecondes d'écart, la base a arbitré.
     if (!resultat.ok) {
       return {
         ok: false as const,
@@ -201,12 +181,9 @@ export const reserver = authActionClient
       };
     }
 
-    // Hors du chemin de réponse, comme l'activation : l'aller-retour SMTP ne
-    // doit pas retarder la confirmation à l'écran, et son échec ne doit pas
-    // annuler une réservation que la base a acceptée.
-    //
-    // Le destinataire est celui de la SESSION : il n'y a plus d'email de
-    // visiteur à transporter depuis le formulaire.
+    // Hors du chemin de réponse : l'aller-retour SMTP ne doit pas retarder la
+    // confirmation, et son échec ne doit pas annuler une réservation que la
+    // base a acceptée. Le destinataire est celui de la SESSION.
     dispatchEmail(
       `confirmation reservation ${String(resultat.interventionId)}`,
       () =>

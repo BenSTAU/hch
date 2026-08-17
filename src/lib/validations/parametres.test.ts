@@ -164,7 +164,7 @@ describe("validateSettingValue — typage par `value_type`", () => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
-// Sondes ajoutées par l'agent testeur (T-J0-05).
+// Sondes.
 //
 // `validateSettingValue` est la seule chose qui se tient entre un POST
 // d'administrateur et la colonne `value` en TEXT. Ces tests décrivent ce
@@ -174,7 +174,7 @@ describe("validateSettingValue — typage par `value_type`", () => {
 
 describe("validateSettingValue — la porte du vide", () => {
   it("refuse un `value_type` inconnu, vide ou non", () => {
-    // Ce test était un CONSTAT vert de l'agent testeur : la porte du vide était
+    // la porte du vide était
     // placée AVANT `isSettingValueType`, si bien qu'un `value_type` inconnu
     // était accepté tant que la valeur était vide et refusé dès qu'elle ne
     // l'était plus — deux verdicts contradictoires sur la même ligne, selon

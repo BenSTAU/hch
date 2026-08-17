@@ -103,7 +103,7 @@ describe("SelecteurCycle", () => {
 
   it("porte le nom de son titre visible", () => {
     // WCAG 1.3.1 : c'est le `role="radiogroup"` qu'un lecteur d'écran annonce
-    // en entrant dans le groupe. Défaut mesuré sur C1 en T-V3-16, pas déduit.
+    // en entrant dans le groupe. Défaut mesuré sur C1, pas déduit.
     poser();
 
     expect(screen.getByRole("radiogroup")).toHaveAccessibleName(
@@ -112,7 +112,7 @@ describe("SelecteurCycle", () => {
   });
 
   it("se parcourt entièrement au clavier", async () => {
-    // ⚠️ Ajouté par l'agent testeur, 2026-08-16. RGAA A : le bouton radio est
+    // ⚠️ RGAA A : le bouton radio est
     // `sr-only`, donc invisible - c'est la dalle qui se voit. Le clavier est le
     // SEUL chemin qui reste si le masquage dérape en `display: none` ou en
     // `tabindex="-1"`, et rien ne le vérifiait. Le groupe est aussi le premier

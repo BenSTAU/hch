@@ -36,7 +36,7 @@ import {
 /// la zone du client : ces comptes sont donc structurellement injoignables par
 /// le tunnel, et `gp-02` ne peut pas deposer une reservation dans leur tournee.
 /// Sans ca le scenario dependrait de l'ordre d'execution des fichiers et de ce
-/// que `gp-02` a laisse derriere lui (cadrage du plancher V2, D7).
+/// que `gp-02` a laisse derriere lui.
 
 let db: PrismaClient;
 let techPlein: TechnicienSeme;
@@ -360,7 +360,7 @@ test("la Server Action de rafraichissement refuse un client authentifie", async 
   page,
   browser,
 }) => {
-  // ⚠️ **Ajout de l'agent testeur, 2026-08-12.** La DoD case 9 exige que la
+  // ⚠️ La DoD case 9 exige que la
   // Server Action de polling porte sa PROPRE garde, « verifiee par test ». Elle
   // l'etait - mais uniquement dans `lister-tournee.test.ts`, ou `getCurrentUser`
   // ET `forbidden` sont doubles. Ce test-la prouve que le CORPS de l'action lit

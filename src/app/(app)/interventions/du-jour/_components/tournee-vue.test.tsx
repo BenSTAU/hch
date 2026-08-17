@@ -360,7 +360,7 @@ describe("TourneeVue - le lien et l'action contextuelle (T-V2-02)", () => {
 });
 
 describe("TourneeVue - le second chemin du DTO", () => {
-  // ⚠️ **Ajout de l'agent testeur, 2026-08-12.** Tous les tests ci-dessus ne
+  // ⚠️ Tous les tests ci-dessus ne
   // rendent que `initialData`, le PREMIER des deux chemins par lesquels ce DTO
   // traverse la frontiere. Le second - le retour de la Server Action au polling -
   // n'etait rendu nulle part : la `queryFn` est doublee sur un `{ data:

@@ -7,20 +7,11 @@ import type { ChampsCycleInput } from "@/lib/validations/cycles";
 /// `US-CYCLE-AJOUTER`, `US-CYCLE-MODIFIER`, plus le rattachement à une
 /// intervention promu en v1 le 2026-08-12.
 ///
-/// ── Aucun audit, et c'est une décision écrite
-///
-/// Constitution §4.2 ne raisonne pas par table mais par **nature de l'acte** :
-/// elle vise « toute action administrative sensible » et énumère suppressions,
-/// modifications tarifaires, anonymisations, configuration société. Les
-/// transitions d'état d'une intervention sont tracées par un autre ancrage,
-/// §2.4 et son cycle de vie gardé.
-///
-/// Ni le CRUD des cycles ni le rattachement ne relèvent de l'un ou de l'autre :
-/// un client renseigne sa propre possession, et désigner un vélo ne franchit
-/// aucune transition. C'est la règle qui explique les deux précédents du dépôt
-/// sans les contredire - `annulerInterventionDuClient` audite parce qu'elle
-/// transitionne, `ajouterProduitIntervention` n'audite pas bien qu'elle écrive
-/// sur la même intervention. Arbitré par Benjamin le 2026-08-14 (L6).
+/// **Aucun audit ici.** Constitution §4.2 raisonne par nature de l'acte et non
+/// par table : ni le CRUD des cycles ni le rattachement ne sont une action
+/// administrative sensible ni une transition d'état (§2.4). C'est ce qui
+/// distingue `annulerInterventionDuClient`, qui audite parce qu'elle
+/// transitionne, d'`ajouterProduitIntervention`, qui n'audite pas.
 
 /// Le vélo tel qu'il traverse vers l'écran. Les six colonnes moins `user_id` :
 /// le propriétaire est celui de la session, le renvoyer n'apprendrait rien au
@@ -82,14 +73,11 @@ export async function creerCycle(
 
 /// Refus des mutations qui ciblent un vélo par son identifiant.
 ///
-/// ⚠️ **Un seul motif pour deux cas.** `US-CYCLE-MODIFIER` §Cas d'erreur écrit
-/// **403** pour le vélo d'autrui et **404 « Cycle introuvable »** pour
-/// l'inexistant : c'est exactement la distinction qui révèle l'existence, et le
-/// 403 fuit par lui-même puisque répondre « interdit » sur le vélo d'un tiers
-/// confirme qu'il y en a un. `cycles.id` est un `SERIAL`, donc énumérable, et la
-/// surface est **client**. La doctrine applicable est celle des mutations
-/// produits et de l'annulation : *introuvable* dans les deux cas. Arbitré par
-/// Benjamin le 2026-08-14 (B2), les deux US sont amendées.
+/// ⚠️ **Un seul motif pour deux cas.** Distinguer le vélo d'autrui (403) de
+/// l'inexistant (404) révèle l'existence : répondre « interdit » sur le vélo
+/// d'un tiers confirme qu'il y en a un, et `cycles.id` est un `SERIAL`
+/// énumérable. *Introuvable* dans les deux cas, comme les mutations produits.
+/// Écart assumé avec les deux US, amendées au write-back.
 export type ResultatCycle =
   { ok: true; cycle: CycleClient } | { ok: false; reason: "introuvable" };
 
@@ -132,22 +120,16 @@ export type ResultatRattachement =
   | { ok: false; reason: "verrouillee" }
   | { ok: false; reason: "cycle_introuvable" };
 
-/// Rattachement d'un vélo à une intervention, au temps T+n - **premier
-/// écrivain de `interventions.cycle_id`**, et le seul jusqu'au 2026-08-16.
+/// Rattachement d'un vélo à une intervention au temps T+n. Le second écrivain
+/// de `interventions.cycle_id` est le tunnel (`reserverIntervention`, écran
+/// C5) ; les deux partagent la même garde de propriété sur `(id, userId)` et le
+/// même refus unique. Les gardes vivent ici et non dans l'action, parce
+/// qu'elles décident d'une écriture.
 ///
-/// ⚠️ Le tunnel en désigne un à la réservation depuis cette date
-/// (`reserverIntervention`, écran C5). Les deux écrivains partagent la même
-/// garde de propriété sur le couple `(id, userId)` et le même refus unique.
-///
-/// Les trois gardes vivent ici et non dans l'action : elles décident d'une
-/// écriture, elles appartiennent donc à la transaction qui l'exécute.
-///
-/// `cycleId: null` détache. Le vélo n'est **pas figé en instantané**,
-/// contrairement au prix et à la durée : la colonne est une référence vivante
-/// vers `cycles`, le dictionnaire ne demande aucun `snapshot` ici, et un client
-/// qui corrige la marque de son vélo corrige aussi ce que le technicien lira -
-/// y compris sur un rendez-vous déjà passé. Dérogation assumée à la doctrine du
-/// snapshot (Constitution §4.1), qui porte sur ce qui est facturé.
+/// ⚠️ `cycleId: null` détache, et le vélo n'est **pas figé en instantané** : la
+/// colonne est une référence vivante, donc corriger la marque corrige aussi ce
+/// que le technicien lira sur un rendez-vous passé. Dérogation assumée à la
+/// doctrine du snapshot (Constitution §4.1), qui porte sur ce qui est facturé.
 export async function rattacherCycleAIntervention(params: {
   interventionId: number;
   cycleId: number | null;
@@ -194,9 +176,6 @@ export async function rattacherCycleAIntervention(params: {
     // La lecture au-dessus reste nécessaire : c'est elle qui distingue
     // « introuvable » de « verrouillee », qu'un `count` seul confondrait.
     //
-    // Fenêtre relevée par l'agent testeur (C5). `produits.ts` porte la même et
-    // n'est PAS corrigée ici : elle écrit plusieurs lignes sous un verrou de
-    // stock, la refermer demande un autre geste que celui-ci.
     const { count } = await tx.intervention.updateMany({
       where: {
         id: params.interventionId,

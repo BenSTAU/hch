@@ -16,9 +16,9 @@
 //
 // Le faux `$transaction` ne simule pas Postgres, il OBSERVE ce que Postgres
 // observerait : le rappel a-t-il rendu une valeur (commit) ou leve (rollback) ?
-// Modele de verrouillage repris de `interventions.test.ts`, ou il a ete etendu
-// par l'agent testeur le 2026-08-11 - READ COMMITTED plus un verrou de ligne
-// qui fait attendre la transaction suivante jusqu'au commit de la precedente.
+// Modele de verrouillage repris de `interventions.test.ts` : READ COMMITTED
+// plus un verrou de ligne qui fait attendre la transaction suivante jusqu'au
+// commit de la precedente.
 import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -518,7 +518,7 @@ describe("cloturerInterventionDuTech - la concurrence", () => {
   });
 
   it("serialise pour de vrai : la seconde relit ce que la premiere a ecrit", async () => {
-    // 🔴 **Ajout de l'agent testeur, 2026-08-14.** Le test ci-dessus affirme
+    // 🔴 Le test ci-dessus affirme
     // « c'est la RELECTURE sous verrou qui refuse », mais son double ne
     // l'observe pas : la relecture rend `DONE` au SECOND APPEL, quel que soit
     // l'ordre reel des transactions. Le verrou pouvait disparaitre du code sans

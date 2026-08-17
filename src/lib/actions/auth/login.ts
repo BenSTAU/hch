@@ -25,16 +25,9 @@ import {
 export const login = actionClient
   .inputSchema(loginSchema)
   .action(async ({ parsedInput: { email, password, next } }) => {
-    // 5 échecs par email, puis 10 minutes de blocage ferme (SPEC §298-300
-    // amendée le 2026-08-09, PLAN S4 §11.1). Reporté de T-J0-04 : le leurre
-    // bcrypt d'`authenticate.ts` ferme la fuite d'INFORMATION, pas celle de
-    // DÉBIT, et sans plafond un attaquant garde le droit d'essayer sans fin.
-    //
-    // La sortie anticipée ci-dessous répond sans passer par bcrypt, donc plus
-    // vite. Ce n'est pas le canal temporel refermé en T-J0-04 : la clé compte
-    // pour TOUTE chaîne tentée, compte ou non, et le chronomètre ne distingue
-    // donc que « cette adresse a déjà été martelée », ce que le message dit
-    // déjà en clair.
+    // 5 échecs par email, puis 10 minutes de blocage ferme (SPEC §298-300,
+    // PLAN S4 §11.1). La clé compte pour toute chaîne tentée, compte ou non :
+    // la sortie anticipée ne révèle donc rien d'autre que le martèlement.
     const cle = loginRateLimitKey(email);
     const quota = await peekLoginLockout(
       cle,
@@ -43,45 +36,32 @@ export const login = actionClient
     );
 
     if (!quota.allowed) {
-      // `blocked` sert au formulaire à fermer la porte côté navigateur, la
-      // SPEC demande le blocage « front ET serveur ». Le délai RESTANT, lui,
-      // ne traverse pas : à la seconde près, il daterait le 5e échec, donc
-      // l'activité d'un tiers sur cette adresse. Le message porte la durée du
-      // verrou, qui est une constante et ne date rien.
+      // Le délai RESTANT ne traverse pas : à la seconde près, il daterait le
+      // 5e échec, donc l'activité d'un tiers sur cette adresse. Le message
+      // porte la durée du verrou, qui est une constante et ne date rien.
       return { error: LOGIN_RATE_LIMITED_MESSAGE, blocked: true };
     }
 
     const result = await authenticateWithPassword(email, password);
 
-    // Une seule branche d'échec, un seul message - et un seul temps de
-    // réponse : les quatre causes passent toutes par bcrypt
-    // (`src/lib/auth/authenticate.ts`, leurre `DECOY_HASH`).
+    // Une seule branche d'échec, un seul message, un seul temps de réponse :
+    // les quatre causes passent toutes par bcrypt (leurre `DECOY_HASH` de
+    // `src/lib/auth/authenticate.ts`). Anti-énumération, Constitution §4.2.
     if (!result.ok) {
       await recordRateLimitAttempt(cle);
       return { error: LOGIN_REFUSED_MESSAGE };
     }
 
-    // Le compteur est purgé sur succès : quatre erreurs de frappe suivies du
-    // bon mot de passe ne doivent pas laisser une mine armée pour la suite.
-    // Depuis le blocage ferme, c'est aussi ce qui empêche quatre échecs
-    // anciens de s'additionner à un échec futur, le compteur n'oubliant plus
-    // au fil du temps.
+    // Purge sur succès : le compteur n'oublie pas au fil du temps, donc sans
+    // elle quatre erreurs de frappe resteraient armées indéfiniment.
     await clearRateLimit(cle);
 
     await createSession(result.user.id, result.user.roles);
 
-    // Audit de connexion — ADR-005 §Flux, ADR-014 §5 (`GP-01` vérifie
-    // « `LOGIN` audit_logs »). Reporté de T-V3-03, où le CHECK de la migration
-    // 003 bornait la colonne à quatre valeurs.
-    //
-    // **Après** `createSession` et non avant : une trace de connexion écrite
-    // pour une session qui n'a pas été créée est un journal qui ment. L'ordre
-    // inverse ne se rattraperait pas, il n'y a pas de transaction ici — le
-    // cookie n'est pas une écriture de base.
-    //
-    // Les échecs ne sont pas tracés : `audit_logs.actor_id` est une vraie FK
-    // NOT NULL, et une tentative sur un email inconnu n'a aucun acteur à
-    // nommer. Le plafond d'échecs, lui, est déjà compté par `rate_limits`.
+    // Audit de connexion, cf. ADR-005 §Flux. **Après** `createSession` : il
+    // n'y a pas de transaction ici, et une trace écrite pour une session non
+    // créée ne se rattraperait pas. Les échecs ne sont pas tracés, une
+    // tentative sur un email inconnu n'ayant aucun acteur à nommer.
     await writeAuditLog({
       entityType: ENTITE_SESSION,
       entityId: result.user.id,
@@ -90,55 +70,42 @@ export const login = actionClient
     });
 
     // `next` consommé APRÈS authentification seulement : sinon la page de
-    // connexion serait un redirecteur ouvert utilisable sans compte. À défaut,
-    // la destination dépend du rôle (`src/lib/auth/after-login.ts`) - un client
-    // envoyé au back-office y trouverait un 403.
-    //
-    // `redirect()` hors de tout try/catch - il fonctionne par throw, une
-    // capture le transformerait en erreur serveur silencieuse.
+    // connexion serait un redirecteur ouvert utilisable sans compte.
+    // `redirect()` hors de tout try/catch, il fonctionne par throw.
     redirect(safeNextPath(next) ?? afterLoginPath(result.user.roles));
   });
 
-/// État rendu par le formulaire de connexion.
-///
-/// Un seul message pour les quatre causes de refus (anti-énumération,
-/// Constitution §4.2). `blocked` ne les distingue pas : il signale le plafond
-/// d'échecs, qui vaut pour toute adresse tentée - compte ou non.
+/// État rendu par le formulaire de connexion. `blocked` ne distingue aucune
+/// cause de refus : il signale le plafond d'échecs, qui vaut pour toute
+/// adresse tentée, compte ou non (anti-énumération, Constitution §4.2).
 export type LoginFormState = { error?: string; blocked?: boolean };
 
-/// Adaptateur `useActionState` - c'est **cette** fonction que
-/// `<form action={…}>` référence, et c'est ce qui rend la soumission
-/// fonctionnelle avant hydratation.
+/// Adaptateur `useActionState` : `next-safe-action` attend un objet typé par
+/// son schéma, React passe un `FormData`, les deux ne se branchent pas.
 ///
-/// Elle existe parce que `next-safe-action` attend un objet typé par son
-/// schéma, quand React passe un `FormData` : les deux ne se branchent pas
-/// directement (vérifié sur la 8.6, `FormData` n'apparaît nulle part dans ses
-/// types). La conversion vit donc ici, du côté serveur, plutôt que dans un
-/// `onSubmit` client qui ne s'exécute qu'une fois React chargé.
-///
-/// Ce que ça corrige : un `<form>` sans attribut `action` se soumet
-/// NATIVEMENT en GET tant que React n'a pas hydraté - tous les champs en query
-/// string, mot de passe compris, donc dans l'historique du navigateur, les
-/// journaux d'accès nginx et l'en-tête `Referer`. Observé en E2E sur T-J0-09.
+/// ⚠️ La conversion vit côté SERVEUR, pas dans un `onSubmit` client. Un
+/// `<form>` sans attribut `action` se soumet nativement en GET tant que React
+/// n'a pas hydraté : mot de passe en query string, donc dans l'historique du
+/// navigateur, les journaux nginx et l'en-tête `Referer`.
 export async function loginFormAction(
   _prevState: LoginFormState,
   formData: FormData,
 ): Promise<LoginFormState> {
   // `next` transite par un champ caché, seule voie qui survive à l'absence de
-  // JavaScript. Il reste manipulable - c'était déjà vrai - et c'est
-  // `safeNextPath`, côté action, qui en décide.
+  // JavaScript. Manipulable par construction : c'est `safeNextPath`, côté
+  // action, qui en décide.
   const next = formData.get("next");
 
   const result = await login({
     email: String(formData.get("email") ?? ""),
     password: String(formData.get("password") ?? ""),
-    // Omis plutôt que transmis vide : le schéma le rend facultatif, et une
-    // clé présente à `""` n'a pas le même sens qu'une clé absente.
+    // Omis plutôt que transmis vide : une clé présente à `""` n'a pas le même
+    // sens qu'une clé absente pour le schéma.
     ...(typeof next === "string" && next !== "" ? { next } : {}),
   });
 
-  // En cas de succès, `login` a déjà lancé la redirection par throw : ce point
-  // n'est atteint que sur un refus.
+  // `login` redirige par throw en cas de succès : ce point n'est atteint que
+  // sur un refus.
   return {
     error:
       result?.data?.error ??
@@ -146,9 +113,7 @@ export async function loginFormAction(
       (result?.validationErrors
         ? "Vérifiez les champs du formulaire."
         : undefined),
-    // Absent plutôt qu'à `false` : le formulaire teste la présence du drapeau,
-    // et un `blocked: false` traînant sur chaque refus ordinaire brouillerait
-    // la lecture de l'état.
+    // Absent plutôt qu'à `false` : le formulaire teste la présence du drapeau.
     ...(result?.data?.blocked ? { blocked: true } : {}),
   };
 }

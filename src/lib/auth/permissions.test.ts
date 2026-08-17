@@ -1,17 +1,12 @@
 // @vitest-environment node
 //
-// Garde de rôle. PLAN S1 §7.1 pose deux niveaux et un seul fait autorité :
+// Garde de rôle. PLAN S1 §7.1 pose deux niveaux dont un seul fait autorité :
 // `src/proxy.ts` redirige de façon optimiste sur la présence d'un cookie, la
-// **vérification réelle** vit ici et dans la DAL. CLAUDE.md §Authentication le
-// redit - *la page protège ≠ l'action protège*.
+// **vérification réelle** vit ici et dans la DAL.
 //
-// Ce que ces tests exigent : un porteur de `ROLE_CLIENT` ou `ROLE_TECH` reçoit
-// un **refus**, pas une page vide (DoD T-J0-05), et l'absence de session ne se
-// confond pas avec un rôle insuffisant.
-//
-// `hasRole` a quitté ce fichier avec `roles.ts` (T-V2-05) : il n'a besoin ni de
-// la session ni d'un double de `forbidden`, et le module qui le porte est
-// désormais distinct. Ses tests vivent dans `roles.test.ts`.
+// Ce que ces tests exigent : un rôle insuffisant reçoit un **refus** et non
+// une page vide, et il ne se confond pas avec l'absence de session. `hasRole`
+// est éprouvé dans `roles.test.ts`, le module qui le porte.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ROLE_ADMIN, ROLE_CLIENT, ROLE_TECH } from "./roles";
@@ -142,11 +137,8 @@ describe("requireTech", () => {
 });
 
 describe("requireEspaceClient", () => {
-  // 🔴 Le cœur de T-V2-05. L'espace client n'avait AUCUNE garde de rôle, et le
-  // commentaire des deux pages invoquait Constitution §3.1 pour justifier
-  // l'inverse - la lecture étroite de l'axiome. La clarification datée du
-  // 2026-08-12 tranche la lecture large : « trois rôles exclusifs … avec des
-  // parcours dédiés » vaut aussi pour les espaces.
+  // Constitution §3.1 pose « trois rôles exclusifs avec des parcours dédiés »,
+  // et cela vaut aussi pour les espaces : un technicien n'est pas un client.
   const CLIENT = { ...ADMIN, roles: [ROLE_CLIENT] };
 
   it("laisse passer un client et renvoie son DTO", async () => {

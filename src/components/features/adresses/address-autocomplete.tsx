@@ -19,17 +19,14 @@ import { cn } from "@/lib/utils";
 /// choisi avant de décider quoi que ce soit.
 ///
 /// La carte de la maquette C3 **n'est pas portée** : ADR-015 v2 l'a retirée du
-/// parcours client, la liste de suggestions suffit à choisir son adresse et son
-/// retrait sort toute clé Google du tunnel.
+/// parcours client, et son retrait sort toute clé Google du tunnel.
 ///
-/// **Deux natures d'entrées dans la liste** (arbitrage du 2026-08-10). Une
+/// **Deux natures d'entrées dans la liste**. Une
 /// adresse précise se retient. Une rue, une place ou une commune ne se retient
-/// pas - elle **relance la recherche** sur son libellé, pour que l'utilisateur
-/// ajoute son numéro. Motif : « place Bellecour » ne rendait aucune suggestion,
-/// ce qu'un visiteur lit comme une panne du champ, alors que le refus est
-/// délibéré. Le filtre `housenumber` de T-V3-06 n'est pas relâché, il se
-/// déplace de l'affichage vers la sélection, et le serveur le rejoue de toute
-/// façon au géocodage de contrôle.
+/// pas - elle **relance la recherche** sur son libellé, sans quoi « place
+/// Bellecour » ne rendrait aucune suggestion, ce qu'un visiteur lit comme une
+/// panne. Le filtre `housenumber` n'est pas relâché, il se déplace de
+/// l'affichage vers la sélection, et le serveur le rejoue au géocodage.
 ///
 /// Le motif ARIA est celui du combobox 1.2 (`aria-expanded`,
 /// `aria-activedescendant`, `role="listbox"`). Il est écrit à la main parce que

@@ -2,16 +2,12 @@
 //
 // Validation de la destination post-connexion.
 //
-// `src/proxy.ts:35` produit un `?next=<chemin>` depuis le 2026-08-05 et
-// personne ne le lisait — T-J0-05 ferme la boucle. Le jour où on la ferme,
-// la valeur devient une **entrée contrôlée par l'attaquant qui atterrit dans
-// un `redirect()`** : c'est la définition de l'open redirect. Un lien
-// `…/connexion?next=https://phishing.example` sur un domaine légitime, suivi
-// d'une vraie connexion réussie, dépose l'utilisateur chez l'attaquant en
-// ayant traversé une page authentique.
-//
-// La règle est celle de la DoD : chemin relatif du même site, jamais une URL
-// absolue ni un `//hôte`.
+// ⚠️ Le `?next=` produit par `src/proxy.ts` est une **entrée contrôlée par
+// l'attaquant qui atterrit dans un `redirect()`**, soit la définition de
+// l'open redirect : `…/connexion?next=https://phishing.example` sur un domaine
+// légitime dépose l'utilisateur chez l'attaquant après une connexion
+// authentique. La règle : chemin relatif du même site, jamais d'URL absolue ni
+// de `//hôte`.
 import { describe, expect, it } from "vitest";
 
 import { safeNextPath } from "./next-path";
@@ -89,15 +85,9 @@ describe("safeNextPath — destinations refusées", () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// Sondes ajoutées par l'agent testeur (T-J0-05).
-//
-// Les cas ci-dessus couvrent les formes nommées par la DoD. Ceux-ci couvrent
-// les formes qui contournent habituellement un filtre écrit à la main : le
-// slash reconstitué par un encodage partiel, le caractère de contrôle placé
-// AILLEURS qu'en tête, et les caractères que la relecture humaine confond avec
-// un slash.
-// ───────────────────────────────────────────────────────────────────────────
+// Les formes qui contournent habituellement un filtre écrit à la main : slash
+// reconstitué par un encodage partiel, caractère de contrôle placé AILLEURS
+// qu'en tête, et caractères que la relecture humaine confond avec un slash.
 
 describe("safeNextPath — contournements de forme", () => {
   it("refuse un `//` reconstitué par deux séquences encodées", () => {
@@ -175,16 +165,11 @@ describe("safeNextPath — constats, pas des refus", () => {
   });
 
   it("refuse désormais les caractères de contrôle C1", () => {
-    // Ce test était un CONSTAT vert de l'agent testeur : `hasControlCharacter`
-    // couvrait C0 (< 0x20) et DEL (0x7F), pas C1 (U+0080–U+009F) — dont U+0085
-    // NEXT LINE, que certaines couches traitent comme un saut de ligne. Il
-    // notait « si X est durci, ce test devient rouge, et ce sera la bonne
-    // réaction ».
-    //
-    // Durci : la garde couvre C1. Aucun vecteur n'était connu — Next encode la
-    // valeur avant de la poser en en-tête — mais une garde qui couvre une
-    // famille de contrôles et pas l'autre est une garde dont personne ne peut
-    // dire ce qu'elle protège.
+    // La garde couvre C1 (U+0080-U+009F) et pas seulement C0 et DEL, à cause
+    // d'U+0085 NEXT LINE que certaines couches traitent comme un saut de
+    // ligne. Aucun vecteur connu, Next encodant la valeur avant de la poser en
+    // en-tête, mais une garde qui couvre une famille et pas l'autre ne protège
+    // rien de nommable.
     const nel = `/admin${String.fromCodePoint(0x85)}parametres`;
     const c1 = `/admin${String.fromCodePoint(0x9f)}parametres`;
 

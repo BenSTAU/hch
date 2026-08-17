@@ -16,8 +16,6 @@ export const metadata: Metadata = {
 
 /// Écran **C11** - `US-CYCLES-LISTER`, `US-CYCLE-AJOUTER`, `US-CYCLE-MODIFIER`.
 ///
-/// ── La garde est `requireEspaceClient()`, sous `/mon-compte`
-///
 /// Le voisin `/mon-compte/supprimer` est ouvert à tous les rôles ; celui-ci ne
 /// l'est pas, et le critère n'est pas le préfixe : une surface qui relève du
 /// **fait d'avoir un compte** reste ouverte, une surface qui relève du **fait
@@ -30,8 +28,6 @@ export const metadata: Metadata = {
 /// technicien une liste de vélos qu'il ne peut rattacher à rien, puisque
 /// `/mes-interventions/*` lui répond déjà 403. Une surface morte par
 /// construction.
-///
-/// ── Ce qui n'est pas porté de la maquette
 ///
 /// Sept éléments, tous faute de colonne au dictionnaire §cycles, qui en porte
 /// six et aucune de plus :

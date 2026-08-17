@@ -39,8 +39,6 @@ import { cn } from "@/lib/utils";
 /// Modale de clôture et d'encaissement - `US-INTERVENTION-MARQUER-FAITE`
 /// couplée à `US-PAIEMENT-ENREGISTRER`, écran **T4**.
 ///
-/// ── C'est elle, la surface qui nomme son effet avant de l'engager
-///
 /// La DoD demande qu'aucun acte irréversible ne soit atteignable en un clic
 /// depuis l'écran au repos. Cette modale la satisfait **déjà**, et rien n'est à
 /// empiler par-dessus : elle affiche le montant, force le choix d'un mode, porte
@@ -53,15 +51,11 @@ import { cn } from "@/lib/utils";
 /// sur un écran RGAA A, et un geste de plus sur un téléphone en fin
 /// d'intervention. La propriété est la DoD, pas le composant.
 ///
-/// ── Deux branches, une modale
-///
 /// `US-PAIEMENT-ENREGISTRER` pose le refus de paiement en critère v1 : il ne
 /// vit donc pas ailleurs, dans un second bouton du hub qui laisserait croire à
 /// deux actes distincts. C'est **le même geste de clôture**, dont le résultat
 /// diffère. Le second panneau réutilise le contexte déjà à l'écran et son motif
 /// obligatoire est une délibération écrite, plus forte qu'un bouton à cliquer.
-///
-/// ── Trois choses de la maquette ne sont pas portées
 ///
 /// La référence `#INT-2026-1042` est un format inventé (l'identifiant réel est
 /// le SERIAL de l'URL, déjà retiré de T2). Les sous-titres des trois modes

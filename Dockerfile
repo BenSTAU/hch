@@ -2,33 +2,24 @@
 # L'image finale ne contient ni pnpm ni sources TypeScript : uniquement la
 # sortie standalone de Next (cf. next.config.ts, `output: "standalone"`).
 #
-# Build local : docker build -t hch-test .
-# Build CI    : job `build-push` de .github/workflows/deploy.yml (T-J0-08),
-#               poussé vers benstau/hch:<sha> et benstau/hch:latest.
-#
-# Node 24 sur toute la chaîne — `engines` du package.json, cette image, et
-# `actions/setup-node` du pipeline. Node 22 meurt le 30/04/2027, pendant la
-# soutenance (amendement PLAN S3 du 2026-08-05).
+# Node 24 sur toute la chaîne : `engines` du package.json, cette image, et
+# `actions/setup-node` du pipeline.
 
-# ─────────────────────────────────────────────────────────────────────────
 # Stage 1 — deps : node_modules à partir du lockfile gelé.
 # Couche de cache réutilisée tant que les trois fichiers copiés ne bougent
 # pas. `pnpm-workspace.yaml` fait partie du contrat : il porte
 # `ignoredBuiltDependencies`, que pnpm 10 relit à chaque install.
-# ─────────────────────────────────────────────────────────────────────────
 FROM node:24-alpine AS deps
 WORKDIR /app
 RUN corepack enable pnpm
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
-# ─────────────────────────────────────────────────────────────────────────
 # Stage 2 — builder : compile Next en mode standalone.
 # `.dockerignore` est ce qui rend le `COPY . .` sûr : sans lui il écraserait
 # les node_modules Alpine du stage `deps` par ceux de l'hôte Windows, et
 # donnerait à `next build` le `.env.local` du poste au lieu de la
 # configuration d'environnement de la pile visée.
-# ─────────────────────────────────────────────────────────────────────────
 FROM node:24-alpine AS builder
 WORKDIR /app
 RUN corepack enable pnpm
@@ -41,25 +32,18 @@ COPY . .
 RUN pnpm prisma generate
 RUN pnpm build
 
-# Le seed est du TypeScript, exécuté en local par `tsx` via la clé
-# `migrations.seed` de prisma.config.ts. Rien de tout ça ne survit dans l'image :
-# ni tsx ni dotenv ne sont des dépendances de l'application, donc le File
-# Tracing de Next ne les embarque pas, et prisma.config.ts n'est pas copié au
-# runner (cf. plus bas). On transpile donc ici, en CommonJS.
+# Le seed est du TypeScript, et rien de sa chaîne locale ne survit dans
+# l'image : ni tsx ni dotenv ne sont des dépendances de l'application, donc le
+# File Tracing ne les embarque pas. D'où la transpilation en CommonJS ici.
 #
-# `--bundle` absorbe dotenv dans le fichier de sortie ; `--external` laisse
-# dehors les deux seuls paquets que la sortie standalone fournit déjà,
-# @prisma/client et bcrypt. Résultat : un fichier autonome que `node` exécute
-# depuis /app sans aucune installation supplémentaire. Le seed source n'est pas
-# modifié — il tourne à l'identique en local par `prisma db seed`.
+# `--bundle` absorbe dotenv ; `--external` laisse dehors les deux paquets que
+# la sortie standalone fournit déjà, @prisma/client et bcrypt.
 RUN pnpm exec esbuild prisma/seed.ts \
       --bundle --platform=node --target=node24 --format=cjs \
       --external:@prisma/client --external:bcrypt \
       --outfile=prisma/seed.js
 
-# ─────────────────────────────────────────────────────────────────────────
 # Stage 3 — runner : image finale, utilisateur non-root, port 3000.
-# ─────────────────────────────────────────────────────────────────────────
 FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production

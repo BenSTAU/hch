@@ -40,8 +40,6 @@ const ICONES: Record<EspacePrincipal, typeof CalendarDays> = {
 ///
 /// ⚠️ Écart ouvert : la déconnexion n'est pas atteignable sans JavaScript.
 /// `site-header.tsx` porte le repli `<noscript>`. Cf. [[points-ouverts-hch]].
-/// Historique de la fusion des deux en-têtes et arbitrage initiales contre
-/// photo : TASKS T-V3-10 et [[maquettage]] §Notes portage.
 export function UserMenu({
   user,
   espace,

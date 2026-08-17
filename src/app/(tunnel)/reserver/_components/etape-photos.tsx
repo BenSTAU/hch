@@ -17,15 +17,11 @@ import { cn } from "@/lib/utils";
 /// Conséquence assumée : un tunnel abandonné laisse des fichiers sans ligne.
 /// Ils ne sont référencés par rien et le quota de l'endpoint borne le disque.
 ///
-/// ── Géométrie portée
-///
 ///   · zone de dépôt `border-2 border-dashed rounded-xl p-8`, colonne centrée,
 ///     pastille d'icône 48 px `rounded-full mb-3`, mention de format en 12 px ;
 ///   · la maquette annonce « Glissez vos photos ici » : le dépôt par glisser
 ///     est donc **implémenté**, pas seulement dessiné. Un champ qui invite à un
 ///     geste qu'il refuse est pire qu'un champ nu.
-///
-/// ── L'aperçu ne survit pas au rechargement, et c'est dit
 ///
 /// La prévisualisation utilise l'objet local du navigateur (`blob:`), pas le
 /// fichier stocké : `uploads/` n'est pas servi par Next. Cette URL ne vaut que

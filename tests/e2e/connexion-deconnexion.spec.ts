@@ -140,7 +140,7 @@ test.describe("connexion du client", () => {
     await expect(page).toHaveURL(/\/connexion/);
   });
 
-  /// Ajout de l'agent testeur. DoD T-V3-03 : « Bouton “Renvoyer un email
+  /// DoD T-V3-03 : « Bouton “Renvoyer un email
   /// d'activation” sous le formulaire de connexion ».
   ///
   /// Ce qui était couvert : le `href` du lien
@@ -301,7 +301,7 @@ test.describe("plafond d'échecs", () => {
     await expect(page).toHaveURL(ESPACE_CLIENT);
   });
 
-  /// Ajout de l'agent testeur. Les trois tests ci-dessus prouvent que le
+  /// Les trois tests ci-dessus prouvent que le
   /// plafond REFUSE ; aucun ne prouve qu'il refuse **le bon mot de passe**.
   ///
   /// C'est pourtant la seule formulation qui distingue un vrai contrôle d'accès
@@ -331,7 +331,7 @@ test.describe("plafond d'échecs", () => {
 });
 
 test.describe("accueil et session - surface publique", () => {
-  /// Ajouts de l'agent testeur. L'accueil est devenu **dynamique** en T-V3-03 :
+  /// L'accueil est devenu **dynamique** en T-V3-03 :
   /// il lit la session par `getOptionalUser`. C'est une page que la Constitution
   /// §5.1 veut ouverte à tous, et elle exécute désormais du code
   /// d'authentification à chaque visite anonyme. Rien ne le couvrait.
@@ -449,7 +449,7 @@ async function verifierEtatSession(page: Page, connecte: boolean) {
   );
 }
 
-/// Ajout de l'agent testeur. `logout-button.tsx:8-13` affirme que le
+/// `logout-button.tsx:8-13` affirme que le
 /// `<form action={…}>` « part en POST que React ait hydraté ou non », et en fait
 /// le motif de ne pas écrire un `onClick`. L'affirmation n'était vérifiée nulle
 /// part - or c'est exactement le défaut payé en T-J0-04 sur le formulaire de
@@ -512,7 +512,7 @@ test.describe("accessibilité outillée", () => {
   /// violation. C'est le seul critère AA que le passage au navigateur ajoute.
   ///
   /// ⚠️ Ce qu'il n'apporte PAS, et qu'il ne faut pas lui faire dire - vérifié
-  /// règle par règle par l'agent testeur (E1) : **WCAG 1.4.11** (contraste
+  /// règle par règle : **WCAG 1.4.11** (contraste
   /// non-textuel) et **WCAG 2.4.7** (focus visible) ne correspondent à aucune
   /// règle axe-core sous ces tags. La bordure d'input à 1,06:1 arbitrée en
   /// T-V3-02 (note write-back 4) n'est donc vue par aucun des audits de cette
@@ -559,7 +559,7 @@ test.describe("accessibilité outillée", () => {
     expect(resultats.violations).toEqual([]);
   });
 
-  /// Ajouts de l'agent testeur. Le parcours de T-V3-03 ne s'arrête pas au
+  /// Le parcours de T-V3-03 ne s'arrête pas au
   /// formulaire : il **atterrit** quelque part, et cet écran d'arrivée est une
   /// surface neuve - l'accueil porteur d'`AppHeader`, avec son repère `banner`,
   /// son lien de marque et son bouton de déconnexion. Aucun des deux états

@@ -1,15 +1,9 @@
 // @vitest-environment node
 //
-// La suppression de compte - `US-COMPTE-SUPPRIMER`. Les gardes vivent dans le
-// helper métier et y sont testées ; ce fichier éprouve l'orchestration, qui
-// porte quatre propriétés qu'aucune autre surface ne couvre :
-//
-//   · le titulaire vient de la SESSION, jamais de la charge utile ;
-//   · la session est détruite AVANT la redirection, sinon l'écran suivant
-//     s'affiche encore connecté ;
-//   · l'invalidation porte sur le layout entier, le compte disparaissant de
-//     l'en-tête autant que des listes ;
-//   · un refus ne détruit rien et n'invalide rien.
+// La suppression de compte, `US-COMPTE-SUPPRIMER`. Éprouve l'orchestration,
+// pas les gardes du helper métier : le titulaire vient de la SESSION, la
+// session est détruite AVANT la redirection, l'invalidation porte sur le
+// layout entier, et un refus ne détruit ni n'invalide rien.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getCurrentUser = vi.fn();
@@ -162,19 +156,11 @@ describe("supprimerCompte", () => {
   });
 
   it("refuse l'appelant sans session AVANT toute lecture du schéma", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-12. Même trou que sur
-    // `annuler-intervention` en T-V3-11 : le double de `getCurrentUser` rendait
-    // toujours un utilisateur, donc rien n'éprouvait la garde d'une action qui
-    // efface un compte.
-    //
-    // `src/proxy.ts` ne protège rien ici - il laisse même explicitement passer
-    // les requêtes portant l'en-tête `Next-Action` (src/proxy.ts:41-43). Le
-    // seul rempart de cette action est le middleware d'`authActionClient`.
-    //
-    // La charge utile est volontairement invalide : ce que le test affirme est
-    // l'ORDRE promis par `safe-action.ts` - middleware, PUIS Zod, PUIS corps.
-    // Un anonyme ne doit apprendre ni la forme du schéma ni l'existence du
-    // compte visé.
+    // Le middleware d'`authActionClient` est le seul rempart : `src/proxy.ts`
+    // laisse explicitement passer les requêtes portant `Next-Action`. Charge
+    // utile volontairement invalide, pour affirmer l'ORDRE middleware puis Zod
+    // puis corps : un anonyme n'apprend ni la forme du schéma ni l'existence
+    // du compte visé.
     getCurrentUser.mockRejectedValue(new Error("NEXT_REDIRECT"));
 
     const resultat = await supprimerCompte({ motDePasse: "" }).catch(

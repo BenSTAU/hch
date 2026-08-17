@@ -37,13 +37,11 @@ import {
 /// d'une boîte email un identifiant suffisant.
 const AFTER_ACTIVATION = "/connexion?compte=active";
 
-/// Destination de retour transportée depuis l'inscription, quand elle venait du
-/// tunnel de réservation (`US-COMPTE-ACTIVER`, DoD réaffectée de T-V3-02).
-///
-/// Elle est passée à la page de connexion, qui sait déjà y rediriger après
-/// authentification : activer ne connecte pas, le retour ne peut donc pas être
-/// immédiat. `safeNextPath` arbitre - le lien vit dans une boîte aux lettres,
-/// il se transfère, et un `next` absolu en ferait un tremplin de hameçonnage.
+/// Destination de retour transportée depuis l'inscription, quand elle venait
+/// du tunnel. Passée à la page de connexion : activer ne connecte pas, le
+/// retour ne peut donc pas être immédiat. `safeNextPath` arbitre, le lien vit
+/// dans une boîte aux lettres et un `next` absolu en ferait un tremplin de
+/// hameçonnage.
 function apresActivation(next: string | undefined): string {
   const retour = safeNextPath(next);
   return retour === null
@@ -86,31 +84,24 @@ export const activateAccount = actionClient
         now,
       });
     } catch (error) {
-      // P2025 : la course a été perdue — deux clics simultanés, le second arrive
-      // après que le premier a marqué `used_at` — ou le compte n'est plus
-      // éligible (déjà vérifié, pseudonymisé). Dans les deux cas la SPEC prévoit
-      // le même message que pour un jeton consommé : « Compte déjà activé,
-      // connectez-vous » (module-1-utilisateurs.md:222-224). Elle ne distingue
-      // pas un jeton consommé il y a une heure de celui consommé il y a 40 ms.
-      //
-      // Sans cette branche, P2025 remontait en « une erreur est survenue » et
-      // invitait à recliquer un lien mort — constat B4 de l'agent testeur.
+      // P2025 : course perdue entre deux clics simultanés, ou compte devenu
+      // inéligible. Même message que pour un jeton consommé, la SPEC ne
+      // distinguant pas un jeton consommé il y a une heure de celui consommé
+      // il y a 40 ms. Sans cette branche, le lien mort invite à recliquer.
       if (!isPrismaError(error, PRISMA_RECORD_NOT_FOUND)) throw error;
       return { outcome: "already_used" as const };
     }
 
-    // Hors du try : `redirect()` fonctionne par throw, une capture le
-    // transformerait en erreur serveur silencieuse.
+    // Hors du try : `redirect()` fonctionne par throw.
     redirect(apresActivation(next));
   });
 
 export const resendActivation = actionClient
   .inputSchema(resendActivationSchema)
   .action(async ({ parsedInput: { email } }) => {
-    // Le quota est décompté AVANT toute lecture de compte. PLAN S4 §11.2 : « le
-    // compteur doit exister pour toute chaîne tentée ». Décompter après la
-    // lecture laisserait marteler l'action avec des adresses inconnues sans
-    // jamais consommer de jeton.
+    // Décompté AVANT toute lecture de compte (PLAN S4 §11.2) : après, on
+    // pourrait marteler l'action avec des adresses inconnues sans jamais
+    // consommer de jeton.
     const verdict = await consumeRateLimit(
       activationRateLimitKey(email),
       ACTIVATION_RESEND_LIMIT,
@@ -136,8 +127,7 @@ export const resendActivation = actionClient
       });
 
       // Hors du chemin de réponse : l'aller-retour SMTP ne doit pas se lire au
-      // chronomètre, et depuis l'arbitrage B2 son sort ne change plus la
-      // réponse. Cf. `src/lib/email/dispatch.ts`.
+      // chronomètre. Cf. `src/lib/email/dispatch.ts`.
       dispatchEmail(`renvoi activation ${email}`, () =>
         sendActivationEmail({
           to: email,
@@ -147,11 +137,9 @@ export const resendActivation = actionClient
       );
     }
 
-    // Réponse identique dans TOUS les cas — adresse inconnue, compte déjà activé,
-    // compte fermé par un administrateur, quota épuisé, envoi en échec. Un « trop
-    // de tentatives » distinct ne s'afficherait que pour les adresses ayant un
-    // compte en attente, et redeviendrait l'oracle que la table `rate_limits`
-    // existe précisément pour éviter (PLAN S4 §11.2).
+    // Réponse identique dans TOUS les cas. Un « trop de tentatives » distinct
+    // ne s'afficherait que pour les adresses ayant un compte en attente, et
+    // redeviendrait un oracle d'énumération (PLAN S4 §11.2).
     return { sent: true as const };
   });
 
@@ -174,8 +162,7 @@ export async function activateFormAction(
   });
 
   // Succès : `activateAccount` a déjà redirigé par throw. Un jeton malformé
-  // n'atteint pas l'action — il est refusé par le schéma, et « lien invalide »
-  // est le bon message pour ce cas aussi.
+  // n'atteint pas l'action, le schéma le refuse et « lien invalide » convient.
   if (result?.data?.outcome) {
     return { outcome: result.data.outcome };
   }
@@ -200,10 +187,9 @@ export async function resendActivationFormAction(
     email: String(formData.get("email") ?? ""),
   });
 
-  // L'action n'a plus de canal d'échec d'envoi depuis l'arbitrage B2 : elle
-  // répond `{ sent: true }` quoi qu'il advienne du transport. Ne restent que deux
-  // motifs de retour distinct, et aucun ne dépend de l'existence du compte —
-  // une adresse mal formée, et une panne serveur.
+  // L'action répond `{ sent: true }` quoi qu'il advienne du transport. Ne
+  // restent que deux motifs de retour distinct, dont aucun ne dépend de
+  // l'existence du compte : adresse mal formée, et panne serveur.
   if (result?.validationErrors) {
     return { error: "Renseignez une adresse email valide." };
   }

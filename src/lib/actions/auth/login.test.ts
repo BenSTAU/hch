@@ -543,8 +543,7 @@ describe("login - plafond d'échecs", () => {
     expect(JSON.stringify(result?.data)).not.toContain("421");
   });
 
-  // Ajouts de l'agent testeur - les trois cas par lesquels un plafond se
-  // contourne en pratique.
+  // Les trois cas par lesquels un plafond se contourne en pratique.
 
   it("ne se contourne pas en variant la casse de l'adresse", async () => {
     // Le compteur est porté par une CHAÎNE. Si la clé était construite sur la
@@ -610,19 +609,11 @@ describe("login - plafond d'échecs", () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// `loginFormAction` - l'adaptateur `useActionState`. Ajouts de l'agent testeur.
-//
-// Il était livré SANS AUCUN test direct : `login.test.ts` n'exerçait que
-// `login`, et `login-form.test.tsx` le REMPLACE par un mock. Or c'est lui que
-// `<form action={…}>` référence, donc lui qui est réellement exposé comme
-// endpoint POST public - `login` n'est atteint qu'à travers lui depuis un
-// navigateur.
-//
-// Trois responsabilités vivaient là sans oracle : la conversion `FormData` →
-// objet, l'omission de `next` vide, et la chaîne de priorité des trois canaux
-// d'erreur de next-safe-action.
-// ───────────────────────────────────────────────────────────────────────────
+// `loginFormAction` est ce que `<form action={…}>` référence, donc ce qui est
+// réellement exposé comme endpoint POST public : `login` n'est atteint qu'à
+// travers lui depuis un navigateur. Trois responsabilités lui appartiennent en
+// propre : conversion `FormData`, omission de `next` vide, priorité des trois
+// canaux d'erreur de next-safe-action.
 describe("loginFormAction - adaptateur de formulaire", () => {
   function champs(valeurs: Record<string, string>): FormData {
     const formData = new FormData();

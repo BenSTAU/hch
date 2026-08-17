@@ -62,8 +62,7 @@ export async function readSessionToken(): Promise<SessionPayload | null> {
   try {
     // `algorithms` épinglé : sans lui, jose accepte HS256, HS384 **et** HS512
     // alors que `createSession` n'émet que du HS256. La surface acceptée doit
-    // être exactement la surface émise — durcissement OWASP standard, relevé
-    // par l'agent testeur sur T-J0-04.
+    // être exactement la surface émise (durcissement OWASP standard).
     const { payload } = await jwtVerify(token, secret(), {
       algorithms: ["HS256"],
     });

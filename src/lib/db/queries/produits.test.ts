@@ -126,11 +126,10 @@ describe("vendreProduits - T=0, dans la transaction de réservation", () => {
   });
 
   it("verrouille TOUT le panier en une fois, avant la première écriture", async () => {
-    // ⚠️ Ajouté par l'agent testeur, 2026-08-10. Le test ci-dessus lit la forme
-    // de la requête sur un panier d'UN produit : un refactor qui verrouillerait
-    // ligne par ligne dans la boucle le laisserait vert, et perdrait pourtant
-    // la seule protection contre l'interblocage. `ORDER BY "id"` ne trie que
-    // l'intérieur d'une requête - il ne dit rien de l'ordre entre deux.
+    // ⚠️ Le test ci-dessus lit la forme de la requête sur un panier d'UN
+    // produit : un refactor qui verrouillerait ligne par ligne dans la boucle
+    // le laisserait vert en perdant la seule protection contre l'interblocage.
+    // `ORDER BY "id"` ne trie que l'intérieur d'une requête.
     queryRaw.mockResolvedValue([
       ANTIVOL,
       {

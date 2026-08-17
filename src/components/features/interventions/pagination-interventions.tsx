@@ -3,24 +3,12 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 /// Pagination d'un historique d'interventions - **C10** côté client, et
-/// l'onglet « Historique » du technicien depuis T-V2-05.
+/// l'onglet « Historique » du technicien. La destination est reçue en prop, la
+/// taille de page vit dans `TAILLE_PAGE_PASSEES`.
 ///
-/// Elle vivait dans `mes-interventions/_components/pagination-passees.tsx`, avec
-/// le chemin `/mes-interventions/passees` **en dur** dans ses liens. Deuxième
-/// usage, donc promotion dans `features/` (CLAUDE.md §Folder structure) et
-/// destination reçue en prop.
-///
-/// Les deux US demandent une « liste paginée ». La taille de page (dix) n'est
-/// écrite dans aucun artefact, elle vit dans `TAILLE_PAGE_PASSEES`.
-///
-/// ── Des liens, pas `nuqs`
-///
-/// CLAUDE.md §State impose l'URL pour la pagination, et c'est bien ce que fait
-/// ce composant : chaque page est une adresse. Il le fait par des `<Link>`
-/// plutôt que par un état client, pour trois raisons qui vont dans le même
-/// sens - la navigation reste fonctionnelle sans JavaScript, chaque page est
-/// atteignable au clavier comme un lien ordinaire, et un composant **serveur**
-/// n'ajoute rien au paquet envoyé au navigateur.
+/// Des `<Link>` plutôt que `nuqs` : la navigation reste fonctionnelle sans
+/// JavaScript, chaque page est atteignable au clavier comme un lien ordinaire,
+/// et un composant **serveur** n'ajoute rien au paquet envoyé au navigateur.
 ///
 /// Les paramètres de période sont recopiés dans chaque lien : les perdre en
 /// changeant de page afficherait la page 2 d'une autre liste que celle qu'on

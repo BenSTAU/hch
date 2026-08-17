@@ -20,8 +20,6 @@ export const metadata: Metadata = {
 /// porte d'entrée du rôle. Jusqu'à cette tâche, un technicien se connectait et
 /// atterrissait sur l'accueil public.
 ///
-/// ── La garde vit ICI, dans la page
-///
 /// `requireTech()` et non un contrôle dans un layout partagé : le Partial
 /// Rendering ne rejoue pas un layout en navigation client, un contrôle posé
 /// là-haut deviendrait obsolète sans que rien ne le signale (CLAUDE.md
@@ -32,8 +30,6 @@ export const metadata: Metadata = {
 /// fait que rediriger sur l'absence de cookie : c'est la ligne ci-dessous qui
 /// refuse réellement, et c'est `listerTournee` qui refuse pour le
 /// rafraîchissement — le matcher laisse délibérément passer `Next-Action`.
-///
-/// ── Le fuseau
 ///
 /// La journée métier se borne sur `Europe/Paris` via `jourLocal` puis
 /// `instantUtc`, jamais sur des bornes UTC construites à la main (cadrage du

@@ -125,8 +125,6 @@ describe("FormulaireSuppressionCompte - la double confirmation", () => {
   });
 
   it("n'envoie qu'une fois, même sur un double clic", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-12.
-    //
     // La mutation est irréversible et l'écran ne bouge pas tant que la
     // redirection serveur n'a pas répondu : un second clic pendant ce temps est
     // le geste le plus probable de quelqu'un qui hésite. Il ne doit pas

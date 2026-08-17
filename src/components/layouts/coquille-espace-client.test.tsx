@@ -1,10 +1,5 @@
 // Coquille de l'espace client - barre latérale partagée par C8, C10 et C11.
 //
-// Fichier ajouté par l'agent testeur (T-V3-16). La coquille vient d'être
-// extraite de `mes-interventions/layout.tsx` et de gagner une seconde entrée,
-// et **rien ne l'exerçait** : ni avant l'extraction, ni après. Deux DoD de la
-// tâche portent pourtant dessus, et aucune n'avait d'oracle exécutable.
-//
 // Ce qui est vérifié, et le motif de chaque point :
 //
 //   · **deux entrées, exactement** - la coquille documente en toutes lettres
@@ -64,19 +59,13 @@ describe("CoquilleEspaceClient", () => {
   });
 
   it("n'est masquée à AUCUNE largeur", () => {
-    // 🐛 Elle était `hidden md:block`, héritage du temps où elle ne portait
-    // qu'« Interventions », que l'en-tête du site atteint par ailleurs. Avec
-    // « Mes vélos », qui n'est dans aucune autre navigation, la même règle
-    // **orphelinait C11 au téléphone** : constaté au navigateur en 375 px, pas
-    // déduit.
+    // Un `hidden md:block` orphelinerait C11 au téléphone, « Mes vélos » ne
+    // figurant dans aucune autre navigation.
     //
-    // ⚠️ **Oracle de substitution, et il faut le dire** : la propriété réelle
-    // est « la barre est visible en 375 px », c'est une media query, et jsdom
-    // n'en évalue aucune - `toBeVisible()` rendrait vert un `hidden` de
+    // ⚠️ **Oracle de substitution** : la propriété réelle est une media query,
+    // que jsdom n'évalue pas - `toBeVisible()` rendrait vert un `hidden` de
     // Tailwind. Ce test lit donc une CLASSE, ce que le dépôt évite partout
-    // ailleurs. Il encode exactement la régression, il ne prouve pas le rendu.
-    // La preuve, elle, demande Playwright sur un viewport mobile, et l'espace
-    // client n'a pas encore de scénario E2E.
+    // ailleurs : il encode la régression, il ne prouve pas le rendu.
     render(
       <CoquilleEspaceClient actif="cycles">
         <p>contenu</p>

@@ -30,13 +30,12 @@ const queryRaw = vi.fn();
 /// une valeur (commit) ou levé (rollback) ? Même modèle que
 /// `interventions.test.ts`.
 ///
-/// La file d'attente de verrous d'`interventions.test.ts` n'est pas reprise, et
-/// c'est un choix déclaré : le `SELECT … FOR UPDATE` de la garde des
-/// administrateurs est ici observé dans sa FORME et son ORDRE, pas dans son
-/// effet. Modéliser l'effet reviendrait à rejouer notre propre hypothèse sur
-/// PostgreSQL - constat de l'agent testeur, qui a refusé le test correspondant
-/// pour ce motif. L'anti-rejeu du compte, lui, ne repose sur aucun verrou :
-/// c'est la clause `deletedAt: null` du `where`, prouvée en base par l'E2E.
+/// La file d'attente de verrous d'`interventions.test.ts` n'est pas reprise :
+/// le `SELECT … FOR UPDATE` de la garde des administrateurs est observé ici
+/// dans sa FORME et son ORDRE, pas dans son effet, dont la modélisation
+/// reviendrait à rejouer notre propre hypothèse sur PostgreSQL. L'anti-rejeu
+/// du compte ne repose sur aucun verrou : c'est la clause `deletedAt: null`,
+/// prouvée en base par l'E2E.
 const commits: string[] = [];
 const rollbacks: string[] = [];
 
@@ -199,8 +198,6 @@ describe("pseudonymiserCompte - ce qui empêche d'écrire", () => {
   });
 
   it("lit le hash du provider `local`, jamais celui d'un autre fournisseur", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-12.
-    //
     // Rien n'éprouvait QUEL identifiant sert de second facteur. Le test
     // précédent prouve que le hash lu est bien celui comparé, pas qu'il vient
     // de la bonne ligne : `auth_providers` porte un couple (userId, provider)
@@ -232,8 +229,6 @@ describe("pseudonymiserCompte - ce qui empêche d'écrire", () => {
   });
 
   it("déclenche la garde sur un compte qui cumule les rôles", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-12.
-    //
     // `users.roles` est un TABLEAU (dictionnaire §users) : l'administrateur du
     // seed porte aussi `ROLE_CLIENT`, et c'est le cas nominal, pas un cas
     // tordu. Une garde écrite `roles[0] === "ROLE_ADMIN"` ou
@@ -406,8 +401,6 @@ describe("pseudonymiserCompte - ce qui est écrit", () => {
   });
 
   it("n'écrit rien de plus quand l'anti-rejeu de la base fait perdre la course", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-12.
-    //
     // Le commentaire du helper décrit ce chemin - « deux soumissions
     // concurrentes passent toutes les deux la lecture, c'est cette clause qui
     // fait perdre la seconde en levant P2025 » - et rien ne l'éprouvait. Le
@@ -415,14 +408,10 @@ describe("pseudonymiserCompte - ce qui est écrit", () => {
     // AVANT les quatre écritures qui suivent : ce qui compte est qu'il ne
     // laisse pas une moitié d'effacement derrière lui.
     //
-    // ⚠️ **Oracle inversé le 2026-08-12, sur arbitrage.** L'agent testeur avait
-    // fixé la conséquence observable d'alors - le perdant LEVAIT, donc
-    // atterrissait en `serverError` générique - en signalant que la divergence
-    // avec le rejeu séquentiel (`{ ok: true }`) était à trancher et pas à
-    // graver. Elle est tranchée : les deux chemins mènent au même état final,
-    // ils rendent la même réponse. Le compte EST effacé, laisser quelqu'un
-    // devant « une erreur est survenue » sur une opération irréversible réussie
-    // était le vrai défaut (B4).
+    // ⚠️ Le perdant d'une course rend `{ ok: true }`, comme le rejeu
+    // séquentiel : les deux chemins mènent au même état final. Le compte EST
+    // effacé, et laisser quelqu'un devant « une erreur est survenue » sur une
+    // opération irréversible réussie serait le défaut.
     //
     // Ce que le test continue de tenir, et qui est l'essentiel : le perdant ne
     // laisse **aucune moitié d'effacement** derrière lui.
@@ -468,12 +457,10 @@ describe("pseudonymiserCompte - ce qui est écrit", () => {
     // une écriture ajoutée ici sur n'importe quelle autre table fait rougir ce
     // test, y compris une table qui n'existe pas encore aujourd'hui.
     //
-    // ⚠️ **Passé de cinq à sept le 2026-08-12.** L'agent testeur avait relevé
-    // que cet oracle FIGEAIT deux omissions au lieu de les révéler : `cycles`
-    // et `rate_limits` portent des données personnelles qu'aucune obligation
-    // comptable ne couvre, et le test serait resté vert tant que personne ne
-    // les aurait effacées - et aurait rougi le jour où quelqu'un aurait bien
-    // fait. C'est le pire des deux mondes, et c'est le motif du correctif.
+    // ⚠️ `cycles` et `rate_limits` en font partie : ils portent des données
+    // personnelles qu'aucune obligation comptable ne couvre. Les omettre de
+    // cette liste ferait rougir le test le jour où quelqu'un les effacerait
+    // bien, et le laisserait vert tant que personne ne le ferait.
     expect(new Set(modelesTouches)).toEqual(
       new Set([
         "user",

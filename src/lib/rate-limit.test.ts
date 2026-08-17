@@ -1,15 +1,12 @@
 // @vitest-environment node
 //
-// Compteur anti-abus. PLAN S4 §11 : une table générique, une clé, et deux
-// régimes depuis l'amendement du 2026-08-09. Fenêtre GLISSANTE pour les renvois
-// d'activation et les demandes de réinitialisation (T-V3-05), servie par
-// `consumeRateLimit`. Blocage FERME de 10 minutes pour les échecs de connexion
-// (T-V3-03), servi par `peekLoginLockout`.
+// Compteur anti-abus, PLAN S4 §11 : fenêtre GLISSANTE pour les renvois
+// d'activation et les réinitialisations, blocage FERME de 10 minutes pour les
+// échecs de connexion.
 //
-// Le motif du choix est l'anti-énumération, pas le stockage : un compteur porté
-// par des colonnes de `users` n'existerait pas pour un email inconnu, et
-// « trop de tentatives » ne s'afficherait que pour les comptes existants. La
-// propriété à préserver, c'est que la clé compte pour **toute chaîne tentée**.
+// La propriété à préserver est l'anti-énumération : la clé compte pour **toute
+// chaîne tentée**, sinon « trop de tentatives » ne s'afficherait que pour les
+// comptes existants.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findMany = vi.fn();
@@ -79,19 +76,14 @@ describe("seuils", () => {
   });
 });
 
-// La connexion compte les tentatives ÉCHOUÉES (SPEC §298-300), pas les
-// tentatives tout court : on ne sait pas si l'authentification échoue avant de
-// l'avoir tentée. `consumeRateLimit`, qui lit et enregistre d'un seul geste, ne
-// peut donc pas servir ici, d'où les deux temps `peekLoginLockout` puis
-// `recordRateLimitAttempt`. Il reste, inchangé, pour les usages qui décomptent
-// à l'appel.
+// La connexion compte les tentatives ÉCHOUÉES (SPEC §298-300), et on ne sait
+// pas si l'authentification échoue avant de l'avoir tentée : d'où les deux
+// temps `peekLoginLockout` puis `recordRateLimitAttempt`, là où
+// `consumeRateLimit` lit et enregistre d'un seul geste.
 //
-// Régime propre au préfixe `login:`, amendé le 2026-08-09 (SPEC §298-309, PLAN
-// S4 §11.1). Cinq échecs arment un blocage de 10 minutes FERMES, puis le
-// compteur repart de zéro. La fenêtre ne glisse plus : c'est ce qui ferme le
-// verrou indéfini qu'une requête toutes les 3 minutes suffisait à tenir sur le
-// compte d'un tiers. Les deux autres usages gardent la fenêtre glissante, et
-// c'est `consumeRateLimit` qui les sert, plus bas dans ce fichier.
+// ⚠️ Le blocage est FERME et la fenêtre ne glisse pas : sous une fenêtre
+// glissante, une requête toutes les 3 minutes suffit à tenir indéfiniment le
+// verrou sur le compte d'un tiers.
 describe("peekLoginLockout - blocage ferme", () => {
   it("autorise sous le seuil sans rien enregistrer", async () => {
     findMany.mockResolvedValue([ilYA(10), ilYA(5)]);
@@ -279,7 +271,7 @@ describe("peekLoginLockout - blocage ferme", () => {
 });
 
 describe("cloisonnement des usages", () => {
-  // Ajouts de l'agent testeur. La table est PARTAGÉE entre des compteurs aux
+  // La table est PARTAGÉE entre des compteurs aux
   // plafonds très différents, et depuis le 2026-08-09 aux régimes différents :
   // 5 échecs puis 10 min de verrou ferme pour la connexion, 3/24 h glissantes
   // pour le renvoi d'activation, autant pour la réinitialisation en T-V3-05. Le

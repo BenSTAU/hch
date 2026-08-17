@@ -378,9 +378,7 @@ async function main() {
   }
   console.log(`paramètres      ${APP_SETTINGS.length} clés société`);
 
-  // ───────────────────────────────────────────────────────────────────────
-  // Référentiel du parcours client (T-V3-01)
-  // ───────────────────────────────────────────────────────────────────────
+  // Référentiel du parcours client
 
   for (const ville of VILLES) {
     await db.city.upsert({

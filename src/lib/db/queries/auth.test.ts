@@ -91,18 +91,11 @@ describe("findAccountForSignup", () => {
     expect(args.where).toEqual({ email: "camille@example.test" });
   });
 
-  // ── Discriminant CHANGÉ le 2026-08-08, arbitrage B1 ─────────────────────────
-  //
-  // Ces tests lisaient le discriminant dans l'historique de `verification_tokens`.
-  // L'agent testeur a montré que cette table ne peut pas le porter : le
-  // dictionnaire écrit qu'elle « ne s'applique pas aux comptes 100% OAuth Google »
-  // (mcd-dictionnaire.md:182), et les trois comptes du seed n'ont aucun jeton —
-  // donc un technicien désactivé par un administrateur pouvait se réactiver depuis
-  // le formulaire public.
-  //
-  // Benjamin a arbitré pour une colonne dédiée, `users.email_verified_at`
-  // (migration `add_users_email_verified_at`). Les oracles suivent la donnée : ce
-  // n'est pas un affaiblissement, c'est le même invariant sur une source fiable.
+  // Le discriminant vit dans `users.email_verified_at` et non dans
+  // l'historique de `verification_tokens` : [[mcd-dictionnaire]] écrit que
+  // cette table ne s'applique pas aux comptes 100 % OAuth Google, et les trois
+  // comptes du seed n'ont aucun jeton. S'y fier laisserait un technicien
+  // désactivé se réactiver depuis le formulaire public.
 
   it("dit si l'email a déjà été vérifié", async () => {
     userFindUnique.mockResolvedValue({

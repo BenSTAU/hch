@@ -16,7 +16,7 @@ export const LIBELLES_TYPE_CYCLE: Record<TypeCycle, string> = {
   CARGO: "Cargo",
 };
 
-/// Une variante shadcn par valeur, choisies et écrites (DoD L4).
+/// Une variante shadcn par valeur, choisies et écrites.
 ///
 /// `destructive` est **écarté** : dans ce catalogue elle signifie erreur, et un
 /// type de vélo n'en est pas une. `secondary` pour le cas le plus courant,

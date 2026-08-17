@@ -10,8 +10,6 @@ import { cn } from "@/lib/utils";
 
 /// Coquille des trois pages d'`US-RGPD` - écran **C13**.
 ///
-/// ── Les onglets de la maquette deviennent trois routes
-///
 /// C13 dessine **une** page à trois onglets pilotés par `onclick` et
 /// `classList.toggle` (`code.html:156-158, 299-322`). Le produit a trois URL
 /// distinctes : le pied de page pointe trois liens (`US-RGPD` §Critères), et un
@@ -21,15 +19,11 @@ import { cn } from "@/lib/utils";
 /// Le gain n'est pas seulement sémantique : PLAN S4 §3.2 veut ces pages sans
 /// JavaScript client propre, et la bascule d'onglets en aurait été.
 ///
-/// ── Et le troisième onglet change de contenu
-///
 /// C13 nomme le troisième « Conditions Générales de Vente ». Le triplet qui
 /// fait foi est celui de PLAN S4 §4.2 : la troisième page est
 /// `/accessibilite`, et elle porte la déclaration RGAA formelle. Quatre
 /// artefacts nommaient quatre triplets différents jusqu'au 2026-08-08, c'est
 /// S4 qui l'emporte - le seul des quatre porté par une obligation de forme.
-///
-/// ── Le sommaire est une navigation, pas une liste
 ///
 /// `aside` nommé, `nav` interne : trois repères `navigation` anonymes sur la
 /// même page (en-tête, sommaire, pied de page) s'annoncent à l'identique

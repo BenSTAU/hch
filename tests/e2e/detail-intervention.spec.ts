@@ -150,8 +150,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  // ⚠️ Ligne ajoutee par l'agent testeur avec le scenario des photos :
-  // `photos.intervention_id` est NOT NULL et sa FK refuse la suppression du
+  // ⚠️ `photos.intervention_id` est NOT NULL et sa FK refuse la suppression du
   // parent. Sans ce nettoyage, l'`afterAll` echoue et laisse tout derriere lui.
   await db.photo.deleteMany({
     where: { interventionId: { in: interventionsCreees } },
@@ -220,7 +219,7 @@ test("un technicien n'ouvre pas l'intervention d'un collegue", async ({
   const reponse = await page.goto(`/interventions/${String(id)}`);
 
   await expect(page.getByText("Accès refusé")).toBeVisible();
-  // ⚠️ **Assertion ajoutee par l'agent testeur, 2026-08-13.** L'UI de refus
+  // ⚠️ L'UI de refus
   // seule ne prouve que la moitie : la [PR #46](https://github.com/BenSTAU/hch/pull/46)
   // vient de montrer qu'un `loading.tsx` de segment fait partir les en-tetes en
   // **200**, apres quoi le `forbidden()` de la page ne peut plus poser son
@@ -249,7 +248,7 @@ test("une intervention inexistante repond comme celle d'un collegue", async ({
 test("un identifiant qui n'est pas un entier repond comme une inexistante", async ({
   page,
 }) => {
-  // ⚠️ **Cas limite ajoute par l'agent testeur, 2026-08-13.** `interventions.id`
+  // ⚠️ `interventions.id`
   // est un SERIAL et le segment dynamique accepte n'importe quelle chaine : la
   // page ecarte tout ce qui n'est pas un entier positif AVANT d'atteindre la
   // base, comme la route de lecture des photos. Aucun oracle ne le suivait, et
@@ -267,7 +266,7 @@ test("un identifiant qui n'est pas un entier repond comme une inexistante", asyn
 test("le proprietaire, lui, obtient bien un 200 sur cette meme route", async ({
   page,
 }) => {
-  // ⚠️ **Controle positif ajoute par l'agent testeur, 2026-08-13.** Sans lui,
+  // ⚠️ Sans lui,
   // les deux tests ci-dessus passeraient a l'identique si la route repondait
   // 403 a TOUT LE MONDE - une garde cassee dans le sens fermant est aussi un
   // defaut, et c'est exactement la lecon de la PR #42 : un refus qu'aucun succes
@@ -285,8 +284,7 @@ test("le proprietaire, lui, obtient bien un 200 sur cette meme route", async ({
 });
 
 test("un client authentifie recoit 403 sur le detail", async ({ page }) => {
-  // ⚠️ **Scenario ajoute par l'agent testeur, 2026-08-13.**
-  // `US-INTERVENTION-AFFICHER` §Cas d'erreur porte DEUX refus, et le second -
+  // ⚠️ `US-INTERVENTION-AFFICHER` §Cas d'erreur porte DEUX refus, et le second -
   // « Given je ne suis pas technicien … Then je recois 403 » - n'avait aucun
   // oracle sur cette route. `src/proxy.ts` ne fait qu'un redirect optimiste sur
   // la presence du cookie : un client authentifie le franchit et atteint la
@@ -364,7 +362,7 @@ test("le bouton de demarrage cede la place a celui de cloture", async ({
   await seConnecterTechnicien(page, techProprietaire.email);
   await page.goto(`/interventions/${String(id)}`);
 
-  // ⚠️ **Controle positif ajoute par l'agent testeur, 2026-08-13.** Un
+  // ⚠️ Un
   // `toHaveCount(0)` passe aussi bien sur une page qui n'a RIEN rendu - 403,
   // 404, 500 - que sur un hub correctement replie. Ancrer l'oracle a un contenu
   // que seule la page rendue porte est ce qui le rend discriminant.
@@ -519,7 +517,7 @@ test("le technicien affecte voit les photos du client, un autre non", async ({
 }) => {
   // 🔴 **L'elargissement de la garde photos, de bout en bout - ajout de l'agent
   // testeur, 2026-08-13.** `chargerPhotoAutorisee` gagne une branche `techId`
-  // (T-V2-02, par anticipation sur T-V2-04), et cette branche n'avait pour tout
+  // et cette branche n'avait pour tout
   // oracle que trois assertions sur la forme d'une clause `where` doublee. Rien
   // ne prouvait sur une vraie base ni que le technicien affecte obtient l'image,
   // ni - surtout - qu'un technicien NON affecte reste dehors. La moitie cliente

@@ -194,15 +194,11 @@ describe("updateAppSettings — refus", () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// Sondes ajoutées par l'agent testeur (T-J0-05).
-//
-// Constitution §4.2 : le journal d'audit est la pièce qu'on produit en cas de
-// contestation. Deux défauts symétriques le rendent inutilisable — une trace
-// qui décrit une modification qui n'a pas eu lieu, et une modification qui
-// n'en laisse aucune. `NULL` en base et chaîne vide au formulaire décrivent le
-// même état ; c'est là que la confusion se produirait.
-// ───────────────────────────────────────────────────────────────────────────
+// Le journal d'audit est la pièce qu'on produit en cas de contestation
+// (Constitution §4.2), et deux défauts symétriques le rendent inutilisable :
+// une trace qui décrit une modification qui n'a pas eu lieu, et une
+// modification qui n'en laisse aucune. `NULL` en base et chaîne vide au
+// formulaire décrivent le même état, c'est là que la confusion naîtrait.
 
 describe("updateAppSettings — frontière NULL / chaîne vide", () => {
   const NULLABLE = [
@@ -345,15 +341,10 @@ describe("updateAppSettings — ordre des contrôles", () => {
   });
 
   it("laisse passer une ligne INCHANGÉE dont la valeur stockée est invalide", async () => {
-    // Ce test était un CONSTAT vert de l'agent testeur, et il décrivait un
-    // piège : la validation s'appliquait à toutes les entrées soumises, pas
-    // aux seules entrées modifiées. Une ligne dont la valeur stockée ne
-    // respecte pas son `value_type` — posée par un seed, une migration ou un
-    // UPDATE SQL manuel — rendait le formulaire entier insoumettable, y
-    // compris pour des champs sans rapport, puisque le lot est tout-ou-rien.
-    //
-    // Corrigé : on ne valide que ce qui change. Une ligne invalide qu'on ne
-    // touche pas ne bloque plus les autres, et le lot passe.
+    // ⚠️ Seules les entrées MODIFIÉES sont validées. Valider tout le lot
+    // soumis rendrait le formulaire entier insoumettable dès qu'une ligne
+    // stockée viole son `value_type` (seed, migration, UPDATE manuel), y
+    // compris pour des champs sans rapport, le lot étant tout-ou-rien.
     findMany.mockResolvedValue([
       {
         key: "company.tva",

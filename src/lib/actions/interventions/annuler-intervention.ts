@@ -15,13 +15,10 @@ import {
 import { authActionClient } from "@/lib/safe-action";
 import { annulerInterventionSchema } from "@/lib/validations/interventions";
 
-/// Annulation d'une intervention par son client -
-/// `US-INTERVENTION-ANNULER-CLIENT`, golden path **GP-03**.
-///
-/// Les trois gardes vivent dans le helper métier, pas ici : propriété, statut
-/// et fenêtre H-24 décident d'une écriture, elles appartiennent donc à la
-/// transaction qui l'exécute. Cette action-ci orchestre - validation, contexte,
-/// invalidation, notification.
+/// Annulation d'une intervention par son client,
+/// `US-INTERVENTION-ANNULER-CLIENT`, golden path **GP-03**. Les gardes de
+/// propriété, de statut et de fenêtre H-24 vivent dans le helper métier :
+/// elles décident d'une écriture, donc appartiennent à sa transaction.
 
 function messageRefus(echec: Extract<ResultatAnnulation, { ok: false }>): {
   message: string;
@@ -62,28 +59,20 @@ export const annulerIntervention = authActionClient
     });
 
     if (!resultat.ok) {
-      // 🐛 **Les refus revalident aussi**, relevé par l'agent testeur.
-      //
-      // Deux des trois disent que la vue de l'appelant est PÉRIMÉE :
-      // `non_annulable` signifie que le statut a changé sous ses yeux - le
-      // technicien vient de démarrer l'intervention - et `introuvable` qu'elle
-      // ne lui appartient plus. Sans invalidation, l'écran garde « Planifiée »
-      // et son bouton, et le client réessaie indéfiniment contre une liste
-      // fausse. Seul `fenetre_depassee` se corrigeait à l'écran, parce que la
-      // réponse le fait basculer.
+      // **Les refus revalident aussi.** Deux des trois disent que la vue est
+      // périmée : `non_annulable` que le statut a changé sous les yeux du
+      // client, `introuvable` que l'intervention ne lui appartient plus. Sans
+      // invalidation, l'écran garde « Planifiée » et son bouton.
       revalidatePath(CHEMIN_ESPACE_CLIENT);
       return { ok: false as const, ...messageRefus(resultat) };
     }
 
-    // La ligne quitte « À venir » pour « Passées » : les deux écrans changent,
-    // et le second afficherait une liste périmée sans cette seconde
-    // invalidation.
+    // La ligne quitte « À venir » pour « Passées » : les deux écrans changent.
     revalidatePath(CHEMIN_ESPACE_CLIENT);
     revalidatePath(CHEMIN_ESPACE_CLIENT_PASSEES);
 
-    // Hors du chemin de réponse (`dispatchEmail`) : l'annulation est acquise en
-    // base, le client n'a pas à attendre un aller-retour SMTP pour le savoir, et
-    // un échec d'envoi ne doit pas transformer une annulation réussie en erreur.
+    // Hors du chemin de réponse : un échec d'envoi ne doit pas transformer une
+    // annulation acquise en base en erreur.
     dispatchEmail("annulation technicien", () =>
       sendAnnulationEmail({
         to: resultat.technicien.email,

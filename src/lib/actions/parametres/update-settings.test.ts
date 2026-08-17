@@ -2,12 +2,9 @@
 //
 // Server Action de modification de la configuration société.
 //
-// C'est le test d'intégration que réclame la DoD de T-J0-05 : *modification
-// par un administrateur acceptée, par un non-administrateur refusée*. Il
-// s'exerce ici et pas sur la page, parce que c'est ici que la garde compte —
-// rappel d'ADR-006 v2 porté par `src/lib/safe-action.ts:5-7` : **une Server
-// Action exportée est un endpoint POST public**. Un non-administrateur n'a
-// aucun besoin de l'écran pour l'appeler.
+// S'exerce ici et pas sur la page, parce que c'est ici que la garde compte :
+// une Server Action exportée est un endpoint POST public (ADR-006 v2), et un
+// non-administrateur n'a aucun besoin de l'écran pour l'appeler.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const requireAdmin = vi.fn();
@@ -162,18 +159,10 @@ describe("updateSettings — entrées hostiles", () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// Sondes ajoutées par l'agent testeur (T-J0-05).
-//
-// Le fichier corrige lui-même un oracle faux (`forbiddenError` porte désormais
-// un `digest`). La correction est juste — vérifiée dans le code de
-// next-safe-action 8.6.0 : `isHTTPAccessFallbackError` lit `error.digest`
-// (`errors-9ViDxi_K.mjs:23-27`) et `buildResultAndRunCallbacks` relance
-// l'erreur telle quelle (`index.mjs:441`). Mais `rejects.toThrow()` accepte
-// n'importe quel throw : les tests ci-dessous ferment cet angle mort en
-// exigeant que ce soit BIEN le 403 qui traverse, et que ce soit BIEN le
-// `digest` qui décide.
-// ───────────────────────────────────────────────────────────────────────────
+// ⚠️ `rejects.toThrow()` accepte n'importe quel throw. Les tests ci-dessous
+// exigent que ce soit BIEN le 403 qui traverse next-safe-action, et BIEN le
+// `digest` qui décide : `isHTTPAccessFallbackError` le lit et ignore le
+// message.
 
 describe("updateSettings — le 403 traverse next-safe-action", () => {
   it("relance l'interruption avec son `digest` intact", async () => {
@@ -221,17 +210,10 @@ describe("updateSettings — le 403 traverse next-safe-action", () => {
 
 describe("updateSettings — où se place la garde dans la chaîne", () => {
   it("exécute la garde de rôle AVANT la validation Zod", async () => {
-    // Ce test était un CONSTAT vert de l'agent testeur, et il constatait
-    // l'inverse : next-safe-action exécute les middlewares, puis
-    // `validateInputs`, puis le corps (`index.mjs:535-570`). `requireAdmin()`
-    // vivant dans le corps, une charge utile malformée était refusée par Zod
-    // sans qu'aucune authentification ait eu lieu — un appelant anonyme lisait
-    // la forme du schéma dans `validationErrors`.
-    //
-    // Aucune écriture n'était atteignable par ce chemin, ce n'était pas un
-    // contournement d'autorisation. La garde est passée en `.use()` sur
-    // `adminActionClient` : elle s'exécute maintenant en premier, et la
-    // validation ne tourne plus pour un anonyme.
+    // next-safe-action exécute les middlewares, PUIS `validateInputs`, PUIS le
+    // corps. La garde vit en `.use()` sur `adminActionClient` et non dans le
+    // corps : sinon une charge utile malformée serait refusée par Zod sans
+    // authentification, et un anonyme lirait la forme du schéma.
     const result = await updateSettings({ settings: [] });
 
     expect(requireAdmin).toHaveBeenCalledOnce();

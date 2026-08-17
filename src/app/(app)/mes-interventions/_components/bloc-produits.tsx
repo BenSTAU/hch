@@ -20,15 +20,11 @@ import { Button } from "@/components/ui/button";
 /// même geste. Même mécanique que le bloc adresses de [PR #23], monté par
 /// T-V3-07.
 ///
-/// ── Aucun état optimiste, et c'est délibéré
-///
 /// CLAUDE.md §State propose `useOptimistic` pour les mutations à retour
 /// immédiat. Il ne convient pas ici : le stock se vérifie **sous verrou** au
 /// moment d'écrire, et un refus (« Stock insuffisant, quantité maximale : 2 »)
 /// est un cas nominal, pas une panne. Afficher la ligne avant la réponse
 /// obligerait à la retirer sous les yeux du client une fois sur dix.
-///
-/// ── Le retrait emporte la ligne entière
 ///
 /// `US-INTERVENTION-PRODUIT-SUPPRIMER` décrit un bouton « Retirer » sur la
 /// ligne, pas un décrément unité par unité, et la restitution de stock suit la

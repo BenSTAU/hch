@@ -1,17 +1,10 @@
 // @vitest-environment node
 //
-// Normalisation de `users.email` — dette reportée de T-J0-04 vers T-V3-03.
-//
-// Le `.toLowerCase()` posé dans les schémas Zod referme le symptôme à la
-// LECTURE : « Admin@HomeCyclHome.fr » retrouve le compte que Postgres, qui
-// compare octet par octet sur une VARCHAR sous index unique ordinaire, ne
-// trouvait pas. Il ne protège de rien à l'ÉCRITURE : une inscription qui
-// écrirait « Camille@Example.test » créerait une seconde ligne pour un compte
-// déjà pris, et l'index unique ne la verrait pas passer.
-//
-// Ce module est le premier des deux filets. Le second est le CHECK SQL
-// `email = lower(email)` de la migration, qui tient même face à un script de
-// maintenance ou à une écriture future oubliée ici.
+// Normalisation de `users.email`, premier des deux filets ; le second est le
+// CHECK SQL `email = lower(email)` de la migration. Le `.toLowerCase()` des
+// schémas Zod ne referme que la LECTURE : à l'ÉCRITURE, une insertion qui lui
+// échapperait créerait une seconde ligne pour un compte déjà pris, que l'index
+// unique laisserait passer.
 import { describe, expect, it } from "vitest";
 
 const { normalizeEmail } = await import("./email");

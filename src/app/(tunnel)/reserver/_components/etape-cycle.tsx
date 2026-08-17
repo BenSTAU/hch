@@ -7,8 +7,6 @@ import type { CycleClient } from "@/lib/db/queries/cycles";
 
 /// Bloc « Vélo concerné » de l'écran **C5**, ajouté le 2026-08-16.
 ///
-/// ── Il rouvre un point que le vault avait clos
-///
 /// [[points-ouverts-hch]] §« Personne n'écrit `interventions.cycle_id` en v1 »
 /// a été **clos le 2026-08-12** en désignant un seul écrivain : le client, depuis
 /// le panneau de `/mes-interventions`, sur les rendez-vous `PLANNED`. Le
@@ -20,8 +18,6 @@ import type { CycleClient } from "@/lib/db/queries/cycles";
 /// du vault lui-même - trois US v1 font gérer une liste de vélos, et jusqu'ici
 /// aucune intervention n'en désignait un au moment où le client y pense.
 /// Write-back sur quatre artefacts, signalé en PR.
-///
-/// ── Ce qui n'est pas porté, et pourquoi
 ///
 ///  1. **Aucune maquette ne dessine ce bloc.** C5 est forfait, adresse, créneau
 ///     et panier. Même terrain que la lacune L5 de T-V3-16, même consigne : rien

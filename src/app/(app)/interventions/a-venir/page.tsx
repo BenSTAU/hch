@@ -29,16 +29,12 @@ export const metadata: Metadata = {
 /// Onglet « Cette semaine » - `US-INTERVENTIONS-LISTER-TECH-A-VENIR`, promue en
 /// v1 le 2026-08-12, déclinaison de l'écran **T1**.
 ///
-/// ── Pas de TanStack Query ici, et ce n'est pas un oubli
-///
 /// PLAN S1 §6.1 n'autorise le polling que sur **trois vues** du produit, dont
 /// une seule est technicien : la tournée du jour. Une lecture RSC suffit ici -
 /// personne ne regarde la semaine prochaine en attendant qu'elle change.
 /// Conséquence directe : **cette vue n'expose aucune Server Action**, donc
 /// aucun endpoint POST public de plus. La garde est `requireTech()` ci-dessous,
 /// et un test fige l'absence d'action.
-///
-/// ── Le sélecteur 7 j / 30 j
 ///
 /// « (7 j / 30 j) » est écrit dans le récit de l'US. Le paramètre est
 /// **énuméré**, pas une date libre : ça supprime la surface de validation au

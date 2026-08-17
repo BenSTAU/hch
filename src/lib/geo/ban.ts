@@ -2,10 +2,9 @@ import { z } from "zod";
 
 /// Client de la Base Adresse Nationale, via la Géoplateforme IGN.
 ///
-/// ADR-015 v2 remplace la Geocoding API de Google par la BAN sur tout le
-/// parcours client : une seule requête fait l'autocomplétion **et** le
-/// géocodage, et aucune clé n'est nécessaire — d'où l'absence de variable
-/// d'environnement pour ce flux.
+/// Une seule requête fait l'autocomplétion **et** le géocodage, sans aucune
+/// clé - d'où l'absence de variable d'environnement pour ce flux
+/// (ADR-015 v2).
 ///
 /// Ce module n'est **pas** `server-only`, et c'est délibéré : il a deux
 /// appelants aux deux bords de la frontière. Le composant d'autocomplétion
@@ -16,30 +15,15 @@ import { z } from "zod";
 /// comme sortante, même si elle répond encore aujourd'hui.
 export const BAN_SEARCH_URL = "https://data.geopf.fr/geocodage/search/";
 
-/// Surcharge de l'URL de base, **pour la barrière E2E seulement**.
+/// Surcharge de l'URL de base, **pour la barrière E2E seulement**. Le
+/// géocodage de contrôle part du processus Next, donc `page.route()` de
+/// Playwright ne le voit pas. Cf. CLAUDE.md §Folder structure, qui fait de
+/// cette variable une exception nommée et interdit de la renseigner.
 ///
-/// Motif : `verifierAdresse` et `reserver` re-géocodent **côté serveur**, et
-/// cet appel sortant part du processus Next - `page.route()` de Playwright, qui
-/// intercepte au niveau du contexte navigateur, ne le voit pas. Sans point
-/// d'injection, `GP-02` ne pouvait pas dépasser l'autocomplétion sans taper la
-/// vraie BAN depuis la CI, ce que la DoD interdit.
-///
-/// L'alternative évaluée était `instrumentation.ts` montant MSW côté Node.
-/// Écartée : la barrière tourne contre **l'image de production**
-/// (`docker-compose.test.yml`, profil `e2e`), donc MSW aurait voyagé jusqu'en
-/// staging et en production. C'est l'objection exacte qui avait fait rejeter le
-/// worker MSW navigateur en T-V3-08. Une variable non renseignée, elle, est
-/// inerte : le code de repli est l'URL réelle.
-///
-/// ⚠️ Divergence assumée contre la DoD 265 de T-V3-06, « aucune variable
-/// d'environnement pour ce flux » - qui parlait d'une CLÉ Google, pas d'un
-/// point d'injection de test. Arbitré par Benjamin le 2026-08-10.
-///
-/// Lue à l'appel et jamais au chargement du module : `src/lib/env.ts` en fait
-/// une règle, et ce module est importé par un Client Component - côté
-/// navigateur `process.env` ne porte que les clés `NEXT_PUBLIC_`, la surcharge
-/// y vaut donc toujours `undefined` et l'autocomplétion tape la vraie BAN,
-/// qu'un `page.route()` intercepte très bien.
+/// ⚠️ **Lue à l'appel, jamais au chargement du module**, et jamais posée dans
+/// un `.env.prod` : une variable proposée finit par être renseignée, et
+/// celle-ci détournerait la production vers un faux service. Non renseignée,
+/// elle est inerte, le repli étant l'URL réelle.
 function urlRecherche(): string {
   return process.env["HCH_BAN_BASE_URL"] ?? BAN_SEARCH_URL;
 }
@@ -109,16 +93,11 @@ export type ResultatBan<T> =
 
 /// Une entrée de la liste de suggestions.
 ///
-/// **Deux natures, et une seule réserve.** Une entité `housenumber` est une
-/// adresse : elle porte un point, elle peut être retenue. Une rue, une place ou
-/// une commune n'en est pas une - le technicien se déplace à un point de
-/// livraison, pas sur une surface (Constitution §2.2, T-V3-06 §DoD). Elle est
-/// tout de même proposée, comme **piste de raffinement** : la choisir relance
-/// la recherche sur son libellé pour que l'utilisateur ajoute son numéro.
-///
-/// C'est l'arbitrage du 2026-08-10 : taper « place Bellecour » ne rendait
-/// aucune suggestion, ce qui se lit comme une panne. Le filtre n'est pas
-/// relâché pour autant - il se déplace de l'affichage vers la sélection.
+/// **Deux natures, une seule retenable.** Seule une entité `housenumber` porte
+/// un point : le technicien se déplace à une adresse, pas sur une surface
+/// (Constitution §2.2). Une rue ou une commune est tout de même proposée comme
+/// **piste de raffinement**, la choisir relançant la recherche sur son libellé.
+/// Le filtre n'est pas relâché, il se déplace de l'affichage vers la sélection.
 export type SuggestionBan =
   | { precise: true; adresse: SuggestionAdresse }
   | { precise: false; label: string };

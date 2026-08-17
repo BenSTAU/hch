@@ -11,8 +11,6 @@ import { Button } from "@/components/ui/button";
 /// `reset`, une fonction, ce qui exclut le rendu serveur. C'est la seule raison
 /// du `"use client"` ici, pas un besoin d'interactivité.
 ///
-/// ── Ce qui est affiché, et ce qui ne l'est surtout pas
-///
 /// **Jamais `error.message`.** Une erreur Prisma non interceptée porte l'hôte et
 /// l'utilisateur de la base ; une erreur applicative peut porter un identifiant
 /// ou un email. C'est la même règle que `handleServerError` de
@@ -23,8 +21,6 @@ import { Button } from "@/components/ui/button";
 /// `error.digest` est en revanche affiché : c'est un hachage produit par Next,
 /// sans contenu, et c'est ce qui permet de relier ce que voit la personne à la
 /// ligne correspondante des journaux du conteneur.
-///
-/// ── `reset()` plutôt qu'un rechargement
 ///
 /// Il rejoue le segment fautif sans repasser par le serveur ni perdre l'état du
 /// reste de l'application. Utile sur une panne transitoire - la base jointe par

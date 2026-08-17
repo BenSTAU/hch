@@ -5,8 +5,6 @@ import { expect, type Page } from "@playwright/test";
 
 /// Fabrique de techniciens pour la barriere E2E.
 ///
-/// ── Pourquoi le technicien du seed ne suffit pas
-///
 /// `prisma/seed.ts` n'en pose qu'UN, `tech@homecyclhome.fr`, et il est affecte a
 /// la seule zone de service. Or `gp-02` reserve en cliquant le **premier**
 /// creneau propose, la derivation part du jour courant a Paris, et rien ne
@@ -18,8 +16,6 @@ import { expect, type Page } from "@playwright/test";
 /// Chaque fichier seme donc le sien. T-V2-01 devient independant de `gp-02`,
 /// donc **independant d'une tache sacrifiable** — ce qu'un simple `afterAll` de
 /// nettoyage n'aurait pas donne. Cadrage du plancher V2, D7.
-///
-/// ── Aucune affectation de zone, et c'est la propriete qui isole
 ///
 /// `technician_zones` reste vide pour ces comptes. La derivation des creneaux
 /// ne lit QUE les techniciens affectes a la zone du client

@@ -6,8 +6,6 @@ import { Card, CardContent } from "@/components/ui/card";
 
 /// Bloc « À VENIR » de la maquette **T1**, colonne droite sous la carte.
 ///
-/// ── Ce qui est porté, et ce qui ne l'est pas
-///
 /// La carte sombre de T1 porte l'heure, le nom du client, le forfait et la
 /// ville de la prochaine intervention, plus un bouton jaune « Préparer ma
 /// prochaine intervention ». **Le bouton ne se porte pas** : il mènerait au
@@ -16,13 +14,11 @@ import { Card, CardContent } from "@/components/ui/card";
 /// `T-T2-16` d'Argo proscrit, et c'est le même motif qui garde les lignes de la
 /// liste non cliquables. Il revient avec la route.
 ///
-/// ── « Prochaine » se déduit du STATUT, jamais de l'horloge
-///
 /// La liste est déjà triée chronologiquement : la prochaine est donc la
 /// première `PLANNED`. Se fier à `Date.now()` ici produirait une divergence
 /// d'hydratation - le serveur et le navigateur ne lisent pas la même horloge -
 /// sur un composant que le polling de 30 s re-rend en permanence. C'est le
-/// défaut payé sur le stepper du tunnel (PR #29 note 8).
+/// défaut payé sur le stepper du tunnel.
 ///
 /// Une intervention `IN_PROGRESS` n'est pas « à venir » : elle est en cours, et
 /// la ligne cerclée de la liste la désigne déjà.

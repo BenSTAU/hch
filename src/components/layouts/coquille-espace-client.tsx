@@ -10,19 +10,9 @@ import { cn } from "@/lib/utils";
 /// par les deux segments qui le composent : `/mes-interventions/*` (C8, C10) et
 /// `/mon-compte/cycles` (C11).
 ///
-/// Elle vivait dans `mes-interventions/layout.tsx` tant qu'un seul segment
-/// l'utilisait. C11 est le **deuxième usage**, donc le moment où elle monte
-/// dans `components/layouts/` - pas avant, règle des 2 usages.
-///
-/// ── La barre latérale ne porte toujours que ce qui existe
-///
-/// C8 et C10 en dessinent six entrées, C11 cinq. **Trois n'ont aucune route** :
-/// « Tableau de bord » est C7, retiré du produit le 2026-08-09 ; « Profil » et
-/// « Adresses » arrivent avec T-V3-07 (C12) ; « Aide » ne correspond à rien en
-/// v1. Un lien mort dans une navigation permanente est la leçon T-T2-16 d'Argo :
-/// il promet un écran que personne ne livrera avant sa tâche.
-///
-/// Deux entrées, donc, depuis que « Mes vélos » a la sienne.
+/// ⚠️ **La barre latérale ne porte que ce qui existe.** Les maquettes en
+/// dessinent six, trois n'ont aucune route : un lien mort dans une navigation
+/// permanente promet un écran que personne ne livrera.
 ///
 /// ⚠️ **Pas de `loading.tsx` dans ces segments.** Sa fallback fait partir les
 /// en-têtes en 200, après quoi le `forbidden()` de `requireEspaceClient()` ne

@@ -1,18 +1,13 @@
-// Canal auxiliaire temporel de l'anti-énumération — ajouté par l'agent testeur.
+// Canal auxiliaire temporel de l'anti-énumération.
 //
 // `authenticate.test.ts` prouve que les quatre causes de refus produisent un
 // objet IDENTIQUE. C'est nécessaire et insuffisant : l'anti-énumération de la
 // Constitution §4.2 et de la SPEC §6.1 porte sur ce qu'un attaquant peut
-// OBSERVER, et le temps de réponse en fait partie au même titre que le corps
-// de la réponse.
+// OBSERVER, et le temps de réponse en fait partie.
 //
-// L'implémentation le sait et l'a écrit en commentaire
-// (src/lib/actions/auth/login.ts:22-24). Ce fichier le transforme en constat
-// exécutable : tant qu'il est rouge, l'écart existe.
-//
-// Ces tests sont ROUGES à dessein. Ils ne doivent pas être neutralisés — la
-// correction attendue est un `bcrypt.compare` de leurre sur les chemins qui
-// sortent avant la vérification du mot de passe.
+// ⚠️ Ce que ces tests gardent est le `bcrypt.compare` de leurre
+// (`DECOY_HASH`), qui fait payer le même coût aux chemins sortant avant la
+// vérification du mot de passe. Le retirer les rend rouges.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUserForLogin = vi.fn();

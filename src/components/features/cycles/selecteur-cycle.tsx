@@ -15,11 +15,8 @@ import { BadgeTypeCycle } from "./badge-type-cycle";
 const AUCUN = "aucun";
 
 /// Sélecteur « un vélo, ou aucun », partagé par les deux surfaces qui désignent
-/// un cycle : le panneau de détail de `/mes-interventions` (rattachement T+n,
-/// T-V3-16) et l'écran **C5** du tunnel (T=0).
-///
-/// Né dans `mes-interventions/_components/bloc-cycle.tsx`, monté ici au **2ᵉ
-/// usage** - la règle des 2 usages est atteinte pile ici.
+/// un cycle : le panneau de détail de `/mes-interventions` (rattachement T+n)
+/// et l'écran **C5** du tunnel (T=0).
 ///
 /// ⚠️ **Il porte le choix, jamais l'écriture.** Les deux appelants écrivent à
 /// des moments différents : le panneau appelle `rattacherCycle` à chaque clic,

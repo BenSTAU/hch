@@ -6,15 +6,10 @@ import { cn } from "@/lib/utils";
 
 /// Bascule d'affichage d'un champ mot de passe - maquettes **C6** et **C7**.
 ///
-/// Écrite deux fois jusqu'à l'audit du 2026-08-12, dans `login-form.tsx` et
-/// `signup-form.tsx`, **avec deux traitements d'accessibilité différents**.
-///
-/// ⚠️ **Le traitement retenu est celui de la connexion, et l'écart n'était pas
-/// cosmétique.** L'inscription cumulait `aria-pressed` et un nom accessible
-/// changeant : un lecteur d'écran y annonçait « Masquer le mot de passe,
-/// activé », soit l'état deux fois, une fois par le nom et une fois par
-/// l'attribut. Les deux conventions sont valides séparément - nom fixe plus
-/// `aria-pressed`, ou nom changeant sans lui - mais leur cumul est ambigu.
+/// ⚠️ **Nom accessible changeant, SANS `aria-pressed`.** Cumuler les deux fait
+/// annoncer l'état deux fois par un lecteur d'écran (« Masquer le mot de passe,
+/// activé »). Les deux conventions sont valides séparément, leur cumul est
+/// ambigu.
 ///
 /// `type="button"` explicite : un `<button>` sans type vaut `submit`, et
 /// révéler son mot de passe enverrait le formulaire. Sans JavaScript il ne fait

@@ -24,7 +24,7 @@ type UtilisateurAffiche = Pick<
 
 /// En-tête de la coquille publique — barre partagée de C1 et C13.
 ///
-/// ── Géométrie portée de C1 (`code.html:204-227`)
+/// Géométrie portée de C1 :
 ///
 ///   · barre de **80 px** (`md:h-20`), marque en `headline-md` — 24 px,
 ///     extra-bold, `tracking-tighter`, couleur `primary` ;
@@ -35,8 +35,7 @@ type UtilisateurAffiche = Pick<
 ///   · action secondaire en texte (`px-4 py-2 rounded-xl`), action primaire en
 ///     bouton plein **48 px** (`px-6 py-3 rounded-xl`), ombre douce.
 ///
-/// ── Deux écarts, tous deux imposés par la règle 2 du portage (les maquettes
-/// sont en 1920×1080 seulement)
+/// ⚠️ Deux écarts, imposés par le responsive que les maquettes ignorent :
 ///
 ///  1. `sticky` et non `fixed`. Le rendu est identique — la barre reste en
 ///     haut — mais `fixed` obligerait à compenser sa hauteur par un `pt-24` sur
@@ -56,16 +55,8 @@ type UtilisateurAffiche = Pick<
 /// §Authentication : jamais de check d'autorisation dans un layout partagé, le
 /// Partial Rendering ne le rejoue pas en navigation client).
 ///
-/// ── En-tête **unique** depuis T-V3-10
-///
-/// Il cohabitait avec `AppHeader`, posé en T-V3-03 pour rendre la déconnexion
-/// atteignable dans l'espace connecté. Les deux ont fusionné ici, comme la DoD
-/// le prévoyait : la coquille publique et l'espace connecté portent désormais la
-/// même barre, et le couple « nom + bouton » a cédé la place au `UserMenu`
-/// (avatar, initiales, menu déroulant). `AppHeader` est supprimé.
-///
-/// Conséquence assumée et hors périmètre client : `/admin/parametres` change
-/// d'en-tête au même geste, `src/app/(app)/layout.tsx` montant celui-ci.
+/// En-tête **unique** du produit : la coquille publique et l'espace connecté
+/// portent la même barre, `/admin/parametres` compris.
 export function SiteHeader({
   user,
   reservationDisponible,

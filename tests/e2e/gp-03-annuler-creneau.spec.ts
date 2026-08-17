@@ -176,7 +176,6 @@ test("un client annule son rendez-vous et le creneau redevient libre", async ({
   // Intervention annulee ». On y est deja, la redirection est un rafraichissement.
   await expect(page.getByText("Intervention annulée")).toBeVisible();
 
-  // ── L'etat en base, pas seulement a l'ecran
   const apres = await db.intervention.findUniqueOrThrow({
     where: { id: interventionId },
     select: { status: true, cancellationReason: true },
@@ -184,7 +183,6 @@ test("un client annule son rendez-vous et le creneau redevient libre", async ({
   expect(apres.status).toBe("CANCELLED");
   expect(apres.cancellationReason).toBe("Empechement de derniere minute");
 
-  // ── L'audit RGPD (Constitution §4.2)
   const trace = await db.auditLog.findFirst({
     where: {
       entityType: "interventions",
@@ -199,7 +197,6 @@ test("un client annule son rendez-vous et le creneau redevient libre", async ({
     statutApres: "CANCELLED",
   });
 
-  // ── Elle quitte « A venir » pour « Passees », avec son motif
   await page.goto("/mes-interventions/a-venir");
   await expect(page.getByText("Vous n'avez pas de rendez-vous")).toBeVisible();
 
@@ -212,8 +209,6 @@ test("un client annule son rendez-vous et le creneau redevient libre", async ({
     panneau.getByText(/Empechement de derniere minute/),
   ).toBeVisible();
 
-  // ── Le creneau est libere, et c'est la BASE qui le dit
-  //
   // Aucune ligne n'a ete supprimee : le pool se derive a la volee
   // (Constitution §2.1) et `no_double_booking` filtre sur
   // `status IN ('PLANNED','IN_PROGRESS')`. La preuve est qu'on peut reinserer
@@ -360,8 +355,6 @@ test("un client ne peut pas annuler le rendez-vous d'un autre", async ({
 test("le serveur refuse l'intervention d'un tiers, meme modale ouverte", async ({
   page,
 }) => {
-  // ⚠️ Ajout de l'agent testeur, 2026-08-11.
-  //
   // Le scenario voisin (« un client ne peut pas annuler le rendez-vous d'un
   // autre ») prouve que l'ECRAN ne fuit rien : la vue retombe sur la liste de
   // l'intrus, le bouton n'existe pas. Il ne dit rien de la garde SERVEUR, parce

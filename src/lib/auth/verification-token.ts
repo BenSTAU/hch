@@ -2,16 +2,14 @@ import "server-only";
 
 import { createHash, randomBytes } from "node:crypto";
 
-/// Jetons à usage unique de `verification_tokens`.
+/// Jetons à usage unique de `verification_tokens`. Pattern imposé par
+/// [[mcd-dictionnaire]] : 32 octets aléatoires URL-safe dans l'email, SHA-256
+/// en base, comparaison sur le hash. Le clair ne vit que dans l'URL, donc une
+/// fuite de base ne donne aucun lien utilisable.
 ///
-/// Pattern imposé par le dictionnaire §verification_tokens : 32 octets
-/// aléatoires URL-safe envoyés dans l'email, SHA-256 stocké en base, comparaison
-/// sur le hash. Le clair ne vit que dans l'URL — une fuite de base ne donne donc
-/// aucun lien utilisable.
-///
-/// Pas de bcrypt ici, et ce n'est pas un oubli : bcrypt protège un secret à
-/// faible entropie contre une attaque hors ligne. 32 octets aléatoires ne se
-/// devinent pas, et le coût de hachage se paierait à chaque clic sur un lien.
+/// Pas de bcrypt, et ce n'est pas un oubli : il protège un secret à faible
+/// entropie contre une attaque hors ligne. 32 octets aléatoires ne se devinent
+/// pas, et le coût se paierait à chaque clic sur un lien.
 
 /// 24 h — `US-COMPTE-ACTIVER` §Cas d'erreur. Le reset de mot de passe est à 1 h
 /// (T-V3-05) : le contraste est délibéré, la surface d'attaque d'un reset est

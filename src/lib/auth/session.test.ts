@@ -61,20 +61,11 @@ describe("readSessionToken", () => {
     await createSession("user-1", ["ROLE_ADMIN"]);
     const token = store.set.mock.calls[0]![1] as string;
 
-    // Mutation du PREMIER caractère de la signature, pas du dernier.
-    //
-    // Règle du test rouge, 3ᵉ ligne : oracle incorrect, corrigé avec trace.
-    // Ce test était **intermittent** — il a échoué pendant la vérification de
-    // T-J0-05 sur un code d'authentification qui n'avait pas bougé. Il mutait
-    // le dernier caractère, or une signature HS256 fait 32 octets = 256 bits
-    // et son base64url 43 caractères = 258 bits : les deux bits de poids
-    // faible du dernier caractère ne codent RIEN. Quatre caractères distincts
-    // s'y décodent vers les mêmes octets, donc la mutation était sans effet
-    // une fois sur seize environ, et le test échouait à ce rythme.
-    //
-    // Le premier caractère, lui, porte ses six bits. La mutation est
-    // déterministe. Diagnostic établi par l'agent testeur, qui a laissé deux
-    // sondes plus bas pour le rendre vérifiable au lieu de l'affirmer.
+    // ⚠️ Mutation du PREMIER caractère de la signature, jamais du dernier.
+    // Une signature HS256 fait 256 bits pour 43 caractères base64url, soit
+    // 258 : les deux bits de poids faible du dernier caractère ne codent RIEN,
+    // et le muter est sans effet une fois sur seize. Les deux sondes plus bas
+    // rendent le diagnostic vérifiable.
     const [header, payload, signature] = token.split(".") as [
       string,
       string,
@@ -94,28 +85,10 @@ describe("readSessionToken", () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// Sondes ajoutées par l'agent testeur (T-J0-05).
-//
-// Le test « renvoie null sur un jeton dont la signature ne tient pas »
-// ci-dessus est **intermittent** : il a échoué pendant la vérification de
-// T-J0-05, sur un dépôt dont le code d'authentification n'a pas bougé.
-//
-// Cause, démontrée par les deux tests qui suivent : une signature HS256 fait
-// 32 octets, soit 256 bits, et son encodage base64url fait 43 caractères, soit
-// 258 bits. Les DEUX BITS DE POIDS FAIBLE du dernier caractère ne codent rien.
-// Quatre caractères base64url distincts se décodent donc vers les mêmes
-// octets, et remplacer le dernier caractère par `X` ne modifie la signature
-// que 60 fois sur 64 — dans les 4 autres cas le jeton reste littéralement
-// valide, et `readSessionToken` a raison de l'accepter.
-//
-// Ce n'est pas un défaut de `readSessionToken` : personne ne peut fabriquer
-// une de ces variantes sans détenir déjà un jeton valide. C'est un défaut de
-// construction du test, dont l'arrangement ne garantit pas la mutation qu'il
-// annonce. L'agent testeur ne l'a PAS corrigé — il est hors du périmètre de
-// T-J0-05 et sa réécriture appartient à la session principale. Ces deux
-// sondes-ci rendent le diagnostic vérifiable au lieu d'affirmé.
-// ───────────────────────────────────────────────────────────────────────────
+// Sondes du padding base64url : elles démontrent pourquoi le test ci-dessus
+// mute le PREMIER caractère de la signature. Remplacer le dernier ne change
+// les octets que 60 fois sur 64, et dans les 4 autres cas le jeton reste
+// valide - `readSessionToken` a alors raison de l'accepter.
 
 const BASE64URL =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";

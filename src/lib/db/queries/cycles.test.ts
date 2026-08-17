@@ -107,10 +107,8 @@ describe("creerCycle", () => {
   });
 
   it("ne redescend pas le propriétaire du vélo créé", async () => {
-    // Ajouté par l'agent testeur. Ce vélo-là **repart au navigateur** :
-    // `ajouterCycle` le rend dans `data.cycle` pour composer le message de
-    // succès. `listerCyclesDuClient` avait ce test, `creerCycle` non, alors que
-    // c'est lui qui traverse la frontière serveur → client.
+    // Ce vélo **repart au navigateur** : `ajouterCycle` le rend dans
+    // `data.cycle` pour composer le message de succès.
     await creerCycle({ ...CHAMPS, type: "CLASSIC", userId: CLIENT });
 
     const appel = cycleCreate.mock.calls[0]?.[0] as {
@@ -123,9 +121,8 @@ describe("creerCycle", () => {
 
 describe("modifierCycleDuClient", () => {
   it("ne redescend pas le propriétaire du vélo modifié", async () => {
-    // Ajouté par l'agent testeur. Le résultat est reconstruit à la main plutôt
-    // que relu, donc rien n'empêche structurellement qu'un champ de trop y
-    // entre - et il repart au navigateur par `data.cycle`.
+    // Le résultat est reconstruit à la main plutôt que relu, donc rien
+    // n'empêche structurellement qu'un champ de trop y entre.
     const resultat = await modifierCycleDuClient({
       ...CHAMPS,
       type: "CLASSIC",
@@ -231,8 +228,8 @@ describe("rattacherCycleAIntervention", () => {
   });
 
   it("refuse quand le statut a changé ENTRE la lecture et l'écriture", async () => {
-    // La course que l'agent testeur a relevée (C5) : le technicien démarre le
-    // rendez-vous pendant que le client choisit son vélo. La lecture voit
+    // La course : le technicien démarre le rendez-vous pendant que le client
+    // choisit son vélo. La lecture voit
     // encore `PLANNED`, l'écriture ne trouve plus la ligne. Sans le statut dans
     // le `WHERE`, un `update` sur la seule clé primaire aurait écrit quand même.
     interventionUpdateMany.mockResolvedValue({ count: 0 });
@@ -291,11 +288,10 @@ describe("rattacherCycleAIntervention", () => {
   });
 
   it("n'interroge pas cycles quand l'intervention est déjà verrouillée", async () => {
-    // Ajouté par l'agent testeur. L'ordre des trois gardes est une propriété,
-    // pas un détail : une intervention hors `PLANNED` doit couper AVANT la
-    // lecture du vélo, sans quoi le temps de réponse distinguerait un vélo
-    // existant d'un vélo absent sur une intervention où l'écriture est de toute
-    // façon refusée. Le test voisin n'assertait que l'absence d'écriture.
+    // ⚠️ L'ordre des trois gardes est une propriété : une intervention hors
+    // `PLANNED` doit couper AVANT la lecture du vélo, sans quoi le temps de
+    // réponse distinguerait un vélo existant d'un vélo absent sur une
+    // intervention où l'écriture est de toute façon refusée.
     interventionFindFirst.mockResolvedValue({ status: "IN_PROGRESS" });
 
     await rattacherCycleAIntervention({

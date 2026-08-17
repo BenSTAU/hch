@@ -98,7 +98,7 @@ describe("lireJourCivil", () => {
   });
 
   it("refuse une année que `Date.UTC` remapperait en silence", () => {
-    // ⚠️ **Ajout de l'agent testeur.** `Date.UTC(26, 7, 13)` ne rend pas l'an 26
+    // ⚠️ `Date.UTC(26, 7, 13)` ne rend pas l'an 26
     // mais **1926** : la spécification remappe les années 0 à 99 sur 1900+n.
     // Le contrôle du module est un aller-retour, donc il attrape le cas - mais
     // rien ne le figeait, et un contrôle réécrit en « regex plus longue »
@@ -144,7 +144,7 @@ describe("lirePage", () => {
   });
 
   it("plancher à 1, et tronque", () => {
-    // Les quatre formes que l'agent testeur a relevées sur C10 : le négatif, le
+    // Les quatre formes hostiles sur C10 : le négatif, le
     // fractionnaire qui produisait un `skip` que Prisma refuse, et les deux que
     // `Math.max` propagerait telles quelles.
     expect(lirePage(undefined)).toBe(1);
@@ -165,7 +165,7 @@ describe("lirePage", () => {
 });
 
 describe("ce que `searchParams` rend vraiment, et que la signature ne dit pas", () => {
-  // ⚠️ **Ajout de l'agent testeur.** Les deux pages typent leurs paramètres
+  // ⚠️ Les deux pages typent leurs paramètres
   // `{ jours?: string }` et `{ du?: string; au?: string; page?: string }`. Next
   // rend un **`string[]`** dès qu'un paramètre est répété dans l'URL - `?jours=7
   // &jours=30` -, forme que le type déclaré exclut et que le compilateur ne

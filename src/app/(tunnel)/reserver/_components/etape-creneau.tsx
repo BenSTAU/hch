@@ -24,8 +24,6 @@ import { CONTENEUR } from "./etapes";
 /// autre visiteur peut prendre le créneau qu'on regarde - c'est l'une des trois
 /// vues où TanStack Query est autorisé (PLAN S1 §6.1).
 ///
-/// ── Géométrie portée
-///
 ///   · bandeau de rappel `rounded-2xl p-6`, forfait en `headline-sm` et adresse
 ///     en `body-md` dessous (`c4:136-142`) ;
 ///   · hero `mt-8 mb-4`, titre `headline-xl` 48 px, chapô `body-lg max-w-3xl` ;
@@ -37,8 +35,6 @@ import { CONTENEUR } from "./etapes";
 ///   · récapitulatif de droite sur fond `primary`, `rounded-2xl p-6`,
 ///     `justify-between` pour coller le total en bas (`c4:187`).
 ///
-/// ── Un calendrier navigable, pas une liste de 30 jours
-///
 /// La première rédaction de cette étape empilait les 30 jours de l'horizon les
 /// uns sous les autres : correct, illisible. Le mois se parcourt donc au
 /// `Calendar` du catalogue shadcn (CLAUDE.md §Styling le liste), borné à
@@ -46,8 +42,6 @@ import { CONTENEUR } from "./etapes";
 /// désactivés. Les créneaux du jour retenu s'affichent dessous. C'est la
 /// structure de la maquette, corrigée du défaut que [[maquettage]] §Notes
 /// portage lui reproche - ses heures n'étaient rattachées à aucun jour.
-///
-/// ── Ce qui ne se porte pas
 ///
 ///  1. **La bascule Semaine / Mois** (`c4:154-157`) : la vue mois est la seule
 ///     que le calendrier rend, et une vue semaine n'ajouterait rien sur un

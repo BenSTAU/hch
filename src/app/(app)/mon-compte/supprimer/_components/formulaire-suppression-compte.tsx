@@ -20,8 +20,6 @@ import { Label } from "@/components/ui/label";
 
 /// Confirmation du droit à l'oubli - `US-COMPTE-SUPPRIMER` §Cas nominal.
 ///
-/// ── La double confirmation de l'US, dans l'ordre qu'elle décrit
-///
 /// « Je clique sur le bouton **et je vois une modale d'avertissement fort** »,
 /// puis « je confirme **en saisissant mon mot de passe** ». Les deux gestes sont
 /// distincts et le second n'est pas atteignable sans le premier : c'est la
@@ -30,15 +28,13 @@ import { Label } from "@/components/ui/label";
 /// `DialogTrigger` et non un bouton nu : Radix y pose `aria-haspopup="dialog"`,
 /// `aria-expanded` et `aria-controls`, et il piège le focus dans le panneau.
 /// Rien de tout cela n'est signalé par `jest-axe` quand ça manque - leçon
-/// T-V3-11, relevée par l'agent testeur.
-///
-/// ── Pas de message de succès ici, et c'est structurel
+/// T-V3-11.
 ///
 /// L'action détruit la session puis redirige vers l'accueil : ce composant se
 /// démonte, et tout message posé dedans partirait avec lui. Le message final de
 /// l'US vit donc sur la page d'accueil. Les refus, eux, ne mutent rien et
 /// laissent l'écran en place : une alerte à côté du champ est la bonne surface.
-/// C'est la doctrine des trois surfaces établie en T-V3-11 (PR #36), appliquée
+/// C'est la doctrine des trois surfaces établie en T-V3-11, appliquée
 /// à un cas où une seule des trois est nécessaire.
 export function FormulaireSuppressionCompte() {
   const [enCours, demarrer] = useTransition();

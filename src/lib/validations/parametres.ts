@@ -59,7 +59,7 @@ export function validateSettingValue(
   // `value_type` inconnu passait tant que la valeur était vide et échouait dès
   // qu'elle ne l'était plus — deux verdicts contradictoires sur la même ligne.
   // Le CHECK SQL de la migration 002 rend le cas inatteignable aujourd'hui ;
-  // l'ordre, lui, ne dépend pas de la base. Relevé par l'agent testeur (T-J0-05).
+  // l'ordre, lui, ne dépend pas de la base.
   if (!isSettingValueType(valueType)) {
     return { ok: false, reason: `Type de valeur inconnu : ${valueType}` };
   }

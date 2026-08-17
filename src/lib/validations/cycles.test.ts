@@ -51,7 +51,7 @@ describe("champsCycleSchema - marque", () => {
   });
 
   it("refuse une marque plus longue que la colonne", () => {
-    // Ajouté par l'agent testeur. `cycles.brand` est un `VARCHAR(100)` : au-delà,
+    // `cycles.brand` est un `VARCHAR(100)` : au-delà,
     // c'est Prisma qui lèverait, et `handleServerError` rendrait « Une erreur est
     // survenue » - un refus de saisie déguisé en panne. La borne applicative est
     // la seule qui produise un message utile, et rien ne l'exerçait.
@@ -72,7 +72,7 @@ describe("champsCycleSchema - marque", () => {
 
 describe("champsCycleSchema - modele", () => {
   it("refuse un modèle plus long que la colonne", () => {
-    // Ajouté par l'agent testeur, même motif que la marque.
+    // Même motif que la marque.
     const resultat = champsCycleSchema.safeParse({
       ...VALIDE,
       model: "x".repeat(101),
@@ -84,7 +84,7 @@ describe("champsCycleSchema - modele", () => {
   });
 
   it("ramène un modèle fait d'espaces à null, pas à une chaîne d'espaces", () => {
-    // Ajouté par l'agent testeur. `trim` puis `transform` : le cas de la marque
+    // `trim` puis `transform` : le cas de la marque
     // était couvert, celui du modèle non, et c'est lui qui décide de l'affichage
     // « Decathlon  » avec une espace pendante sur toutes les cartes.
     expect(
@@ -245,7 +245,7 @@ describe("rattacherCycleSchema", () => {
   });
 
   it("refuse les identifiants qu'un SERIAL ne produit jamais", () => {
-    // Ajouté par l'agent testeur. `modifierCycleSchema` a son test de borne,
+    // `modifierCycleSchema` a son test de borne,
     // `rattacherCycleSchema` n'en avait aucun alors qu'il en porte DEUX. Un
     // `0`, un négatif ou un décimal n'atteignent aucune ligne, mais ils
     // atteindraient la base : `skip`/`where` sur un flottant fait lever Prisma,
@@ -264,7 +264,7 @@ describe("rattacherCycleSchema", () => {
   });
 
   it("ne transporte AUCUN propriétaire", () => {
-    // Ajouté par l'agent testeur. Les deux autres schémas ont ce test, celui-ci
+    // Les deux autres schémas ont ce test, celui-ci
     // ne l'avait pas - et c'est le seul des trois où DEUX entités appartiennent
     // à deux vérifications distinctes.
     const parsed = rattacherCycleSchema.parse({

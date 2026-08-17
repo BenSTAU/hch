@@ -1,15 +1,11 @@
 // @vitest-environment node
 //
-// Inventaire des Server Actions du produit - T-V2-05.
+// Inventaire des Server Actions du produit.
 //
-// ⚠️ **Ce fichier existe pour une case de DoD qui était fausse, et l'oracle
-// qu'elle demande n'est pas celui qu'elle écrivait.** La DoD de T-V2-05 posait
-// « les Server Actions des trois vues passent par `techActionClient` », par
-// symétrie avec la tournée du jour. Or « Cette semaine » et « Historique » sont
-// de purs Server Components : leur en écrire une **fabriquerait deux endpoints
-// POST publics sans appelant**, pour cocher une case dont le but est de
-// protéger contre les endpoints POST publics. Amendée par Benjamin le
-// 2026-08-12, tenue autrement - `requireTech()` dans chaque page, et ce fichier.
+// ⚠️ **Les vues qui n'ont pas de Server Action n'en auront pas.** « Cette
+// semaine » et « Historique » sont de purs Server Components : leur en écrire
+// une fabriquerait deux endpoints POST publics sans appelant. Leur garde est
+// `requireTech()` dans chaque page, plus ce fichier.
 //
 // Ce qu'il fige : **l'inventaire complet des Server Actions et le client de
 // chacune**. Sans lui, « les deux nouvelles vues n'exposent aucune action »
@@ -54,7 +50,7 @@ function inventaire(): Record<string, string[]> {
   return releve;
 }
 
-/// ⚠️ **Ajout de l'agent testeur, 2026-08-12 - `inventaire()` ne voit qu'une
+/// ⚠️ **`inventaire()` ne voit qu'une
 /// partie du dépôt, et son commentaire dit « tous les modules `"use server"` ».**
 ///
 /// Trois formes lui échappent, et la troisième est la plus courante en App

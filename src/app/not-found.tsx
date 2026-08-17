@@ -12,8 +12,6 @@ import { Button } from "@/components/ui/button";
 /// produit - une URL mal recopiée suffit - et c'était la seule à ne ressembler
 /// à rien.
 ///
-/// ── Ce qu'elle ne fait PAS
-///
 /// Aucune suggestion de route, aucun moteur de recherche interne : le produit
 /// n'a ni l'un ni l'autre, et les inventer ici poserait des liens qu'aucune US
 /// ne porte. Un retour à l'accueil, et c'est tout - même sobriété que

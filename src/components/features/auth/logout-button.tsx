@@ -7,10 +7,9 @@ import { Button } from "@/components/ui/button";
 ///
 /// Un `<form action={…}>` et non un `onClick` : la déconnexion est une
 /// mutation, donc une Server Action, et le formulaire part en POST que React
-/// ait hydraté ou non. C'est la leçon du `<form action>` de la connexion, payée
-/// en T-J0-04 — un bouton sans formulaire ne fait strictement rien tant que le
-/// JavaScript n'est pas chargé, et sur un poste partagé c'est le pire moment
-/// pour que la déconnexion soit décorative.
+/// ait hydraté ou non. Un bouton sans formulaire ne fait strictement rien tant
+/// que le JavaScript n'est pas chargé, et sur un poste partagé c'est le pire
+/// moment pour que la déconnexion soit décorative.
 ///
 /// Composant **serveur** : il ne porte aucun état, et la frontière `"use
 /// client"` n'a donc aucune raison de descendre jusqu'ici.

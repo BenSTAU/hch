@@ -2,18 +2,10 @@
 //
 // La tournee du jour - `US-INTERVENTIONS-LISTER-TECH-DU-JOUR`, ecran T1.
 //
-// Ce fichier n'eprouve PAS le filtre de la journee ni la projection : elles
-// vivent dans le helper metier et y sont testees. Il eprouve la GARDE, qui n'a
-// pas d'autre surface :
-//
-//   · un client authentifie qui poste cette action recoit un refus, et la base
-//     n'est jamais lue ;
-//   · le technicien vient de la SESSION, jamais de la charge utile ;
-//   · la journee est recalculee au serveur, donc une tournee laissee ouverte
-//     bascule d'elle-meme a minuit.
-//
-// Le motif de la garde est ecrit dans `src/proxy.ts` : le matcher laisse passer
-// `Next-Action` deliberement, donc aucune route ne protege cette action.
+// Eprouve la GARDE, qui n'a pas d'autre surface : le matcher de `src/proxy.ts`
+// laisse passer `Next-Action`, donc aucune route ne protege cette action. Un
+// client authentifie recoit un refus sans que la base soit lue, le technicien
+// vient de la SESSION, et la journee est recalculee au serveur.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getCurrentUser = vi.fn();
@@ -132,18 +124,10 @@ describe("listerTournee", () => {
   });
 
   it("IGNORE une charge utile qui designerait un autre technicien", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-12. Le module ecrit « le technicien
-    // vient de la SESSION, jamais de la charge utile - un `techId` en parametre
-    // serait la tournee d'autrui pour qui sait poster », et le test voisin
-    // n'affirme que la moitie de la propriete : que la session est bien lue.
-    //
-    // Ce qu'il ne dit pas, c'est ce qui se passe quand un appelant POSTE quand
-    // meme des arguments. L'action est declaree sans `inputSchema`, donc rien
-    // ne rejette la charge utile - la seule chose qui protege est qu'aucun
-    // parametre n'est LU. C'est une propriete du corps de l'action, pas de la
-    // bibliotheque, et elle se perdrait au premier ajout de signature.
-    //
-    // Un endpoint POST public (ADR-006 v2) se poste avec ce qu'on veut.
+    // ⚠️ L'action est declaree sans `inputSchema`, donc rien ne REJETTE la
+    // charge utile : la seule chose qui protege est qu'aucun parametre n'est
+    // LU. Propriete du corps de l'action et non de la bibliotheque, elle se
+    // perdrait au premier ajout de signature.
     getCurrentUser.mockResolvedValue(TECHNICIEN);
 
     const forge = listerTournee as unknown as (
@@ -158,12 +142,10 @@ describe("listerTournee", () => {
   });
 
   it("rend EXACTEMENT les deux champs du contrat, sans champ surnumeraire", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-12. Le DTO traverse la frontiere par
-    // DEUX chemins qui doivent porter la meme forme : `initialData`, fabrique
-    // par `page.tsx`, et le retour de cette action au polling. `page.tsx` compose
-    // `{ interventions, debutJournee }` a la main ; un troisieme champ ajoute
-    // ici et pas la-bas ne se verrait qu'apres 30 secondes d'affichage correct,
-    // au moment ou `data` change de forme sous le composant.
+    // Le DTO traverse la frontiere par DEUX chemins qui doivent porter la meme
+    // forme : `initialData` compose a la main par `page.tsx`, et le retour de
+    // cette action au polling. Un champ ajoute ici et pas la-bas ne se verrait
+    // qu'apres 30 secondes d'affichage correct.
     getCurrentUser.mockResolvedValue(TECHNICIEN);
 
     const resultat = await listerTournee();

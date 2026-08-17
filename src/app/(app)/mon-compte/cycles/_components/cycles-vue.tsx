@@ -30,14 +30,10 @@ import { cn } from "@/lib/utils";
 /// Liste et formulaire - écran **C11**, `US-CYCLES-LISTER` + `US-CYCLE-AJOUTER`
 /// + `US-CYCLE-MODIFIER`.
 ///
-/// ── Un seul formulaire pour l'ajout et la modification
-///
 /// Les deux US décrivent les mêmes quatre champs et les mêmes trois refus. Deux
 /// composants auraient laissé les bornes de saisie diverger, et c'est déjà le
 /// motif du panneau unique de `interventions-vue.tsx`. Ce qui change est la
 /// Server Action appelée et le libellé du bouton.
-///
-/// ── La sélection d'édition vit dans l'URL
 ///
 /// `?cycle=<id>` via `nuqs`, comme `?intervention=<id>` de l'espace client.
 /// L'ouverture du formulaire **vierge**, elle, reste locale : ce n'est pas un

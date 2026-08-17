@@ -21,11 +21,9 @@ export const ajouterCycle = authActionClient
     const cycle = await creerCycle({ ...parsedInput, userId: user.id });
 
     revalidatePath(CHEMIN_CYCLES);
-    // 🐛 **L'espace client aussi**, relevé par l'agent testeur : le sélecteur de
-    // rattachement du panneau de détail liste ces mêmes vélos, et un vélo créé
-    // pour le rendez-vous de demain n'y serait pas proposé. DoD 517 écrit
-    // « après CHAQUE mutation », et `modifierCycle` le faisait déjà - l'écart
-    // entre les deux actions n'était pas un arbitrage, c'était un oubli.
+    // **L'espace client aussi** : le sélecteur de rattachement du panneau de
+    // détail liste ces mêmes vélos, et un vélo créé pour le rendez-vous de
+    // demain n'y serait pas proposé sans cette seconde invalidation.
     revalidatePath(CHEMIN_ESPACE_CLIENT);
 
     return { ok: true as const, cycle };

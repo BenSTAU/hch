@@ -2,15 +2,9 @@
 //
 // Le demarrage - `US-INTERVENTION-DEMARRER`, ecran T2.
 //
-// Ce que ce fichier eprouve n'est PAS la machine a etats ni le verrou : les
-// deux vivent dans le helper metier et y sont testes. C'est l'orchestration,
-// et elle porte trois proprietes qu'aucune autre surface ne couvre :
-//
-//   · le TECHNICIEN vient de la session, jamais de la charge utile - une
-//     Server Action exportee est un endpoint POST public (ADR-006 v2) ;
-//   · les refus revalident AUSSI, parce qu'ils disent que la vue est perimee ;
-//   · l'action est gardee par `techActionClient`, donc un client authentifie
-//     qui la poste ne l'atteint pas.
+// Eprouve l'orchestration, pas la machine a etats ni le verrou, qui vivent
+// dans le helper metier : le TECHNICIEN vient de la session, les refus
+// revalident AUSSI, et `techActionClient` refuse un client authentifie.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getCurrentUser = vi.fn();

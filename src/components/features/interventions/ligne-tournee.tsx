@@ -11,43 +11,23 @@ import { cn } from "@/lib/utils";
 
 /// Une ligne de la tournée, vue par le technicien - maquette **T1**.
 ///
-/// Elle vivait dans `tournee-vue.tsx` jusqu'à T-V2-05, qui lui donne deux
-/// lecteurs de plus : « Cette semaine » et « Historique » affichent exactement
-/// les mêmes six éléments, sur le même DTO. Troisième usage, donc promotion
-/// dans `features/` (CLAUDE.md §Folder structure, règle des 2 usages).
-///
 /// **Aucun `"use client"`** : le composant n'a ni état ni effet. C'est ce qui
 /// lui permet d'être rendu par les deux nouvelles vues, qui sont de purs Server
 /// Components, tout en restant importable depuis `TourneeVue` qui est cliente.
 ///
-/// ── Les six éléments de `US-INTERVENTIONS-LISTER-TECH-DU-JOUR` §Cas nominal
+/// ⚠️ **Aucun des six éléments n'est garanti présent** : `users.phone` est
+/// NULLable, et un client pseudonymisé perd aussi son nom et sa rue. Mentions
+/// neutres, jamais de vide ni de plantage - l'intervention survit à
+/// l'effacement de son client (Constitution §4.1, pas de FK cassée).
 ///
-/// Heure, client (nom **et** téléphone), adresse complète, forfait (nom et
-/// durée), statut, produits attachés. ⚠️ **Aucun n'est garanti présent** :
-/// `users.phone` est NULLable depuis la 004, et un client pseudonymisé par
-/// T-V3-12 perd aussi son nom et sa rue. Mentions neutres, jamais de vide ni de
-/// plantage - l'intervention survit à l'effacement de son client
-/// (Constitution §4.1, pas de FK cassée).
+/// Chaque ligne ouvre le détail **quel que soit son statut**, une intervention
+/// terminée ou annulée s'ouvrant en lecture seule. Le seul bouton réel est
+/// celui de `PLANNED`, passé par le slot `action` plutôt que décidé ici : les
+/// vues « Cette semaine » et « Historique » rendent la même ligne sans jamais
+/// démarrer quoi que ce soit, et ce fichier reste utilisable depuis un Server
+/// Component.
 ///
-/// ── Les lignes sont cliquables depuis T-V2-02, dans les quatre statuts
-///
-/// La route de détail `/interventions/[id]` existe désormais, donc le lien et
-/// son action contextuelle arrivent ensemble, comme annoncé. Le cadrage du
-/// plancher V2 (D4) tranche « chaque ligne ouvre le détail **quel que soit son
-/// statut** » : une intervention terminée ou annulée s'ouvre en lecture seule,
-/// ce que la SPEC appelle « lecture seule » sur cette ligne.
-///
-/// L'**action**, elle, ne suit pas la même règle : la SPEC §Cas nominal écrit
-/// « "Démarrer" si `PLANNED`, "Ouvrir détail" si `IN_PROGRESS`, lecture seule si
-/// `DONE` ou `CANCELLED` ». « Ouvrir détail » **est** le lien de la carte, et le
-/// seul bouton réel est celui de `PLANNED`. Il est passé par le slot `action`
-/// plutôt que décidé ici, pour deux raisons : les vues « Cette semaine » et
-/// « Historique » rendent la même ligne sans jamais devoir démarrer quoi que ce
-/// soit, et ce fichier reste ainsi utilisable depuis un Server Component.
-///
-/// ── Le lien étiré, et pourquoi pas un `<a>` autour de la carte
-///
-/// La carte contient déjà un lien `tel:` et parfois un bouton. Les imbriquer
+/// ⚠️ La carte contient déjà un lien `tel:` et parfois un bouton. Les imbriquer
 /// dans un lien produirait du HTML invalide et un piège au clavier. Le motif
 /// retenu est celui de la carte cliquable : **un** lien porté par le titre,
 /// étiré à toute la carte par un pseudo-élément (`after:absolute after:inset-0`),
@@ -74,17 +54,10 @@ function heureFin(intervention: InterventionTournee): string {
 /// traçabilité de la tournée. C'est la règle inverse de l'espace client, dont
 /// les deux onglets se partagent les statuts.
 ///
-/// ── La couleur marque CE QUI EST EN COURS, le reste est neutre
-///
-/// C'est la logique de T1, et elle a été mal portée en T-V2-01 : les quatre
-/// statuts y recevaient une teinte propre (menthe, jaune, menthe, rouge), donc
-/// une liste de six lignes était bariolée et rien n'y ressortait. La maquette
-/// réserve le vert plein à « EN COURS » et rend les autres gris - le technicien
-/// ouvre son écran pour savoir **où il en est**, pas pour recenser des états.
-/// `CANCELLED` garde sa teinte parce que c'est une anomalie à repérer.
-///
-/// Capitales et interlettrage : `TERMINÉE`, `EN COURS`, `PLANIFIÉE` dans la
-/// maquette. C'était en casse de phrase.
+/// ⚠️ **La couleur marque CE QUI EST EN COURS, le reste est neutre.** Donner
+/// une teinte propre aux quatre statuts rend une liste de six lignes bariolée
+/// où rien ne ressort : le technicien ouvre son écran pour savoir où il en est.
+/// `CANCELLED` garde la sienne parce que c'est une anomalie à repérer.
 const STATUTS: Record<
   string,
   { label: string; classe: string; point: string }

@@ -17,14 +17,10 @@ export const metadata: Metadata = {
 
 /// Politique de confidentialité - `US-RGPD`, écran **C13**, onglet 2.
 ///
-/// ── Elle remplace la page « Mes droits RGPD »
-///
 /// L'ancienne formulation de l'US prévoyait une quatrième page. L'alignement du
 /// 2026-08-08 en fait la section « Vos droits » de celle-ci, avec le lien direct
 /// vers la suppression de compte que `US-COMPTE-SUPPRIMER` §Cas nominal nomme
 /// comme second point d'entrée du droit à l'oubli.
-///
-/// ── Ce qu'elle déclare est vérifié, pas recopié
 ///
 /// PLAN S4 §4.2 liste « destinataires (Google Maps §6 pour **géocodage**) ».
 /// Cette ligne reste fausse *telle qu'écrite* : le géocodage passe par la BAN

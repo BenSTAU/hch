@@ -2,54 +2,34 @@ import "server-only";
 
 import { z } from "zod";
 
-/// Garde d'environnement — TASKS §1 §Variables d'environnement, cadrage amont
-/// V3 D5. Une variable applicative manquante ne se voit qu'à l'usage : la clé
-/// de géocodage au tunnel de réservation, le mot de passe d'application email à
-/// l'inscription. Branchée sur `/api/health`, elle rend l'absence bruyante et
-/// immédiate — healthcheck rouge, rollback inline, pile debout, job rouge.
+/// Garde d'environnement. Une variable applicative manquante ne se voit qu'à
+/// l'usage ; branchée sur `/api/health`, elle rend l'absence immédiate :
+/// healthcheck rouge, rollback inline, pile debout, job rouge.
 ///
-/// ⚠️ Rien ici ne doit être évalué au CHARGEMENT du module. Le stage builder du
-/// Dockerfile n'a aucune de ces variables, et il importe ce fichier par
-/// transitivité dès qu'un composant serveur le touche. C'est le piège exact
-/// payé sur `prisma.config.ts` (write-back PR #3 note 2) : le helper `env()` de
-/// `prisma/config` levait au chargement, donc aussi pour `prisma generate`.
-/// D'où une fonction, et non un `export const env = schema.parse(...)`.
+/// ⚠️ **Rien ici ne doit être évalué au CHARGEMENT du module.** Le stage
+/// builder du Dockerfile n'a aucune de ces variables, et il importe ce fichier
+/// par transitivité dès qu'un composant serveur le touche. D'où une fonction,
+/// et non un `export const env = schema.parse(...)`. Même piège que le helper
+/// `env()` de `prisma/config`, qui levait pour `prisma generate`.
 
 const baseSchema = z.object({
   DATABASE_URL: z.string().min(1),
   SESSION_SECRET: z.string().min(1),
-  /// Clé Maps JS de la carte de la tournée technicien (ADR-015 v3, écran T1).
+  /// Clé Maps JS de la carte de la tournée technicien, écran T1.
   ///
-  /// ── Pourquoi PAS `NEXT_PUBLIC_`
+  /// ⚠️ **Surtout pas `NEXT_PUBLIC_`.** Ce préfixe est un contrat dans Next :
+  /// il annonce une variable inlinée au BUILD, et le stage builder du
+  /// Dockerfile n'a aucune variable d'environnement - la clé serait gelée à
+  /// `undefined` dans l'image de production. Elle est lue au runtime serveur et
+  /// descendue en prop par le RSC.
   ///
-  /// La DoD de T-V2-01 l'écrivait ainsi ; c'est faux, et Benjamin l'a corrigé le
-  /// 2026-08-12. `NEXT_PUBLIC_` est un **contrat** dans Next : il annonce une
-  /// variable inlinée au build et lisible depuis un composant client. Or le
-  /// stage builder du Dockerfile n'a aucune variable d'environnement — la clé y
-  /// serait gelée à `undefined` dans l'image de production. Elle est donc lue au
-  /// **runtime serveur** et descendue en prop par le RSC. Garder le préfixe
-  /// ferait écrire un jour `process.env.NEXT_PUBLIC_…` dans un composant client,
-  /// qui obtiendrait `undefined` sans le moindre avertissement.
+  /// Facultative : la rendre obligatoire ferait répondre 503 à `/api/health`
+  /// sur les deux piles tant que le projet Google n'est pas en production.
+  /// Absente, la liste de la tournée sert de repli.
   ///
-  /// Préfixe `HCH_` comme les autres variables applicatives (`HCH_BAN_BASE_URL`,
-  /// `HCH_MAIL_TRANSPORT`).
-  ///
-  /// ── Pourquoi facultative
-  ///
-  /// Même idiome que `NEXT_PUBLIC_APP_URL` sur la branche `noop` ci-dessous :
-  /// « exigée selon le mode » est déjà le vocabulaire de ce fichier, pas une
-  /// exception au principe d'échec bruyant. La rendre obligatoire ferait
-  /// répondre 503 à `/api/health` sur les deux piles tant que le projet Google
-  /// n'est pas en production — un déploiement bloqué pour une carte sur un seul
-  /// écran. Absente, la liste de la tournée sert de repli, par le même chemin de
-  /// code que lorsque la carte ne charge pas.
-  ///
-  /// ⚠️ **Risque résiduel assumé** : une pile renseignée et l'autre non perd sa
-  /// carte en silence. Le contrôle est de regarder l'écran après déploiement.
-  ///
-  /// Elle finit dans le HTML servi, donc publique par construction sur un dépôt
-  /// qui bascule public — sa seule protection réelle est la restriction par
-  /// referer côté console Google (ADR-015 v2 §D2).
+  /// ⚠️ Elle finit dans le HTML servi, donc publique par construction : sa
+  /// seule protection est la restriction par referer côté console Google
+  /// (ADR-015 v2 §D2).
   HCH_MAPS_API_KEY: z.string().min(1).optional(),
 });
 
@@ -104,14 +84,13 @@ function nommerFautives(erreur: z.ZodError): string[] {
   return erreur.issues.map((issue) => issue.path.join(".") || "(racine)");
 }
 
-/// Valide l'environnement du serveur et le renvoie typé. **Lève** si une
-/// variable manque, en nommant toutes les fautives d'un coup : un message qui
-/// n'en nomme qu'une transforme un diagnostic en boucle corriger-redéployer, et
-/// sur une pile distante chaque tour coûte un déploiement complet.
+/// Valide l'environnement du serveur et le renvoie typé. **Lève** en nommant
+/// toutes les variables fautives d'un coup : n'en nommer qu'une transforme le
+/// diagnostic en boucle corriger-redéployer, où chaque tour coûte un
+/// déploiement complet sur une pile distante.
 ///
-/// Non mémoïsé : le coût est de l'ordre de la microseconde, et un cache
-/// demanderait une trappe de réinitialisation réservée aux tests — un état
-/// global de plus pour une économie invisible.
+/// Non mémoïsé : un cache demanderait une trappe de réinitialisation pour les
+/// tests, soit un état global de plus pour une économie invisible.
 export function serverEnv(): ServerEnv {
   const brut = {
     DATABASE_URL: lire("DATABASE_URL"),

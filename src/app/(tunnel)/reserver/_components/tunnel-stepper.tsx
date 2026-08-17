@@ -7,8 +7,6 @@ import { CONTENEUR, ETAPES, ETIQUETTES, type Etape } from "./etapes";
 
 /// Barre d'étapes du tunnel - en-tête des quatre écrans C2 à C5.
 ///
-/// ── Géométrie portée (`c2:112-142`, reprise par `c3:108-140` et `c5:115-160`)
-///
 ///   · barre `surface-container-low` sur toute la largeur, `py-4`, gouttières
 ///     20 / 64 px, contenu centré dans `max-w-7xl` ;
 ///   · pastilles de **32 px** (`size-8`) rondes, `gap-2` avec leur libellé,
@@ -16,8 +14,6 @@ import { CONTENEUR, ETAPES, ETIQUETTES, type Etape } from "./etapes";
 ///   · pas courant en `border-b-2 border-primary pb-2`, libellés en `label-md`
 ///     (14 px, semi-bold, interlettrage +0,05em) ;
 ///   · sous `lg`, la maquette replie tout en « Forfait (1/4) » (`c2:138-141`).
-///
-/// ── Deux écarts assumés
 ///
 ///  1. **`sticky` et non `fixed`.** Même rendu, mais `fixed` obligerait à
 ///     compenser la hauteur par un `pt-24` en dur (`c2:110`) qui devient faux

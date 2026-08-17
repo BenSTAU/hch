@@ -29,8 +29,6 @@ import { ForfaitCard } from "./forfait-card";
 /// async Server Components → E2E uniquement). Même découpe que
 /// `connexion-view.tsx`.
 ///
-/// ── Géométrie portée de C1
-///
 /// Les cinq sections de la maquette, dans l'ordre, avec leurs mesures :
 /// gouttières de page **20 px / 64 px**, sections à **`py-20`** (hero
 /// `py-12 md:py-20`), conteneurs `max-w-[1920px]`, gouttière de bento **16 px**,
@@ -39,7 +37,6 @@ import { ForfaitCard } from "./forfait-card";
 /// `tracking-[-0.04em]`, titres de section 32 px `tracking-[-0.03em]`, titres
 /// de dalle 20 px, corps 16-18 px.
 ///
-/// ── Six divergences de contenu corrigées, dont aucune n'était listée en
 /// [[maquettage]] §Notes portage. Elles sont signalées au write-back.
 ///
 ///  1. `code.html:295-296` — étape 3 « Paiement sécurisé […] réglez **en ligne**

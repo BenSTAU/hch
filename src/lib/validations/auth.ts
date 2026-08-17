@@ -12,10 +12,9 @@ export const LOGIN_REFUSED_MESSAGE =
 /// ne date aucune tentative. Une échéance à la seconde, elle, dirait quand le
 /// 5e échec a eu lieu, donc l'activité d'un tiers sur cette adresse.
 ///
-/// Le chiffre est là parce que le blocage est **ferme** depuis l'amendement du
-/// 2026-08-09 (SPEC §298-309) : sous l'ancienne fenêtre glissante, aucune durée
-/// n'était vraie, le verrou pouvant être tenu indéfiniment. Écart de forme
-/// assumé avec la lettre de la SPEC, qui garde « quelques minutes ».
+/// Le chiffre n'est annonçable que parce que le blocage est **ferme** : sous
+/// une fenêtre glissante, aucune durée ne serait vraie, le verrou pouvant être
+/// tenu indéfiniment. Écart assumé avec la SPEC, qui garde « quelques minutes ».
 ///
 /// Ce message est distinct du refus générique, et ce n'est pas une fuite : le
 /// compteur vit dans `rate_limits`, table sans clé étrangère qui compte pour
@@ -58,9 +57,8 @@ export const SIGNUP_ACKNOWLEDGED_MESSAGE =
   "Si un compte existe pour cet email, un email d'activation vient d'être envoyé";
 
 // Il n'existe **aucun** message d'échec d'envoi côté utilisateur, et c'est une
-// décision : l'arbitrage du 2026-08-08 (constat B2 de l'agent testeur T-V3-02)
-// donne la Constitution §4.2 gagnante contre l'échec bruyant côté utilisateur
-// d'ADR-017. Un tel message ne pourrait naître que sur un chemin ayant TENTÉ un
+// décision : la Constitution §4.2 l'emporte sur l'échec bruyant côté
+// utilisateur d'ADR-017. Un tel message ne pourrait naître que sur un chemin ayant TENTÉ un
 // envoi, donc jamais sur « compte déjà activé » - il classerait les adresses.
 // Le bruit d'ADR-017 vit désormais dans les logs (`src/lib/email/dispatch.ts`),
 // et le recours côté client est le renvoi d'activation.
@@ -84,9 +82,9 @@ function tientDansBcrypt(valeur: string): boolean {
   return new TextEncoder().encode(valeur).length <= PASSWORD_MAX_BYTES;
 }
 
-/// Largeurs alignées sur les colonnes (`prisma/schema.prisma:52-54`). Sans
-/// bornes ici, le refus viendrait de Postgres - donc après le hachage bcrypt et
-/// pendant l'insertion, en 500 au lieu d'un message de formulaire.
+/// Largeurs alignées sur les colonnes de `prisma/schema.prisma`. Sans bornes
+/// ici, le refus viendrait de Postgres, donc après le hachage bcrypt et pendant
+/// l'insertion : un 500 au lieu d'un message de formulaire.
 /// Passe un numéro français en E.164, seule forme que le CHECK de
 /// `users.phone` accepte. `06 12 34 56 78` et `+33 6 12 34 56 78` désignent le
 /// même abonné ; les refuser sur la forme serait un obstacle sans objet.

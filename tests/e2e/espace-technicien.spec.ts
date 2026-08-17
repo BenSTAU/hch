@@ -27,16 +27,16 @@ import {
 ///
 ///   · **le 403 sur l'espace client**, rendu par `forbidden()` au bout de la
 ///     chaine reelle - cookie, DAL, garde de page ;
-///   · **les deux routes qui restent OUVERTES** a un technicien, `/mon-compte`
-///     et `/reserver`, qui sont la moitie de la decision et la seule que rien
-///     d'autre ne protege d'une fermeture par inadvertance ;
+///   · **les routes qui restent OUVERTES** a un technicien,
+///     `/mon-compte/supprimer` et `/reserver`, que rien d'autre ne protege
+///     d'une fermeture par inadvertance ;
 ///   · **la navigation d'un technicien**, qui ne doit proposer ni l'espace
 ///     client ni la reservation ;
 ///   · **les trois onglets** rendant chacun leur perimetre sur une vraie base,
 ///     avec les bornes de jour d'un `timestamptz` reel.
 ///
 /// ⚠️ **Techniciens dedies, semes par ce fichier, sans affectation de zone** -
-/// meme mecanique que `tournee-du-jour.spec.ts` (cadrage du plancher V2, D7).
+/// meme mecanique que `tournee-du-jour.spec.ts`.
 /// La derivation des creneaux ne lit que les techniciens affectes a la zone du
 /// client : ces comptes sont structurellement injoignables par le tunnel, donc
 /// `gp-02` ne peut pas deposer une reservation dans leur tournee.
@@ -160,7 +160,7 @@ function lignes(page: Page, region: string) {
 
 test.describe("le cloisonnement des espaces", () => {
   test("un technicien recoit 403 sur l'espace client", async ({ page }) => {
-    // 🔴 Le coeur de la decision. Constitution §3.1, clarification datee du
+    // Constitution §3.1,
     // 2026-08-12 : « exclusifs » vaut aussi pour les espaces, pas seulement
     // pour les prerogatives. Les deux pages n'avaient jusque-la AUCUNE garde de
     // role, et un commentaire justifiait l'inverse.
@@ -215,14 +215,11 @@ test.describe("le cloisonnement des espaces", () => {
   test("`/mon-compte/supprimer` reste ouvert a un administrateur aussi", async ({
     page,
   }) => {
-    // ⚠️ **Ajout de l'agent testeur.** La DoD ecrit « `/mon-compte/*` reste
-    // accessible a TOUS les roles, verifie par test », et le tableau des
-    // surfaces de Constitution §3.1 le pose comme route transverse. Le scenario
-    // voisin ne l'eprouvait que pour le technicien : l'administrateur est
-    // l'autre role que la clarification du 2026-08-12 sort de l'espace client,
-    // et le droit a l'oubli est un droit de toute personne fichee, pas d'un
-    // role. Une garde ajoutee ici par symetrie avec `/mes-interventions` serait
-    // une faute, et rien ne la signalerait.
+    // ⚠️ Le droit a l'oubli est un droit de toute personne fichee, pas d'un
+    // role : cette route reste ouverte quand `/mon-compte/cycles` est fermee
+    // (Constitution §3.1). Une garde ajoutee ici par
+    // symetrie avec `/mes-interventions` serait une faute que rien d'autre ne
+    // signalerait.
     const admin = await creerCompte(db, "admin-compte", ["ROLE_ADMIN"]);
     utilisateursCreees.push(admin.id);
     await seConnecterCompte(page, admin.email);
@@ -235,25 +232,11 @@ test.describe("le cloisonnement des espaces", () => {
   test("aucun lien de `/mon-compte/supprimer` ne mene a un refus", async ({
     page,
   }) => {
-    // 🔴 **ROUGE a l'ecriture - constat n°1 de l'agent testeur, 2026-08-12.**
-    //
-    // La route est OUVERTE au technicien, et c'est la moitie de la decision -
-    // le test voisin la fige. Mais la page rend inconditionnellement un bouton
-    // « Retour a mes interventions » vers `CHEMIN_ESPACE_CLIENT`
-    // (`src/app/(app)/mon-compte/supprimer/page.tsx:42`), qui repond desormais
-    // 403 a ce meme technicien. Le seul chemin de sortie que la page propose
-    // mene donc a un refus.
-    //
-    // Ce n'est pas une remarque de style : c'est la regle que le produit
-    // s'applique deja ailleurs, mot pour mot. `user-menu.tsx` a ete rebranche
-    // par cette tache exactement pour ce motif - « un lien qui mene a un refus
-    // est pire qu'un lien absent » - et la barre laterale de l'espace client
-    // n'a qu'une entree au nom de la lecon `T-T2-16`, aucun lien mort dans une
-    // navigation permanente. La garde de role a ferme l'espace ; les liens qui
-    // y menaient depuis les routes restees OUVERTES n'ont pas suivi.
-    //
-    // ⚠️ Le rendre vert n'est pas l'affaire de l'agent testeur : le correctif
-    // vit dans du code de production.
+    // ⚠️ **Une route ouverte a tous les roles ne doit proposer aucune sortie
+    // vers un espace ferme.** La page rendait « Retour a mes interventions »
+    // en dur vers l'espace client, auquel `requireEspaceClient()` repond 403 a
+    // un technicien : le seul chemin de sortie menait a un refus. Un lien qui
+    // mene a un refus est pire qu'un lien absent.
     await seConnecterTechnicien(page, tech.email);
     await page.goto("/mon-compte/supprimer");
 
@@ -415,7 +398,7 @@ test.describe("les trois vues rendent chacune leur perimetre", () => {
 });
 
 test.describe("la navigation de l'espace en dessous de 768 px", () => {
-  // ⚠️ **Ajout de l'agent testeur, 2026-08-12.** Les deux surfaces de navigation
+  // ⚠️ Les deux surfaces de navigation
   // de cet espace sont mutuellement exclusives par media query - la barre
   // laterale est `hidden md:block`, les onglets sont `md:hidden` - et tous les
   // scenarios ci-dessus, comme les deux scans axe, tournent au viewport par
@@ -482,7 +465,7 @@ test.describe("la navigation de l'espace en dessous de 768 px", () => {
 });
 
 test.describe("la carte, quand elle est reellement montee", () => {
-  // ⚠️ **Ajout de l'agent testeur, 2026-08-12, et il est CONDITIONNEL.**
+  // ⚠️
   //
   // `HCH_MAPS_API_KEY` est facultative et n'est posee ni dans
   // `docker-compose.test.yml` ni dans le workflow : en CI la carte n'est pas

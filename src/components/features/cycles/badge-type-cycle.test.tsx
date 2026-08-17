@@ -1,4 +1,4 @@
-// Étiquette de type de vélo - une variante shadcn par valeur d'ENUM (DoD L4).
+// Étiquette de type de vélo - une variante shadcn par valeur d'ENUM.
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 

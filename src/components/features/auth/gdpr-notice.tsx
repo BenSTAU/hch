@@ -13,9 +13,7 @@ import { CHEMIN_POLITIQUE_CONFIDENTIALITE } from "@/components/layouts/site-navi
 /// Cette case n'est pas portée : elle suppose une page de conditions générales
 /// hors périmètre v1, et une case de consentement obligatoire est une exigence
 /// fonctionnelle qui ne s'invente pas au portage.
-///
-/// Extrait de `signup-form.tsx` au 2ᵉ usage, comme le veut la règle des deux
-/// usages — pas avant.
+
 export function GdprNotice({ finalite }: { finalite: string }) {
   return (
     <p className="text-xs text-muted-foreground">

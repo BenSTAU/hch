@@ -24,12 +24,10 @@ const queryRaw = vi.fn();
 const commits: string[] = [];
 const rollbacks: string[] = [];
 
-/// ⚠️ **Modele de verrouillage ajoute par l'agent testeur, 2026-08-11.**
-///
-/// Le faux `$transaction` d'origine executait son rappel immediatement : deux
-/// appels concurrents s'y seraient croises sans que rien ne s'y oppose, et
-/// aucun test ne pouvait donc dire si le quota tient sous concurrence. Ce qui
-/// est modele ici est le regime reel de PostgreSQL :
+/// ⚠️ **Le faux `$transaction` ne doit PAS executer son rappel immediatement**,
+/// sans quoi deux appels concurrents se croisent sans que rien ne s'y oppose et
+/// aucun test ne peut dire si le quota tient sous concurrence. Ce qui est
+/// modele ici est le regime reel de PostgreSQL :
 ///
 ///   · **READ COMMITTED par defaut** - un `count` ne voit pas les insertions
 ///     non commitees des autres transactions. Deux transactions qui comptent
@@ -228,8 +226,6 @@ describe("attacherPhoto - quota", () => {
   });
 
   it("refuse le second de deux depots concurrents sur la cinquieme place", async () => {
-    // ⚠️ Ajout de l'agent testeur, 2026-08-11. RED au moment de l'ecriture.
-    //
     // C'est la propriete que le module s'attribue en toutes lettres : « le
     // quota des cinq photos par intervention se verifie **dans la
     // transaction** : compte avant, deux depots simultanes le franchiraient

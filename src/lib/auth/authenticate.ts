@@ -21,8 +21,7 @@ const REFUSED: AuthenticationResult = { ok: false };
 /// Hash de leurre, cost 10, d'une valeur qui n'est le mot de passe de personne.
 /// Il n'est pas là pour être trouvé mais pour être **comparé** : sans lui, les
 /// sorties anticipées répondent en 0,03 ms là où une vraie vérification coûte
-/// 21 ms, et l'existence d'un compte se lit au chronomètre — 1 300× à 16 000×
-/// d'écart mesurés par l'agent testeur sur T-J0-04.
+/// 21 ms, et l'existence d'un compte se lit au chronomètre.
 const DECOY_HASH =
   "$2b$10$nDF1izA/BI0SXMpBi0xXMuRqCk.NQcMvaKhnF4RuRJaE.yt/P27oC";
 

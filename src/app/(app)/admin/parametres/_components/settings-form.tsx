@@ -80,7 +80,7 @@ export function SettingsForm({ settings }: { settings: SettingField[] }) {
   // Le focus rejoint le message de refus, comme le fait déjà le formulaire de
   // connexion. Sans ça, un utilisateur au clavier soumet, ne voit rien bouger
   // sous son curseur, et doit remonter tout le formulaire pour trouver la
-  // cause. Asymétrie relevée par l'agent testeur.
+  // cause.
   useEffect(() => {
     if (errorMessage) alertRef.current?.focus();
   }, [errorMessage]);

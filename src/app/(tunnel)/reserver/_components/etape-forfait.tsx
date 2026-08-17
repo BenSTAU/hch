@@ -10,8 +10,6 @@ import { cn } from "@/lib/utils";
 
 /// Étape 1 du tunnel - écran **C2** (`c2-tunnel-forfait/code.html`).
 ///
-/// ── Géométrie portée
-///
 ///   · grille `md:grid-cols-3`, gouttière de bento **16 px** (`c2:151`) ;
 ///   · dalle `rounded-[24px]`, `p-6` (`padding-card` 24 px), colonne pleine
 ///     hauteur, filet transparent au repos (`c2:153`) ;
@@ -21,8 +19,6 @@ import { cn } from "@/lib/utils";
 ///   · état retenu : fond `primary-fixed` et `ring-4 ring-primary` (`c2:181`) ;
 ///   · pied de dalle `mt-auto w-full py-3 rounded-xl` (`c2:176`).
 ///
-/// ── Un choix unique, donc un `radiogroup`
-///
 /// La maquette dessine des `<button>` dont l'un porte « Sélectionné » et pousse
 /// la validation dans la barre basse. C'est un choix exclusif parmi n : le
 /// motif ARIA correspondant est le groupe de boutons radio, qui donne la
@@ -30,8 +26,6 @@ import { cn } from "@/lib/utils";
 /// bouton radio lui-même est masqué visuellement, la dalle entière lui sert
 /// d'étiquette, et l'état retenu se peint depuis `aria-checked` - un attribut
 /// garanti par ARIA, là où un `data-*` dépend de la version de Radix.
-///
-/// ── Trois divergences de contenu
 ///
 ///  1. **Les puces de prestation sont inventées** (`c2:162-175` : « 20 points
 ///     de contrôle », « 2 pneus urbains renforcés »). Aucune source. Le

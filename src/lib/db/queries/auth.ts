@@ -35,19 +35,11 @@ export type SignupAccountState = {
   id: string;
   firstname: string;
   isActive: boolean;
-  /// L'email a déjà été vérifié — `users.email_verified_at` non NULL.
-  ///
-  /// C'est le discriminant du renvoi, et `isActive` ne peut pas le porter : le
-  /// dictionnaire a consolidé `is_activated` DANS `is_active` en v2
-  /// (mcd-dictionnaire.md:89 et :484), si bien qu'un compte désactivé par un
-  /// administrateur et un compte jamais activé sont le même état sur cette
-  /// colonne. Un renvoi qui s'y fierait réactiverait un compte que l'admin a
-  /// fermé.
-  ///
-  /// L'historique de `verification_tokens` ne peut pas non plus servir : le
-  /// dictionnaire écrit que la table « ne s'applique pas aux comptes 100% OAuth
-  /// Google » (:182), et les trois comptes du seed n'ont aucun jeton. D'où la
-  /// colonne dédiée, arbitrée le 2026-08-08 (agent testeur T-V3-02, B1).
+  /// L'email a déjà été vérifié, `users.email_verified_at` non NULL. C'est le
+  /// discriminant du renvoi, et il lui faut une colonne DÉDIÉE : `isActive`
+  /// confond compte fermé par un administrateur et compte jamais activé, que
+  /// [[mcd-dictionnaire]] a consolidés en v2, et l'historique de
+  /// `verification_tokens` ne couvre pas les comptes 100 % OAuth Google.
   hasCompletedEmailVerification: boolean;
 };
 
@@ -97,7 +89,7 @@ export async function findAccountForSignup(
 ///
 /// Ce module laisse remonter, et n'en décide rien : quelle réponse produire pour
 /// le perdant est une décision de parcours, pas de persistance. Elle vit dans
-/// `src/lib/actions/auth/signup.ts` (agent testeur T-V3-02, B5).
+/// `src/lib/actions/auth/signup.ts`.
 export async function createLocalAccount(input: {
   email: string;
   firstname: string;
