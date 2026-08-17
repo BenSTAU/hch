@@ -27,9 +27,9 @@ import {
 ///
 ///   · **le 403 sur l'espace client**, rendu par `forbidden()` au bout de la
 ///     chaine reelle - cookie, DAL, garde de page ;
-///   · **les deux routes qui restent OUVERTES** a un technicien, `/mon-compte`
-///     et `/reserver`, qui sont la moitie de la decision et la seule que rien
-///     d'autre ne protege d'une fermeture par inadvertance ;
+///   · **les routes qui restent OUVERTES** a un technicien,
+///     `/mon-compte/supprimer` et `/reserver`, que rien d'autre ne protege
+///     d'une fermeture par inadvertance ;
 ///   · **la navigation d'un technicien**, qui ne doit proposer ni l'espace
 ///     client ni la reservation ;
 ///   · **les trois onglets** rendant chacun leur perimetre sur une vraie base,
@@ -215,14 +215,11 @@ test.describe("le cloisonnement des espaces", () => {
   test("`/mon-compte/supprimer` reste ouvert a un administrateur aussi", async ({
     page,
   }) => {
-    // ⚠️ **Ajout de l'agent testeur.** La DoD ecrit « `/mon-compte/*` reste
-    // accessible a TOUS les roles, verifie par test », et le tableau des
-    // surfaces de Constitution §3.1 le pose comme route transverse. Le scenario
-    // voisin ne l'eprouvait que pour le technicien : l'administrateur est
-    // l'autre role que la clarification du 2026-08-12 sort de l'espace client,
-    // et le droit a l'oubli est un droit de toute personne fichee, pas d'un
-    // role. Une garde ajoutee ici par symetrie avec `/mes-interventions` serait
-    // une faute, et rien ne la signalerait.
+    // ⚠️ Le droit a l'oubli est un droit de toute personne fichee, pas d'un
+    // role : cette route reste ouverte quand `/mon-compte/cycles` est fermee
+    // (Constitution §3.1, amendee le 2026-08-14). Une garde ajoutee ici par
+    // symetrie avec `/mes-interventions` serait une faute que rien d'autre ne
+    // signalerait.
     const admin = await creerCompte(db, "admin-compte", ["ROLE_ADMIN"]);
     utilisateursCreees.push(admin.id);
     await seConnecterCompte(page, admin.email);

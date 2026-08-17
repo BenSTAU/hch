@@ -1,12 +1,7 @@
-// Limites de bcrypt — ajoutées par l'agent testeur.
-//
-// `password.test.ts` couvre le contrat nominal. Ce fichier documente les
-// propriétés de bcrypt qui ont des conséquences produit et qu'aucun test ne
-// nommait : la troncature à 72 OCTETS, et le fait que cette limite se compte
-// en octets et non en caractères.
-//
-// Ces tests passent : ils ne dénoncent pas un bug de `password.ts`, ils fixent
-// un comportement que le schéma Zod d'inscription devra prendre en compte.
+// Limites de bcrypt qui ont des conséquences produit : la troncature à
+// 72 OCTETS, et le fait que cette limite se compte en octets et non en
+// caractères. Ils fixent un comportement de la bibliothèque, pas un contrat de
+// `password.ts` - c'est le schéma Zod d'inscription qui doit en tenir compte.
 import { describe, expect, it } from "vitest";
 
 import { hashPassword, verifyPassword } from "./password";

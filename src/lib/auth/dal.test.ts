@@ -88,23 +88,11 @@ describe("getCurrentUser", () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// `getOptionalUser` — ajoutée en T-V3-03, livrée SANS TEST. Ajouts de l'agent
-// testeur.
-//
-// Elle n'est pas un doublon commode de `getCurrentUser` : c'est la seule
-// lecture de session montée sur une surface **publique**
-// (`src/app/(marketing)/page.tsx:36`, la destination post-connexion provisoire
-// du client), et c'est ce qui alimente `AppHeader`. Trois propriétés portent
-// donc plus lourd ici que sur son homologue redirigeant :
-//
-//   · elle NE redirige JAMAIS — un `redirect("/connexion")` glissé ici fermerait
-//     l'accueil aux visiteurs anonymes, page que la Constitution §5.1 veut
-//     ouverte à tous ;
-//   · elle applique la MÊME révocation que `getCurrentUser` — sans quoi un
-//     compte désactivé garderait son en-tête nominatif sur une page publique ;
-//   · elle ferme le MÊME DTO — c'est la valeur qui descend jusqu'au rendu.
-// ───────────────────────────────────────────────────────────────────────────
+// `getOptionalUser` est la seule lecture de session montée sur une surface
+// PUBLIQUE, et c'est ce qui alimente `AppHeader`. Trois propriétés y portent
+// plus lourd que sur son homologue redirigeant : elle ne redirige jamais
+// (Constitution §5.1 ouvre l'accueil à tous), elle applique la même révocation
+// que `getCurrentUser`, et elle ferme le même DTO.
 describe("getOptionalUser", () => {
   const EN_BASE = {
     id: "user-1",

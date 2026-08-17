@@ -1,19 +1,13 @@
 // @vitest-environment node
 //
-// Même contrainte que `session.test.ts`, et vérifiée ici avant d'être reprise :
-// sous jsdom, `jose` lève `TypeError: payload must be an instance of
-// Uint8Array` dans `FlattenedSign` (jose@6.2.8/webapi/jws/flattened/sign.js:9).
-// Le `TextEncoder` global de jsdom appartient à un autre realm que le
-// `Uint8Array` global de Node, l'`instanceof` de jose échoue. Rien du code
-// applicatif n'est en cause — `session.ts` porte `import "server-only"` en
-// ligne 1 et ne s'exécute jamais dans un navigateur.
+// Tests adversariaux du jeton de session : forger, rejouer, tronquer, élever
+// ses privilèges en réécrivant la charge utile, faire accepter un jeton non
+// signé. `session.test.ts` couvre le nominal et trois refus évidents.
 //
-// Tests adversariaux du jeton de session — ajoutés par l'agent testeur.
-//
-// `session.test.ts` couvre le cas nominal et trois refus évidents. Ce fichier
-// couvre ce qu'un attaquant essaie réellement : forger, rejouer, tronquer,
-// élever ses privilèges en réécrivant la charge utile, et faire accepter un
-// jeton non signé.
+// ⚠️ **Environnement node imposé.** Sous jsdom, `jose` lève `TypeError:
+// payload must be an instance of Uint8Array` : le `TextEncoder` global de
+// jsdom appartient à un autre realm que le `Uint8Array` de Node, et
+// l'`instanceof` échoue. Rien du code applicatif n'est en cause.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SignJWT, UnsecuredJWT } from "jose";
 
@@ -111,19 +105,10 @@ describe("readSessionToken — jetons forgés et rejoués", () => {
   });
 
   it("refuse HS384 et HS512 — l'algorithme est épinglé sur HS256", async () => {
-    // INVERSÉ après durcissement. Ce test constatait l'inverse : jusqu'au
-    // correctif, `jwtVerify(token, secret())` était appelé sans option
-    // `algorithms`, et jose acceptait alors tout algorithme compatible avec la
-    // clé — les trois HMAC — alors que `createSession` n'émet que du HS256.
-    // La surface acceptée était plus large que la surface émise.
-    //
-    // `src/lib/auth/session.ts:67-69` pose désormais
-    // `{ algorithms: ["HS256"] }`. Les deux surfaces coïncident.
-    //
-    // Ce n'a jamais été l'attaque de confusion d'algorithme classique
-    // (RS256 → HS256), qui suppose une clé asymétrique — il n'y en a pas ici,
-    // et il faut de toute façon le secret pour signer. C'était un durcissement
-    // OWASP (« always pin the algorithm »), pas une faille exploitable.
+    // Sans l'option `algorithms`, jose accepte tout algorithme compatible avec
+    // la clé - les trois HMAC - quand `createSession` n'émet que du HS256 : la
+    // surface acceptée serait plus large que la surface émise. Durcissement
+    // OWASP « always pin the algorithm », cf. `src/lib/auth/session.ts`.
     for (const alg of ["HS384", "HS512"] as const) {
       const token = await new SignJWT({ roles: ["ROLE_ADMIN"] })
         .setProtectedHeader({ alg })
@@ -193,17 +178,10 @@ describe("readSessionToken — charge utile mal formée", () => {
   });
 
   it("refuse un `sub` vide", async () => {
-    // INVERSÉ après durcissement. Ce test constatait l'inverse : le garde
-    // s'écrivait `typeof sub !== "string"`, et la chaîne vide est une chaîne.
-    // Un jeton de `sub: ""` passait donc la vérification et remontait à
-    // `getCurrentUser`, qui appelait `findUserById("")` sur une colonne
-    // `@db.Uuid` (prisma/schema.prisma:39) : Postgres rejette la valeur
-    // (22P02) et l'erreur partait en 500 là où une redirection est attendue.
-    //
-    // `src/lib/auth/session.ts:76` teste désormais `sub.length === 0`.
-    // Ce ne fut jamais exploitable — il faut la clé de signature pour émettre
-    // un tel jeton, et `createSession` n'est appelée qu'avec un `id` venu de
-    // la base. C'était de la robustesse, refermée au bon endroit.
+    // ⚠️ La chaîne vide est une chaîne : un garde en `typeof sub !== "string"`
+    // laisserait passer `sub: ""` jusqu'à `findUserById("")` sur une colonne
+    // `@db.Uuid`, que Postgres rejette en 22P02 - une 500 là où une
+    // redirection est attendue. D'où le test de longueur dans `session.ts`.
     const token = await forge({ sub: "", roles: [] }, { exp: now() + 60 });
     store.get.mockReturnValue({ value: token });
 

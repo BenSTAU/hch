@@ -1,19 +1,9 @@
 // @vitest-environment node
 //
-// Destination post-connexion selon le rôle — DoD T-V3-03, reportée de T-V3-02.
-//
-// Avant cette tâche, `AFTER_LOGIN` valait `/admin/parametres` pour tout le
-// monde : un client fraîchement activé se connectait, puis atterrissait sur le
-// 403 de `requireAdmin()`. Le parcours nominal de V3 finissait sur un refus.
-//
-// ⚠️ **Trois oracles déplacés par T-V3-10**, qui porte la DoD finale côté
-// client : `/mes-interventions/a-venir` existe désormais, et le client y va.
-//
-// ⚠️ **Et l'oracle du TECHNICIEN bascule à son tour avec T-V2-01.** Il
-// affirmait `AFTER_LOGIN_DEFAULT`, l'accueil public, faute d'écran à atteindre —
-// T-V3-03 refusait de poser une coquille vide (leçon T-T2-16 d'Argo).
-// `/interventions/du-jour` existe désormais, et c'est ce que
-// [[module-1-utilisateurs]] §250 nomme depuis le début.
+// Destination post-connexion selon le rôle. Chaque rôle atterrit sur SON
+// espace : un client sur `/mes-interventions/a-venir`, un technicien sur
+// `/interventions/du-jour` ([[module-1-utilisateurs]] §250). Une destination
+// unique renverrait le client vers le 403 de `requireAdmin()`.
 import { describe, expect, it } from "vitest";
 
 const {

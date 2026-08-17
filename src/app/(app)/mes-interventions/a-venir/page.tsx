@@ -19,28 +19,15 @@ export const metadata: Metadata = {
 };
 
 /// Onglet « À venir » - `US-INTERVENTIONS-LISTER-CLIENT-A-VENIR`, écran **C8**.
+/// Destination post-connexion du client ([[module-1-utilisateurs]] §287).
 ///
-/// Destination post-connexion du client ([[module-1-utilisateurs]] §287), et
-/// c'est la DoD finale de la destination laissée provisoire par T-V3-03.
-///
-/// ⚠️ **`requireEspaceClient()` depuis T-V2-05 : un technicien et un
-/// administrateur reçoivent 403.**
-///
-/// Cette page portait jusque-là un commentaire affirmant l'inverse, au motif que
-/// « le cloisonnement de Constitution §3.1 porte sur les actes de gestion, pas
-/// sur le fait d'être client ». C'était la lecture **étroite** de l'axiome,
-/// celle de son paragraphe *Conséquence technique*. Sa **première phrase** pose
-/// « trois rôles exclusifs … avec des parcours dédiés », et c'est elle qui fait
-/// foi depuis la clarification datée du 2026-08-12 (Constitution §3.1, tableau
-/// des surfaces), tranchée par Benjamin : « un technicien n'est pas un client ».
-///
-/// Le cloisonnement porte sur les **espaces de travail** : `/mon-compte/*` et
-/// `/reserver` restent ouverts à tous les rôles, et deux tests le figent.
+/// ⚠️ **`requireEspaceClient()` : un technicien et un administrateur reçoivent
+/// 403.** Constitution §3.1 pose trois rôles exclusifs avec des parcours
+/// dédiés, amendée le 2026-08-14 en granularité par route.
 ///
 /// La garde vit dans la page et non dans `layout.tsx`, qui est partagé : le
 /// Partial Rendering ne rejoue pas un layout en navigation client (CLAUDE.md
-/// §Authentication). `src/proxy.ts` ne décide d'aucun rôle non plus - il
-/// redirige sur l'absence de cookie, rien de plus.
+/// §Authentication). `src/proxy.ts` ne décide d'aucun rôle non plus.
 export default async function InterventionsAVenirPage() {
   const user = await requireEspaceClient();
 

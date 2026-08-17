@@ -1,20 +1,13 @@
 /// Vocabulaire des rôles - les trois valeurs et la seule façon de les comparer.
 ///
-/// **Module pur**, sans `server-only`, et c'est sa raison d'être. Ces constantes
-/// vivaient dans `permissions.ts`, qui est marqué `server-only` parce qu'il
-/// touche la session : un composant client qui l'importait faisait échouer le
-/// build. Or `navigationPrincipale()` doit décider quelle entrée poser selon le
-/// rôle, et elle est appelée depuis `site-nav-mobile.tsx`, qui est une feuille
-/// cliente.
-///
-/// C'est exactement le motif qui a fait naître `src/lib/routes.ts` - même
-/// problème, même remède. Et comme lui, ce module n'exporte que des valeurs
-/// inertes : rien ici ne lit la session, ne décide d'une autorisation, ni ne
-/// touche la base. La décision reste dans `permissions.ts`.
+/// **Module pur**, sans `server-only`, et c'est sa raison d'être : ces
+/// constantes vivaient dans `permissions.ts`, que son `server-only` rend
+/// inimportable depuis une feuille cliente comme `site-nav-mobile.tsx`. Rien
+/// ici ne lit la session ni ne décide d'une autorisation, la décision restant
+/// dans `permissions.ts`. Même motif que `src/lib/routes.ts`.
 ///
 /// ⚠️ Aucun réexport depuis `permissions.ts` : deux chemins d'import pour un
-/// même symbole finissent par désigner deux valeurs différentes le jour où l'un
-/// des deux bouge.
+/// même symbole finissent par désigner deux valeurs différentes.
 
 /// Les trois rôles de la v1 (CLAUDE.md §Authentication, PLAN S1 §7.1). Ils
 /// vivent dans `users.roles` en `VARCHAR[]`, pas en ENUM Postgres.
