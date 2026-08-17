@@ -24,10 +24,7 @@ import {
 /// Un seul composant pour les **deux** surfaces : le bloc « Statut actuel » du
 /// détail, et la ligne `PLANNED` de la tournée du jour. Deux boutons pour une
 /// transition finiraient par diverger sur la confirmation ou sur le traitement
-/// des refus, et c'est justement ce que la case 12 de la DoD demande de tenir
-/// ensemble.
-///
-/// ── La confirmation n'est pas de la prudence décorative
+/// des refus.
 ///
 /// La transition est **irréversible** : aucune US, aucun ADR, aucune ligne du
 /// MCD ne prévoit un retour `IN_PROGRESS → PLANNED`. Et elle a un effet de bord
@@ -39,11 +36,7 @@ import {
 /// `AlertDialog` et non `Dialog` : Radix y rend `role="alertdialog"`, pose le
 /// focus initial sur le refus et neutralise le clic extérieur. L'échappement,
 /// lui, referme, et sans rien envoyer - le motif WAI-ARIA l'exige, et un test
-/// le fige. Ajout à la DoD, tranché par Benjamin à l'ouverture de la tâche : la
-/// maquette T2 n'en porte pas, mais elle porte aussi une référence
-/// `#INT-2026-1042` et une fenêtre d'arrivée fictives, toutes deux retirées.
-///
-/// ── Ce qu'il fait après coup, et pourquoi ça dépend de l'appelant
+/// le fige. La maquette T2 ne porte pas cette confirmation.
 ///
 /// L'action revalide les deux chemins côté serveur. Ça suffit au **détail**,
 /// qui est un Server Component : `router.refresh()` rejoue le rendu et le hub

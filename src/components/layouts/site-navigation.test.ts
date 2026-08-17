@@ -24,7 +24,7 @@ import {
   reservationProposee,
 } from "./site-navigation";
 
-/// ⚠️ **Ajout de l'agent testeur, 2026-08-12.** Les trois gardes sont importées
+/// ⚠️ Les trois gardes sont importées
 /// ici pour l'invariant de fin de fichier - « la navigation ne désigne jamais un
 /// espace qui refusera son porteur ». C'est le sens autorisé de la dépendance :
 /// `src/components/` peut lire `src/lib/`, jamais l'inverse (CLAUDE.md §Folder
@@ -165,24 +165,14 @@ describe("espacePrincipal - la destination du menu utilisateur", () => {
 });
 
 describe("la navigation ne désigne jamais un espace qui refuse son porteur", () => {
-  // 🔴 **Invariant ajouté par l'agent testeur, et rien ne le tenait.**
+  // ⚠️ Cet invariant relie la NAVIGATION aux GARDES, qui vivent dans un
+  // troisième module : sans lui, `espacePrincipal` et `afterLoginPath` peuvent
+  // dériver ensemble par rapport à elles.
   //
-  // Le fichier vérifiait déjà que `espacePrincipal` suit `afterLoginPath` ; les
-  // deux pouvaient donc dériver **ensemble** par rapport aux gardes, qui vivent
-  // dans un troisième module. Or c'est exactement ce que T-V2-05 vient de
-  // rendre possible : jusqu'à cette tâche, `/mes-interventions` n'avait aucune
-  // garde de rôle, et pointer dessus ne pouvait rien casser.
-  //
-  // Le cas qui décide n'est pas théorique : `requireEspaceClient` est une garde
-  // **négative** (refuse `ROLE_TECH` ou `ROLE_ADMIN`) et non un
-  // `hasRole(ROLE_CLIENT)`. C'est ce choix - et lui seul - qui rend l'entrée
-  // « Mes interventions » légitime pour un compte aux rôles vides ou porteur
-  // d'un rôle inconnu, à qui `navigationPrincipale` la propose. Repasser la
-  // garde en formulation positive ferait rougir ce test, et lui seul.
-  //
-  // La garde est appelée pour de vrai, avec sa DAL doublée : ce n'est pas une
-  // reformulation de sa logique côté test, qui pourrait diverger d'elle en
-  // silence.
+  // Ce qui décide : `requireEspaceClient` est une garde **négative**, et c'est
+  // ce qui rend « Mes interventions » légitime pour un compte aux rôles vides.
+  // La repasser en formulation positive fait rougir ce test, et lui seul. La
+  // garde est appelée pour de vrai, pas reformulée côté test.
   const GARDES = {
     client: requireEspaceClient,
     tech: requireTech,

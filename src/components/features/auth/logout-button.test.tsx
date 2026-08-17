@@ -3,7 +3,7 @@
 // Un `<form action={…}>` et non un `onClick` : la déconnexion est une mutation,
 // donc une Server Action (CLAUDE.md §Server Actions), et le formulaire part en
 // POST que React ait hydraté ou non. C'est la même leçon que le `<form action>`
-// de la connexion, payée en T-J0-04 — un bouton sans formulaire ne fait
+// de la connexion — un bouton sans formulaire ne fait
 // strictement rien tant que le JavaScript n'est pas chargé.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";

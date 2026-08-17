@@ -23,20 +23,15 @@ import { navigationPrincipale } from "./site-navigation";
 /// App Router — la frontière `"use client"` descend au composant interactif, pas
 /// au layout.
 ///
-/// ── Pourquoi un `Sheet` et pas la nav repliée en seconde ligne
+/// Un `Sheet` plutôt que la nav repliée en seconde ligne : replier donne
+/// 185 px d'en-tête sur trois lignes en 375 px, mesuré au navigateur, soit un
+/// quart de la hauteur mangée par une barre collante.
 ///
-/// La première tentative laissait la nav passer à la ligne sous `md`. Mesuré au
-/// navigateur en 375 px : **185 px d'en-tête sur trois lignes**, soit près d'un
-/// quart de la hauteur d'écran mangée par une barre collante. Le `Sheet` rend la
-/// barre à une ligne et garde les trois entrées atteignables.
-///
-/// ⚠️ **Écart à signaler** : [[s4-nf-transverses|PLAN S4]] §3.2 veut les trois
-/// pages légales en « Server Components purs, zéro JavaScript client ». Elles
-/// hériteront de cette coquille, donc du dialogue Radix. L'arbitrage est celui
-/// de la règle 2 du portage — le parcours client est mobile-first, une page sans
-/// navigation en dessous de 768 px n'est pas un compromis d'éco-conception, c'en
-/// est une régression fonctionnelle. Le coût est borné : le composant n'est
-/// monté qu'en mobile et Radix ne rend le contenu qu'à l'ouverture.
+/// ⚠️ **Écart assumé** : [[s4-nf-transverses|PLAN S4]] §3.2 veut les pages
+/// légales en Server Components purs, et elles héritent de cette coquille donc
+/// du dialogue Radix. Une page sans navigation sous 768 px serait une
+/// régression fonctionnelle, pas une économie. Coût borné : monté en mobile
+/// seulement, et Radix ne rend le contenu qu'à l'ouverture.
 ///
 /// `SheetTitle` n'est pas décoratif : Radix Dialog exige un nom accessible, et
 /// sans lui la console avertit et le lecteur d'écran annonce un dialogue anonyme.

@@ -4,11 +4,6 @@ import { CalendarCheck, History, ShieldCheck } from "lucide-react";
 /// Panneau latéral vert de l'écran **C6**, partagé par les trois vues de
 /// l'écran — inscription, connexion, mot de passe oublié.
 ///
-/// Né dans le private folder de l'inscription (T-V3-02), **monté ici en
-/// T-V3-03** quand la vue connexion en est devenue le second usage. Règle des
-/// 2 usages, CLAUDE.md §Folder structure. La vue « mot de passe oublié » de
-/// T-V3-05 sera le troisième.
-///
 /// Icônes **Lucide**, jamais Material Symbols — la maquette Stitch en emploie,
 /// c'est une divergence de portage recensée dans [[maquettage]] §Notes portage
 /// §Global.

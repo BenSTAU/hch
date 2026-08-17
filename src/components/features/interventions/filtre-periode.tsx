@@ -6,27 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-/// Filtre par période d'un historique d'interventions - **C10** côté client, et
-/// l'onglet « Historique » du technicien depuis T-V2-05 (deuxième usage, donc
-/// promotion dans `features/`).
-///
-/// `US-INTERVENTIONS-LISTER-CLIENT-PASSEES` : « un filtre par période (année, ou
-/// date début / fin) est disponible ». La forme retenue est le couple de dates,
-/// celle que dessine la maquette. `US-INTERVENTIONS-LISTER-TECH-PASSEES` demande
-/// la même chose pour « retrouver un dossier précédent ».
+/// Filtre par période d'un historique d'interventions - **C10** côté client,
+/// et l'onglet « Historique » du technicien.
 ///
 /// Le composant ne connaît pas sa page : il écrit `du`, `au` et `page` dans
 /// l'URL courante, quelle qu'elle soit.
-///
-/// ── Ce qui n'est pas porté
 ///
 /// Les sélecteurs « Tous les statuts » et « Tous les techniciens » de C10 :
 /// aucun critère d'acceptation ne les demande, et le premier n'aurait que deux
 /// valeurs (`DONE`, `CANCELLED`) que l'étiquette de chaque ligne porte déjà.
 ///
-/// ── `shallow: false`, et c'est le point
-///
-/// Le filtrage se fait **en base**, dans un Server Component. Sans ce drapeau,
+/// ⚠️ Le filtrage se fait **en base**, dans un Server Component. Sans ce drapeau,
 /// `nuqs` met l'URL à jour sans repasser par le serveur : l'adresse changerait
 /// et la liste non. Il remet aussi `page` à zéro, faute de quoi un filtre
 /// resserré depuis la page 3 afficherait une page vide.

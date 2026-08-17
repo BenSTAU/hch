@@ -4,8 +4,6 @@ import { LIENS_LEGAUX, NAV_PUBLIQUE } from "./site-navigation";
 
 /// Pied de page de la coquille publique — porté de C1 (`code.html:478-518`).
 ///
-/// ── Géométrie
-///
 ///   · fond `surface-container-low` et **`rounded-t-xl`** — le pied de page de
 ///     C1 est une dalle aux angles supérieurs arrondis, pas un bandeau plein ;
 ///   · maille **4 colonnes** au-delà de `md`, gouttière de 16 px
@@ -13,12 +11,10 @@ import { LIENS_LEGAUX, NAV_PUBLIQUE } from "./site-navigation";
 ///   · titres de colonne en `headline-sm` (20 px), liens en `body-sm` (14 px) ;
 ///   · barre de copyright séparée : `border-t`, `mt-8`, `py-6`, centrée.
 ///
-/// La colonne de marque occupe **deux** cellules : C1 en aligne quatre, dont
-/// une — « Compte » — qui n'est pas portée (voir plus bas). Lui rendre sa place
-/// plutôt que d'étirer les trois autres préserve la respiration de la maquette.
+/// La colonne de marque occupe **deux** cellules, la maquette en alignant
+/// quatre dont une qui n'est pas portée.
 ///
-/// ── Trois retraits, tous prescrits par la DoD
-///
+/// Trois retraits :
 ///   · « **Mes factures** » (`code.html:500`) contredit Constitution §2.3 — le
 ///     paiement est encaissé sur le terrain, il n'y a pas de facture en ligne ;
 ///   · « **Recrutement** » (`code.html:509`, et C13 `code.html:285`) est hors
@@ -29,10 +25,9 @@ import { LIENS_LEGAUX, NAV_PUBLIQUE } from "./site-navigation";
 ///
 /// Et « © 2024 » devient **2026** ([[maquettage]] §Notes portage, bloc Global).
 ///
-/// La colonne « Compte » disparaît avec « Mes factures » : il n'y restait qu'un
-/// lien « Se connecter », qu'un visiteur déjà authentifié verrait quand même.
-/// L'en-tête, lui, sait à qui il parle — le pied de page ne varie pas selon la
-/// session et n'a pas à prétendre le contraire.
+/// La colonne « Compte » disparaît avec « Mes factures » : il n'y restait
+/// qu'un « Se connecter » qu'un visiteur authentifié verrait quand même, alors
+/// que le pied de page ne varie pas selon la session.
 export function SiteFooter() {
   return (
     <footer className="mt-auto rounded-t-xl bg-secondary">

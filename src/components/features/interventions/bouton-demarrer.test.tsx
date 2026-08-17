@@ -1,20 +1,15 @@
 // Le bouton de demarrage - `US-INTERVENTION-DEMARRER`, ecran **T2** et ligne
 // `PLANNED` de la tournee.
 //
-// ⚠️ **Ajout de l'agent testeur, 2026-08-13.** Le composant n'avait AUCUN test
-// co-localise : `hub-statut.test.tsx` et `tournee-vue.test.tsx` doublent sa
-// Server Action et ne le cliquent jamais, donc ils prouvent seulement qu'il est
-// RENDU. Tout ce qu'il decide apres le clic - la confirmation, le traitement
-// des deux refus, l'invalidation, la garde du double envoi - n'avait pour seul
-// oracle qu'un scenario E2E de chemin nominal.
-//
-// Quatre proprietes s'y jouent, et aucune n'est decorative :
+// Les autres suites doublent sa Server Action et ne le cliquent jamais, donc
+// elles ne prouvent que son RENDU. Ce fichier eprouve ce qu'il decide apres le
+// clic, en quatre proprietes :
 //
 //   · **la confirmation n'est pas contournable** - la transition est
 //     irreversible (aucune US, aucun ADR ne prevoit `IN_PROGRESS → PLANNED`) et
 //     elle ferme le panier d'un TIERS, le client ;
 //   · **le refus metier remet l'ecran a jour** - sans quoi le technicien
-//     reessaie contre une vue perimee (lecon PR #33) ;
+//     reessaie contre une vue perimee ;
 //   · **un seul envoi par geste** - deux transitions concurrentes sont
 //     rattrapees par le verrou serveur, mais un ecran qui les emet produit du
 //     bruit dans `audit_logs`, la piece qu'on produit en cas de contestation ;
@@ -143,7 +138,7 @@ describe("BoutonDemarrer - la confirmation", () => {
   });
 
   it("laisse la touche Echap refermer sans rien envoyer", async () => {
-    // ⚠️ **Comportement CONSTATE par l'agent testeur**, et les deux commentaires
+    // ⚠️ Les deux commentaires
     // qui affirmaient l'inverse (`ui/alert-dialog.tsx` et `bouton-demarrer.tsx`)
     // ont ete corriges sur cette mesure. Radix ne neutralise que l'interaction
     // EXTERIEURE sur un `AlertDialog` ; l'echappement reste actif, et le motif
@@ -216,7 +211,7 @@ describe("BoutonDemarrer - ce qu'il fait de la reponse", () => {
   });
 
   it("affiche le refus metier ET rafraichit la vue perimee", async () => {
-    // 🔴 La lecon de la PR #33. Le refus dit que le statut a change sous les
+    // Le refus dit que le statut a change sous les
     // yeux du technicien : sans rafraichissement, l'ecran garde « Planifiee »
     // et son bouton, et le geste se rejoue indefiniment contre une liste
     // fausse.
