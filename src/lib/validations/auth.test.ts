@@ -18,19 +18,12 @@ import {
 
 describe("LOGIN_REFUSED_MESSAGE", () => {
   it("reprend mot pour mot la formulation imposée par la SPEC", async () => {
-    // US-COMPTE-CONNECTER §Cas d'erreur, module-1-utilisateurs.md:255. Le
-    // message est un élément de spécification, pas un détail de rédaction :
-    // c'est lui qui rend les quatre causes de refus indiscernables.
+    // Le message est un élément de spécification et non un détail de
+    // rédaction : c'est lui qui rend les quatre causes de refus indiscernables
+    // ([[module-1-utilisateurs]]).
     //
-    // ⚠️ **Oracle mis à jour le 2026-08-12 - règle du test rouge, cas 3.** Le
-    // cadratin devient un deux-points, par la règle typographique du
-    // 2026-08-10 dont le MUST couvre explicitement « la copie produit ». Ce que
-    // ce test protège est **l'indiscernabilité des quatre causes de refus**, et
-    // elle est inchangée : c'est la ponctuation qui bouge, pas le message.
-    //
-    // La SPEC porte encore le cadratin. CLAUDE.md §Typographie tranche que
-    // « le cadratin de la SPEC ne voyage pas » et que c'est le write-back qui
-    // aligne l'amont, pas le code. Signalé en PR.
+    // ⚠️ Deux-points là où la SPEC porte un cadratin, que CLAUDE.md
+    // §Typographie interdit. Écart de forme à verser au write-back.
     expect(LOGIN_REFUSED_MESSAGE).toBe(
       "Identifiants invalides ou compte non activé : vérifiez votre email d'activation si vous venez de créer un compte",
     );
@@ -125,25 +118,15 @@ describe("loginSchema — validation", () => {
 
 describe("loginSchema — normalisation de l'email", () => {
   it("ramène l'email en minuscules avant toute recherche en base", () => {
-    // Ce test a été ROUGE, et c'est ce qui a fait remonter le défaut.
+    // ⚠️ `users.email` est une VARCHAR sous index unique ordinaire, que
+    // Postgres compare octet par octet : sans normalisation, une saisie
+    // « Admin@HomeCyclHome.fr » ne trouve aucun compte. L'anti-énumération
+    // aggrave le symptôme, le refus empruntant le message générique,
+    // indiscernable d'un mot de passe faux.
     //
-    // `users.email` est une VARCHAR(180) sous index unique ordinaire
-    // (prisma/migrations/20260805110417_init_auth_users/migration.sql:55) :
-    // Postgres la compare octet par octet. Le seed écrit en minuscules
-    // (prisma/seed.ts:30), et `findUserForLogin` interroge la valeur reçue
-    // (src/lib/db/queries/auth.ts:15). Une saisie « Admin@HomeCyclHome.fr »
-    // ne trouvait donc aucun compte.
-    //
-    // L'anti-énumération aggravait le symptôme au lieu de l'atténuer : le
-    // refus empruntait le message générique, indiscernable d'un mot de passe
-    // faux. Un utilisateur dont le clavier avait mis une majuscule n'avait
-    // aucun moyen de comprendre pourquoi il n'entrait pas.
-    //
-    // Le LIEU de la correction était un arbitrage — Zod, colonne `citext`, ou
-    // index unique fonctionnel `lower(email)`. **Zod a été retenu**
-    // (src/lib/validations/auth.ts:25), et ce test vaut désormais pour ce
-    // choix-là. Que la normalisation atteigne bien la recherche en base est
-    // vérifié à part, au niveau de l'action (lib/actions/auth/login.test.ts).
+    // La normalisation vit dans Zod plutôt qu'en colonne `citext` ou en index
+    // fonctionnel. Qu'elle atteigne bien la base est vérifié au niveau de
+    // l'action.
     const parsed = loginSchema.parse({
       email: "Admin@HomeCyclHome.fr",
       password: "x",

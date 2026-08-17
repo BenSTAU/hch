@@ -10,25 +10,15 @@ import { FORMATS_ACCEPTES, MAX_OCTETS } from "./quotas";
 
 /// Réception et stockage des photos du tunnel - `US-INTERVENTION-PHOTOS-AJOUTER`.
 ///
-/// **Le strip EXIF n'est pas une option de confort.** Une photo de vélo est
-/// prise au domicile du client, elle porte donc les coordonnées GPS de ce
-/// domicile.
+/// ⚠️ **Le strip EXIF est obligatoire** : une photo de vélo est prise au
+/// domicile du client, elle porte donc les coordonnées GPS de ce domicile, et
+/// le technicien qui la verra n'a pas à recevoir l'adresse avec elle.
 ///
-/// ⚠️ **Son motif a changé le 2026-08-11, pas son caractère obligatoire.** PLAN
-/// S4 §4.5 le justifiait par « `uploads/` est servi sur un domaine public » ;
-/// l'arbitrage de T-V3-10 a tranché l'inverse (route de lecture contrôlée, cf.
-/// `src/app/api/intervention-photos/[id]/route.ts`), et §4.5 est amendé en
-/// conséquence côté vault. Ce qui reste : la défense en profondeur, et le fait
-/// que le technicien qui verra cette photo en V2 n'a pas à recevoir l'adresse
-/// du client avec elle.
-///
-/// La méthode retenue **ré-encode** au lieu de retrancher : l'image entrante est
-/// décodée puis ré-écrite en WebP par `sharp`, qui n'émet aucune métadonnée sauf
-/// demande explicite. L'EXIF disparaît par construction et non par
-/// soustraction : il n'y a pas de segment qu'on aurait pu oublier.
-///
-/// Le même geste règle le HEIC, format par défaut des iPhone qu'aucun navigateur
-/// ne sait afficher : il entre en HEIF, il ressort en WebP.
+/// Le traitement **ré-encode** au lieu de retrancher : `sharp` décode puis
+/// réécrit en WebP sans émettre de métadonnée, donc l'EXIF disparaît par
+/// construction et non par soustraction - il n'y a pas de segment qu'on aurait
+/// pu oublier. Le même geste règle le HEIC des iPhone, qu'aucun navigateur ne
+/// sait afficher.
 
 /// Réexportés depuis `./quotas`, seul module que le navigateur peut aussi
 /// importer : les deux zones de dépôt sont des composants clients, et ce
@@ -36,12 +26,12 @@ import { FORMATS_ACCEPTES, MAX_OCTETS } from "./quotas";
 export { MAX_OCTETS, MAX_PHOTOS } from "./quotas";
 
 /// Types acceptés à l'entrée, dérivés de la liste que l'attribut `accept`
-/// annonce à l'écran. Une seule source : deux listes finiraient par diverger, et
-/// c'est la plus permissive qui déciderait.
+/// annonce à l'écran : deux listes finiraient par diverger, et c'est la plus
+/// permissive qui déciderait.
 ///
-/// Le type déclaré par le navigateur ne fait pas foi : il est trivial à
-/// falsifier. Il sert à écarter tôt ce qui n'a pas à monter ; c'est le décodage
-/// par `sharp` qui tranche réellement.
+/// ⚠️ Le type déclaré par le navigateur ne fait pas foi, il est trivial à
+/// falsifier. Il écarte tôt ce qui n'a pas à monter ; c'est le décodage par
+/// `sharp` qui tranche.
 const TYPES_ACCEPTES = FORMATS_ACCEPTES.split(",");
 
 /// Dossier de dépôt. `./uploads` en local, `/app/uploads` dans le conteneur :

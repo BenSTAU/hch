@@ -49,9 +49,8 @@ export const listerCreneauxSchema = z.object({
 /// désignerait l'adresse d'un autre, et un `zoneId` reçu du client
 /// contournerait la sectorisation (Constitution §2.2).
 ///
-/// Aucun champ d'identité : le client vient de la SESSION. La validation exige
-/// un compte créé, activé et connecté (Constitution §3.2, alignée le
-/// 2026-08-09) - il n'y a plus d'email de visiteur à transporter.
+/// Aucun champ d'identité : le client vient de la SESSION, la validation
+/// exigeant un compte activé et connecté (Constitution §3.2).
 export const reserverSchema = z.object({
   serviceId: z.number().int().positive(),
   adresse: adresseSelectionneeSchema,
@@ -66,12 +65,11 @@ export const reserverSchema = z.object({
   /// et des quantités : les prix sont lus en base au moment de la vente, dans
   /// la transaction de la réservation (Constitution §4.1 et §2.6).
   panier: panierSchema,
-  /// Vélo désigné à C5, `null` pour « Aucun vélo » - ajouté le 2026-08-16.
+  /// Vélo désigné à C5, `null` pour « Aucun vélo ».
   ///
   /// **Facultatif par nature** : `interventions.cycle_id` est NULLable et le
   /// rattachement ne conditionne rien. Le défaut vaut `null`, donc une charge
-  /// utile qui ne porte pas le champ reste valide - c'est ce qui laisse les
-  /// appelants antérieurs inchangés.
+  /// utile qui ne porte pas le champ reste valide.
   ///
   /// ⚠️ **L'identifiant n'est pas une preuve de propriété.** `cycles.id` est un
   /// `SERIAL` énumérable et cette action est un endpoint POST public : la
@@ -97,8 +95,7 @@ export const ajouterPhotoSchema = z.object({
 ///
 /// Un seul champ, et **aucun `techId`** : le technicien vient de la session,
 /// via `techActionClient`. Le recevoir en charge utile serait le démarrage de
-/// l'intervention d'autrui pour qui sait poster, exactement ce que
-/// `lister-tournee.ts` refuse déjà d'exposer.
+/// l'intervention d'autrui pour qui sait poster.
 ///
 /// Pas d'instant non plus : `started_at` est daté par le serveur, dans la
 /// transaction. Une horloge reçue du client daterait un jalon d'exécution sur
@@ -110,11 +107,10 @@ export const demarrerInterventionSchema = z.object({
 /// Motif d'annulation - `US-INTERVENTION-ANNULER-CLIENT` §Cas d'erreur, « Motif
 /// d'annulation requis ».
 ///
-/// Champ **libre et obligatoire**. Les deux bornes ne viennent d'aucune source :
-/// `interventions.cancellation_reason` est un TEXT sans contrainte, et l'US ne
-/// dit que « obligatoire ». Arbitrées le 2026-08-11 - trois caractères pour que
-/// « . » ne vaille pas motif, le plafond dans le module pur parce que la zone de
-/// saisie le porte aussi.
+/// Champ **libre et obligatoire**. ⚠️ Les deux bornes ne viennent d'aucune
+/// source : `cancellation_reason` est un TEXT sans contrainte et l'US ne dit
+/// que « obligatoire ». Trois caractères pour que « . » ne vaille pas motif ;
+/// le plafond vit dans le module pur, la zone de saisie le portant aussi.
 ///
 /// `trim` AVANT `min` : sans lui, une suite d'espaces satisfait la longueur et
 /// s'écrit en base comme un motif vide.
@@ -123,10 +119,10 @@ export const annulerInterventionSchema = z.object({
   motif: z
     .string()
     .trim()
-    // Deux bornes, deux messages. 🐛: un motif de
-    // deux caractères renvoyait « Motif d'annulation requis. », libellé que
-    // l'US §Cas d'erreur réserve au champ VIDE. Dire « requis » à qui vient
-    // d'écrire quelque chose est une réponse fausse.
+    // Deux bornes, deux messages : sous un `min(3)` seul, un motif de deux
+    // caractères renverrait « Motif d'annulation requis. », libellé que l'US
+    // réserve au champ VIDE. Dire « requis » à qui vient d'écrire quelque
+    // chose est une réponse fausse.
     .min(1, "Motif d'annulation requis.")
     .min(3, "Motif trop court : décrivez brièvement la raison.")
     .max(

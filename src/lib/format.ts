@@ -47,13 +47,10 @@ export function sommeEuros(montants: readonly string[]): string {
 
 /// Date et heure d'un rendez-vous, **ancrées sur le fuseau d'exploitation**.
 ///
-/// Les deux US de l'espace client demandent « `appointment_at` timezone
-/// client ». Le fuseau est nommé explicitement plutôt que laissé au fuseau
-/// local, pour deux motifs qui vont dans le même sens : l'entreprise n'opère
-/// qu'en France métropolitaine, donc le fuseau du client **est** celui-là ; et
-/// un formatage implicite rend une chaîne différente au serveur (conteneur en
-/// UTC) et dans le navigateur, ce qui produit une divergence d'hydratation sur
-/// la donnée la plus lue de l'écran.
+/// ⚠️ Fuseau nommé explicitement, jamais le fuseau local : un formatage
+/// implicite rend une chaîne différente au serveur (conteneur en UTC) et dans
+/// le navigateur, donc une divergence d'hydratation sur la donnée la plus lue
+/// de l'écran. L'entreprise n'opère qu'en France métropolitaine.
 const DATE_LONGUE = new Intl.DateTimeFormat("fr-FR", {
   timeZone: FUSEAU_EXPLOITATION,
   dateStyle: "full",
@@ -90,20 +87,14 @@ const JOUR_CALENDAIRE = new Intl.DateTimeFormat("fr-CA", {
 
 /// « Dans 3 jours » - chip des cartes de la liste (écran **C8**).
 ///
-/// ── Pourquoi un écart de jours CALENDAIRES et non de millisecondes
+/// ⚠️ **Écart de jours CALENDAIRES, pas de millisecondes.** Un rendez-vous
+/// demain à 9 h est « demain », qu'on le lise à 8 h ou à 23 h ; un écart en
+/// millisecondes le dirait « aujourd'hui » le soir même et changerait de
+/// réponse entre le rendu serveur et l'hydratation.
 ///
-/// Un rendez-vous demain à 9 h est « demain », qu'on le lise à 8 h ou à 23 h.
-/// Un écart en millisecondes le dirait « aujourd'hui » le soir même, et
-/// changerait de réponse entre le rendu serveur et l'hydratation - c'est la
-/// divergence d'hydratation payée sur le stepper du tunnel (PR #29 note 8). La
-/// borne de jour ne bouge qu'à minuit.
-///
-/// ── Une date passée ne rend AUCUN chip
-///
-/// L'onglet « À venir » retient `status = PLANNED` **sans borne de date**
-/// (arbitrage du 2026-08-11) : un rendez-vous que le technicien n'a pas clôturé
-/// y reste. « Dans -2 jours » n'a pas de sens, et aucune source ne dit quoi
-/// afficher à la place. La date complète est déjà sur la carte, elle suffit.
+/// Une date passée ne rend **aucun** chip : l'onglet « À venir » retient
+/// `status = PLANNED` sans borne de date, donc un rendez-vous non clôturé y
+/// reste, et « Dans -2 jours » n'a pas de sens.
 ///
 /// `maintenant` est un paramètre, jamais `new Date()` : l'appelant le fixe une
 /// fois côté serveur, sinon le rendu et l'hydratation lisent deux horloges.
@@ -158,24 +149,20 @@ export function formatJourLong(instant: Date): string {
 
 /// « 2 h 50 » — charge de travail cumulée d'une journée (écran **T1**).
 ///
-/// ⚠️ **Distinct de `formatDuree` ci-dessous, et ce n'est pas une redondance.**
-/// Celui-là rend des minutes parce que `US-FORFAIT-CONSULTER` §Cas nominal
-/// impose « la durée **en minutes** » pour un forfait, unité que partage le
-/// moteur de créneaux. Une SOMME de journée n'est pas une durée de forfait :
-/// « 170 min » ne se lit pas, et la maquette T1 écrit « 2h50 ». Les deux
-/// coexistent parce qu'elles répondent à deux exigences différentes.
+/// ⚠️ **Distinct de `formatDuree`, et ce n'est pas une redondance.** Celui-là
+/// rend des minutes parce que `US-FORFAIT-CONSULTER` impose cette unité pour un
+/// forfait, celle-là même dont le moteur de créneaux dérive la grille. Une
+/// SOMME de journée n'est pas une durée de forfait : « 170 min » ne se lit pas.
 ///
-/// Sous l'heure, on retombe sur les minutes : « 0 h 45 » se lit moins bien que
-/// « 45 min ».
+/// Sous l'heure on retombe sur les minutes, « 0 h 45 » se lisant moins bien.
 
 /// Espace insécable U+00A0, même séparateur que `formatDuree` — « 2 h 50 » ne se
 /// coupe pas en fin de ligne sur un chip étroit.
 ///
-/// ⚠️ Il est INVISIBLE dans un diff comme dans un éditeur, et c'est ce qui rend un
-/// test rouge illisible : celui de cette fonction a d'abord échoué sur « expected
-/// '90 min' to be '90 min' » — deux chaînes identiques à l'œil. La constante
-/// nommée rend le choix relisible là où le caractère semé dans les gabarits ne
-/// se voit pas.
+/// ⚠️ Il est INVISIBLE dans un diff comme dans un éditeur, et rend un test
+/// rouge illisible : « expected '90 min' to be '90 min' », deux chaînes
+/// identiques à l'œil. D'où la constante nommée plutôt que le caractère semé
+/// dans les gabarits.
 const INSECABLE = " ";
 
 export function formatDureeCumulee(minutes: number): string {
@@ -191,12 +178,10 @@ export function formatDureeCumulee(minutes: number): string {
 
 /// La durée reste **en minutes**, y compris au-delà de l'heure.
 ///
-/// Ce n'est pas un oubli de « 1 h 30 » : `US-FORFAIT-CONSULTER` §Cas nominal
-/// écrit « la durée **en minutes** », et c'est la même unité que celle dont le
-/// moteur de créneaux dérive la grille (Constitution §2.1). Deux unités pour la
-/// même donnée feraient dire au client autre chose qu'au planning.
-///
-/// Espace insécable : « 60 » et « min » ne se séparent pas en fin de ligne.
+/// Ce n'est pas un oubli de « 1 h 30 » : c'est l'unité qu'impose
+/// `US-FORFAIT-CONSULTER`, et celle dont le moteur de créneaux dérive la grille
+/// (Constitution §2.1). Deux unités pour la même donnée feraient dire au client
+/// autre chose qu'au planning.
 export function formatDuree(minutes: number): string {
   return `${minutes} min`;
 }

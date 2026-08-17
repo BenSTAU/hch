@@ -342,11 +342,9 @@ describe("annulerInterventionSchema", () => {
 });
 
 describe("annulerInterventionSchema - le message distingue vide et trop court", () => {
-  // 🐛: un `min(3)` seul renvoyait « Motif
-  // d'annulation requis. » pour deux caracteres, libelle que l'US §Cas d'erreur
-  // reserve au champ VIDE. Dire « requis » a qui vient d'ecrire quelque chose
-  // est une reponse fausse, et c'est le genre d'ecart qu'on ne voit qu'a
-  // l'usage.
+  // Sous un `min(3)` seul, deux caracteres renverraient « Motif d'annulation
+  // requis. », libelle que l'US reserve au champ VIDE. Dire « requis » a qui
+  // vient d'ecrire quelque chose est une reponse fausse.
   function messageMotif(motif: string): string | undefined {
     const lecture = annulerInterventionSchema.safeParse({
       interventionId: 847,
