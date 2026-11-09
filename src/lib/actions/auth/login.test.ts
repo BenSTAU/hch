@@ -78,7 +78,7 @@ const CREDENTIALS = {
 /// monde depuis T-J0-05, ce qui déposait un client fraîchement activé sur le
 /// 403 de `requireAdmin()`. Les identifiants de ce fichier portent un compte
 /// `ROLE_ADMIN`, la destination par rôle est couverte plus bas.
-const DEFAULT_DESTINATION = "/admin/parametres";
+const DEFAULT_DESTINATION = "/admin";
 
 beforeEach(() => {
   vi.clearAllMocks();

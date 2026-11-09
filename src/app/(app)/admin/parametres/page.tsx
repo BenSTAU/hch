@@ -6,13 +6,13 @@ import { listAppSettings } from "@/lib/db/queries/parametres";
 import { SettingsForm } from "./_components/settings-form";
 
 export const metadata: Metadata = {
-  title: "Paramètres société — HomeCycl'Home",
+  title: "Paramètres société - HomeCycl'Home",
 };
 
 /// Première entité du modèle exercée de bout en bout (PLAN S1 §5.1).
 ///
 /// Lecture directe en Server Component : `await` Prisma ici, mutation par
-/// Server Action. Pas de Route Handler, pas de TanStack Query — cet écran
+/// Server Action. Pas de Route Handler, pas de TanStack Query - cet écran
 /// n'est aucune des trois vues qui y ont droit (PLAN S1 §6.1).
 ///
 /// `requireAdmin()` est rejoué ici **et** dans l'action. La page qui protège
@@ -23,8 +23,10 @@ export default async function ParametresPage() {
 
   const settings = await listAppSettings();
 
+  // Pas de `<main>` ici : la coquille d'administration en pose un, et deux
+  // `<main>` imbriqués cassent le repère de région (RGAA 12.6).
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-8 p-6">
+    <div className="flex max-w-2xl flex-col gap-8">
       <div className="flex flex-col gap-2">
         <h1 className="font-heading text-3xl font-bold">Paramètres société</h1>
         <p className="text-sm text-muted-foreground">
@@ -42,6 +44,6 @@ export default async function ParametresPage() {
           updatedAt: setting.updatedAt.toISOString(),
         }))}
       />
-    </main>
+    </div>
   );
 }

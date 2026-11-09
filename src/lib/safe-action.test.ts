@@ -128,6 +128,17 @@ describe("inventaire des Server Actions", () => {
       "cycles/messages.ts": [],
       "cycles/modifier-cycle.ts": ["authActionClient"],
       "cycles/rattacher-cycle.ts": ["authActionClient"],
+      // Les deux mutations du catalogue (T-B1-01), toutes deux en
+      // `adminActionClient` : la tarification est admin only (Constitution
+      // §3.1), et le technicien ne peut PAS modifier les prix - interdit
+      // fonctionnel, pas seulement masqué dans l'interface.
+      "forfaits/ajouter-forfait.ts": ["adminActionClient"],
+      // Catalogue de libellés, pas une action.
+      "forfaits/messages.ts": [],
+      "forfaits/modifier-forfait.ts": ["adminActionClient"],
+      // Helper d'invalidation, hors `"use server"` : un tel module n'exporte
+      // que des fonctions asynchrones, et celle-ci est synchrone.
+      "forfaits/revalidation.ts": [],
       "interventions/ajouter-photo.ts": ["authActionClient"],
       "interventions/annuler-intervention.ts": ["authActionClient"],
       "interventions/demarrer-intervention.ts": ["techActionClient"],

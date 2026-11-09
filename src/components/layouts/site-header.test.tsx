@@ -183,7 +183,10 @@ describe("SiteHeader - la navigation suit le rôle (T-V2-05)", () => {
 
     expect(
       screen.getByRole("link", { name: "Administration" }),
-    ).toHaveAttribute("href", "/admin/parametres");
+      // La racine de l'espace depuis T-B1-01, et non plus les paramètres :
+      // l'administration a maintenant plusieurs segments, son entrée doit mener
+      // au premier et pas à celui qui existait en premier.
+    ).toHaveAttribute("href", "/admin");
     expect(
       screen.queryByRole("link", { name: "Mes interventions" }),
     ).not.toBeInTheDocument();

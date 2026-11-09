@@ -53,8 +53,15 @@ const ADMIN = {
   roles: ["ROLE_ADMIN"],
 };
 
+/// Jeton de concurrence transporté par le formulaire. Sa valeur n'importe pas
+/// ici : c'est le helper métier qui le compare, l'action ne fait que le
+/// relayer.
+const VERSION = "2026-08-05T10:00:00.000Z";
+
 const PAYLOAD = {
-  settings: [{ key: "company.name", value: "Le Cycle Lyonnais" }],
+  settings: [
+    { key: "company.name", value: "Le Cycle Lyonnais", version: VERSION },
+  ],
 };
 
 beforeEach(() => {
@@ -78,11 +85,18 @@ describe("updateSettings — administrateur", () => {
     // pourrait attribuer sa modification à un autre administrateur — et le
     // journal d'audit désignerait un innocent.
     await updateSettings({
-      settings: [{ key: "company.name", value: "X", updatedBy: "victime" }],
+      settings: [
+        {
+          key: "company.name",
+          value: "X",
+          version: VERSION,
+          updatedBy: "victime",
+        },
+      ],
     } as unknown as typeof PAYLOAD);
 
     expect(updateAppSettings).toHaveBeenCalledWith(
-      [{ key: "company.name", value: "X" }],
+      [{ key: "company.name", value: "X", version: VERSION }],
       "admin-1",
     );
   });
@@ -229,7 +243,7 @@ describe("updateSettings — où se place la garde dans la chaîne", () => {
 
     await updateSettings(PAYLOAD).catch(() => undefined);
     await updateSettings({
-      settings: [{ key: "company.name", value: "X" }],
+      settings: [{ key: "company.name", value: "X", version: VERSION }],
     }).catch(() => undefined);
 
     expect(updateAppSettings).not.toHaveBeenCalled();

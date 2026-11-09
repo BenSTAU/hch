@@ -1,5 +1,5 @@
 import {
-  CHEMIN_ADMIN_PARAMETRES,
+  CHEMIN_ADMIN,
   CHEMIN_ESPACE_CLIENT,
   CHEMIN_TOURNEE_DU_JOUR,
 } from "@/lib/routes";
@@ -13,7 +13,7 @@ import { ROLE_ADMIN, ROLE_TECH, hasRole } from "./roles";
 /// le menu utilisateur, la navigation et l'écran de confirmation du tunnel
 /// visent les mêmes chemins, et deux littéraux qui doivent rester égaux
 /// finissent par diverger.
-export const AFTER_LOGIN_ADMIN = CHEMIN_ADMIN_PARAMETRES;
+export const AFTER_LOGIN_ADMIN = CHEMIN_ADMIN;
 export const AFTER_LOGIN_CLIENT = CHEMIN_ESPACE_CLIENT;
 export const AFTER_LOGIN_TECH = CHEMIN_TOURNEE_DU_JOUR;
 

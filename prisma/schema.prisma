@@ -360,6 +360,11 @@ model Service {
   priceHistory  ServicePriceHistory[]
   interventions Intervention[]
 
+  /// ⚠️ `label` est unique PARMI LES FORFAITS ACTIFS - index partiel
+  /// `services_label_active_key`, migration 017. Le DSL Prisma ne connaît pas
+  /// les index partiels, il n'y a donc rien à écrire ici : un `@@unique` simple
+  /// interdirait de reprendre le nom d'un forfait retiré de la vente, ce que la
+  /// règle métier autorise.
   @@map("services")
 }
 

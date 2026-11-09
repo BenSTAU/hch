@@ -95,6 +95,9 @@ export function SettingsForm({ settings }: { settings: SettingField[] }) {
           settings: settings.map((setting) => ({
             key: setting.key,
             value: String(data.get(setting.key) ?? ""),
+            // La version rendue avec l'écran. Le serveur la compare à l'état
+            // courant et refuse si la ligne a bougé entre-temps.
+            version: setting.updatedAt,
           })),
         });
       }}

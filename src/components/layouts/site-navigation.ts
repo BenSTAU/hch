@@ -1,5 +1,5 @@
 import {
-  CHEMIN_ADMIN_PARAMETRES,
+  CHEMIN_ADMIN,
   CHEMIN_ESPACE_CLIENT,
   CHEMIN_TOURNEE_DU_JOUR,
 } from "@/lib/routes";
@@ -33,9 +33,11 @@ export const NAV_ESPACE_TECH = [
   { href: CHEMIN_TOURNEE_DU_JOUR, label: "Ma tournée" },
 ] as const;
 
-/// Back-office.
+/// Back-office. La racine plutôt que les paramètres depuis T-B1-01 : l'espace
+/// a maintenant plusieurs segments, et son entrée doit mener au premier, pas à
+/// celui qui existait en premier.
 export const NAV_ESPACE_ADMIN = [
-  { href: CHEMIN_ADMIN_PARAMETRES, label: "Administration" },
+  { href: CHEMIN_ADMIN, label: "Administration" },
 ] as const;
 
 /// Un discriminant plutôt qu'une référence de composant : celle-ci ne traverse

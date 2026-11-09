@@ -8,7 +8,7 @@ import { lireJourCivil, lirePage } from "@/lib/interventions/fenetre";
 import { CHEMIN_TOURNEE_PASSEES } from "@/lib/routes";
 import { FiltrePeriode } from "@/components/features/interventions/filtre-periode";
 import { LigneTournee } from "@/components/features/interventions/ligne-tournee";
-import { PaginationInterventions } from "@/components/features/interventions/pagination-interventions";
+import { Pagination } from "@/components/ui/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -108,11 +108,12 @@ export default async function InterventionsPasseesTechPage({
         )}
       </section>
 
-      <PaginationInterventions
+      <Pagination
+        libelle="Pagination de l'historique"
         page={historique.page}
         pages={historique.pages}
         base={CHEMIN_TOURNEE_PASSEES}
-        periode={{
+        parametres={{
           ...(parametres.du ? { du: parametres.du } : {}),
           ...(parametres.au ? { au: parametres.au } : {}),
         }}

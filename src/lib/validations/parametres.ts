@@ -29,6 +29,11 @@ const settingEntrySchema = z.object({
     // erreur Postgres 22001 rendue en 500 au lieu d'un refus lisible.
     .max(100, "Clé de paramètre trop longue"),
   value: z.string(),
+  /// L'`updated_at` de la ligne au moment où l'écran l'a rendue, en ISO. Jeton
+  /// de concurrence, jamais interprété ici : il est seulement comparé, côté
+  /// serveur, à l'état courant. Une soumission sans jeton ne peut pas dire sur
+  /// quelle version elle porte, donc elle est refusée.
+  version: z.string().min(1, "Version de paramètre manquante"),
 });
 
 export const updateSettingsSchema = z.object({
