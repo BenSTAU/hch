@@ -8,7 +8,7 @@ LeCycleLyonnais.
 ## Le vault fait foi
 
 Tous les artefacts de conception vivent dans le vault Obsidian compagnon, sous
-`<racine-du-vault>\wiki\ecole\homecyclhome\`. La racine **dépend du poste** (cf.
+`<racine-du-vault>\code\homecyclhome\`. La racine **dépend du poste** (cf.
 §Deux postes de développement) — constater, ne pas supposer :
 
 | Poste | Racine du vault |
@@ -19,11 +19,11 @@ Tous les artefacts de conception vivent dans le vault Obsidian compagnon, sous
 | Chemin | Rôle |
 |---|---|
 | `spec-kit/01-constitution-hch.md` | 13 axiomes non négociables du produit — **lire en premier** |
-| `spec-kit/02-spec-hch.md` + `02-spec-hch/` | 66 US, critères Given/When/Then, 5 modules |
+| `spec-kit/02-spec-hch.md` + `02-spec-hch/` | 67 US, critères Given/When/Then, 5 modules |
 | `spec-kit/03-plan-hch.md` + `03-plan-hch/` | Architecture : S1 stack, S2 MCD, S3 infra/CI, S4 non-fonctionnel |
-| `spec-kit/04-tasks-hch.md` + `04-tasks-hch/` | Découpe exécutable, format `T-J0-04`, DoD par tâche |
-| `adr/` | 19 ADR — décisions tranchées, certaines archivées ou caduques (le titre le dit) |
-| `mcd-dictionnaire.md` | Dictionnaire de données v2.2, 18 tables — fait foi sur le modèle |
+| `spec-kit/04-tasks-hch.md` + `04-tasks-hch/` | Découpe exécutable, format `T-J0-04`, DoD par tâche. **Une page par tâche** depuis le 2026-10-16, dans le dossier de sa phase : `04-tasks-hch/<phase>/t-<phase>-NN.md` |
+| `adr/` | 22 ADR - décisions tranchées, certaines archivées ou caduques (le titre le dit) |
+| `mcd-dictionnaire.md` | Dictionnaire de données v2.7, 19 tables - fait foi sur le modèle |
 | `livrables/livrables-hch.md` | État des 11 livrables imposés — fait foi sur ce qui reste à produire |
 | `livrables/maquettage.md` | 22 écrans + **§Notes portage** : divergences maquette ↔ SPEC à corriger |
 | `livrables/macro-planning-hch.md` | Sprints, bornes calendaires, règle de débordement |
@@ -117,9 +117,18 @@ il mord est exactement celle où l'étape 6 t'interdit déjà d'écrire.
 > écriture autorisée + commande autorisée = privilèges complets. Mesuré et
 > documenté en T-J0-04. Ne présente jamais ce cloisonnement comme étanche.
 
-**Quand tu l'invoques** : étape 6 du workflow ci-dessus, sur les tâches `[T]`
-seulement, une fois le code et les tests initiaux livrés. Les bugs qu'il
-rapporte, **c'est toi qui les corriges** — il n'a pas le droit d'y toucher.
+**Quand tu l'invoques** : étape 6 du workflow ci-dessous, **quand la ligne
+*Traçabilité IA* de la tâche le nomme**, une fois le code et les tests initiaux
+livrés. C'est cette ligne qui commande, pas le marqueur : `[T]` signale que les
+tests sont le cœur du livrable, ce qui est une information de périmètre et pas
+une instruction d'outillage, et les deux axes sont orthogonaux. Une tâche `[B]`
+dont trois DoD sont des tests a besoin du testeur, une tâche `[T]` triviale s'en
+passe ([[04-tasks-hch|TASKS]] §1, réconcilié le 2026-08-11). Ce que l'inverse a
+coûté : sur [PR #29](https://github.com/BenSTAU/hch/pull/29), non invoqué au
+motif du marqueur `[B]`, puis invoqué après coup sur la PR de patch, il a trouvé
+**trois bugs réels**, trois oracles faibles et une divergence structurante sur
+une tâche déjà déclarée finie. Les bugs qu'il rapporte, **c'est toi qui les
+corriges** - il n'a pas le droit d'y toucher.
 
 ### Règle du test rouge
 
@@ -136,14 +145,60 @@ rouge est de rendre le test vert.
 Un test qui échoue est **présumé avoir raison**. L'exception exige une trace
 auditable.
 
-Quand une tâche porte le marqueur `[T]`, le test doit avoir **échoué au moins
-une fois** avant de passer, et ce rouge est visible dans l'historique des
-commits.
+Quand une tâche porte des tests, le test doit avoir **échoué au moins une
+fois** avant de passer, et ce rouge est visible dans l'historique des commits.
+La règle se déclenche sur la présence de tests, jamais sur le marqueur `[T]`
+([[04-tasks-hch|TASKS]] §Traçabilité IA).
+
+## La session vérificatrice
+
+[[adr-019-boucle-sessions-invoquees|ADR-019]] §3 confie la **revue assistée**
+d'[[adr-013-cadre-ia|ADR-013]] §D5 composant 3 à une **session distincte**,
+lancée dans ce dépôt par Benjamin quand la session repo a fini son travail,
+avant le push.
+
+**Si ton brief te désigne comme session vérificatrice, cette section remplace le
+§Workflow d'une tâche ci-dessous : tu n'implémentes rien.** De ce workflow,
+seule l'étape 1 te concerne, lire la tâche et ses sources ; les étapes 2 à 11
+ne sont pas pour toi, et l'étape 2 moins que toutes - tu ne présentes pas un
+plan à faire valider, tu rends un rapport. Tout le reste de ce fichier est ton
+référentiel, pas ta consigne d'écriture.
+
+| Domaine | Droit |
+|---|---|
+| Lecture | vault (DoD de la page de tâche, Constitution, SPEC, PLAN, ADR), code, diff contre `main`, historique git |
+| Exécution | git en **lecture seule** |
+| Écriture | **aucune**, ni code ni test |
+| Sortie | un rapport, **chaque constat classé exécution ou fond** |
+
+- **MUST** aller toi-même au vault et au code. Tu reçois le plan validé, pas une
+  synthèse de ce qu'il faut en penser : un vérificateur à qui l'on prémâche son
+  référentiel hérite du cadrage de l'implémenteur (ADR-019 §Option C).
+- **MUST** classer chaque constat, c'est ce qui décide de son arbitrage.
+  **Exécution** - bug, cas oublié, test manquant : il va à la session repo, qui
+  corrige. **Fond** - écart avec la DoD, la Constitution, la SPEC, le PLAN, un
+  ADR ou le plan validé : il va à la session repo **et** à la session mère, qui
+  instruit, et Benjamin tranche avant le push (ADR-019 §4).
+- **MUST** citer chemin + lignes, comme la doctrine 2 l'exige de l'implémenteur.
+  Un constat non situé n'est pas vérifiable, donc pas arbitrable.
+- **MUST NOT** écrire quoi que ce soit : ni code, ni test, ni fichier du dépôt,
+  ni page du vault. La lecture seule est un **mandat, pas une garde technique** -
+  rien ne l'applique, et une écriture accidentelle se verrait au diff de
+  l'implémenteur.
+- **MUST NOT** corriger ce que tu constates, ni livrer un patch à appliquer tel
+  quel. Les bugs que tu trouves, c'est la session repo qui les corrige : c'est
+  tout l'intérêt.
+- **MUST NOT** élargir ton mandat au **style**. Il porte sur la **correction et
+  la conformité**. Un relecteur sommé de trouver trouve toujours quelque chose,
+  et tout corriger fabrique de l'abstraction inutile (ADR-019 §3).
+- **DEFAULT** l'indépendance est procédurale, pas cognitive : même modèle que
+  l'implémenteur, contexte et mandat différents
+  ([[adr-013-cadre-ia|ADR-013]] §D4).
 
 ## Workflow d'une tâche
 
-1. Lire la tâche complète dans `spec-kit/04-tasks-hch/` **et ses sources**
-   (chaque tâche les cite) avant d'écrire une ligne.
+1. Lire la tâche complète dans `spec-kit/04-tasks-hch/<phase>/` **et ses
+   sources** (chaque tâche les cite) avant d'écrire une ligne.
 2. **Présenter un plan d'implémentation détaillé et attendre le GO.**
    Avant la première ligne de code : ce que tu vas écrire fichier par
    fichier, les paquets que tu installes, les commandes que tu lances,
@@ -152,28 +207,63 @@ commits.
    inapplicable, deux artefacts qui se contredisent) **se remonte, il ne
    se comble pas**. Tu proposes une lecture, Benjamin tranche, puis tu
    écris. Aucun code avant son GO explicite.
+   **Ce plan ne va pas qu'à lui** : une **session vault mère** le relit contre
+   le vault et rend un verdict, elle donnerait le GO ou non et avec quels
+   changements. Benjamin valide côté vault, la mère te transmet les changements
+   retenus, et **c'est Benjamin qui tape le GO ici**. Un GO relayé par une autre
+   session ne vaut pas consentement
+   ([[adr-019-boucle-sessions-invoquees|ADR-019]] §2).
 3. Branche courte : `feat/T-J0-01-bootstrap-repo`.
 4. **1 commit = 1 tâche**, message `feat(T-J0-01): squelette Next.js + outillage`.
 5. Commits `Co-Authored-By` — assumé et visible, jamais masqué
    ([[adr-013-cadre-ia|ADR-013]] §D5).
-6. **Tâche marquée `[T]` : passer la main à l'agent `testeur` avant d'ouvrir
-   la PR.** Une fois le code **et** les tests initiaux écrits — pas avant, il
-   vérifie, il ne spécifie pas. Tu l'invoques par le sous-agent `testeur`,
-   tu lui donnes la tâche et son périmètre, et tu **n'écris rien pendant
-   qu'il travaille**. Son rapport (bugs, tests ajoutés, écarts SPEC, usages
-   de la règle du test rouge) va dans le champ *Divergences* de la PR. Les
-   bugs qu'il trouve, c'est **toi** qui les corriges — il n'y touche pas,
-   c'est tout l'intérêt. Une tâche `[B]` sans tests ne l'invoque pas.
-7. PR à trois champs → revue assistée → **revue humaine de Benjamin,
-   non délégable** → squash sur `main`.
-8. Le merge sur `main` déclenche le pipeline. Trunk-based : pas de branche
-   `develop`, `release` ni `hotfix`.
-9. Toute décision technique prise pendant le code → **writeback vers le vault**
-   dans la même session, pas seulement dans le code.
+6. **Quand la ligne *Traçabilité IA* de la tâche nomme l'agent testeur : lui
+   passer la main**, avant la session vérificatrice. C'est cette ligne qui
+   commande, pas le marqueur ([[04-tasks-hch|TASKS]] §1). Une fois le code
+   **et** les tests initiaux écrits - pas avant, il vérifie, il ne spécifie
+   pas. Tu l'invoques par le sous-agent `testeur`, tu lui donnes la tâche et
+   son périmètre, et tu **n'écris rien pendant qu'il travaille**. Son rapport
+   (bugs, tests ajoutés, écarts SPEC, usages de la règle du test rouge) va dans
+   le champ *Divergences* de la PR. Les bugs qu'il trouve, c'est **toi** qui
+   les corriges - il n'y touche pas, c'est tout l'intérêt. Une tâche dont la
+   *Traçabilité IA* ne le nomme pas ne l'invoque pas, quel que soit son
+   marqueur.
+7. **Avant le push : la session vérificatrice.** Quand le code, les tests et le
+   passage du testeur sont faits, tu t'arrêtes et tu le dis - la mère signale
+   que l'étape est prête, Benjamin lance la session dans ce dépôt, elle ne part
+   jamais d'une carte. Tu **n'écris rien pendant qu'elle travaille**. Son
+   rapport te revient classé. **Exécution** (bug, cas oublié, test manquant) :
+   tu corriges, et le constat est **présumé avoir raison** - tu ne le contestes
+   que par une justification écrite dans la PR, comme sous la règle du test
+   rouge. **Fond** (écart avec la DoD, la Constitution, la SPEC, le PLAN, un
+   ADR ou le plan validé) : il va aussi à la mère, et **Benjamin tranche avant
+   le push** ([[adr-019-boucle-sessions-invoquees|ADR-019]] §4). Périmètre et
+   interdits de cette session : §La session vérificatrice ci-dessus.
+8. **Body de PR à cinq sections** : les trois champs de la doctrine 3 (livré,
+   reporté, divergences), plus **Plan validé** (le verdict de la mère, la
+   validation de Benjamin dans ses mots, les changements retenus au plan) et
+   **Revue assistée** (le rapport intégral du vérificateur et la suite donnée à
+   chaque constat). Tout ce qui doit survivre au compactage d'une session ou
+   servir au writeback est écrit là
+   ([[adr-019-boucle-sessions-invoquees|ADR-019]] §5).
+9. PR ouverte → **revue humaine de Benjamin, non délégable** → squash sur
+   `main`.
+10. Le merge sur `main` déclenche le pipeline. Trunk-based : pas de branche
+    `develop`, `release` ni `hotfix`.
+11. **Writeback dans une session vault fraîche, après le merge**, proposée par
+    la mère ([[adr-019-boucle-sessions-invoquees|ADR-019]] §6). Toute décision
+    technique prise pendant le code y remonte, et le writeback recoupe le diff
+    contre le vault et contre le body de PR, jamais contre la mémoire d'une
+    session. **Tu n'écris jamais dans le vault toi-même** : ce que tu as à
+    transmettre vit dans le body de PR.
 
 La DoD d'une tâche est **exécutable** : un test qui passe, une commande qui
 aboutit, une URL qui répond. Si tu ne peux pas vérifier une case sans lire le
 code, la case est mal écrite — remonte-le.
+
+**Deux portes ne se délèguent pas** : le GO du plan, tapé par Benjamin dans la
+session repo, et la revue puis le merge de la PR. Aucune session ne les franchit
+à sa place ([[adr-019-boucle-sessions-invoquees|ADR-019]] §7).
 
 ## Stack
 
@@ -185,7 +275,7 @@ code, la case est mal écrite — remonte-le.
 | Endpoints HTTP | Route Handlers — upload photos, callback OAuth | [[adr-002-stack-back-hch\|ADR-002 v2]] |
 | Base | PostgreSQL + PostGIS | [[adr-004-postgres-postgis\|ADR-004]] |
 | ORM | Prisma — `Unsupported("geography")` + `$queryRaw` | [[adr-008-orm-prisma\|ADR-008]] |
-| Auth | Roll-your-own : bcrypt + `jose` + Google OAuth (PKCE) | [[adr-005-auth-hch\|ADR-005 v2]] |
+| Auth | Roll-your-own : **Argon2id** + `jose` + Google OAuth (PKCE) | [[adr-005-auth-hch\|ADR-005 v2]] · [[adr-018-hachage-politique-mot-de-passe\|ADR-018]] |
 | UI | Tailwind v4 + shadcn/ui + `cva` + Radix + Lucide | [[adr-012-maquettage-stitch-shadcn\|ADR-012]] |
 | Carto | **BAN / Géoplateforme IGN** (adresse client, sans clé) · Google Maps + Drawing Library (**back-office admin V1 seulement**) | [[adr-015-provider-carto\|ADR-015 v2]] |
 | Server state client | TanStack Query, **3 vues seulement** | [[s1-archi-stack\|S1]] §6.1 |
@@ -396,13 +486,17 @@ dans les 12 pages d'axe de [[conventions-react-next]].
 - **DEFAULT** règle des 2 usages : un composant naît dans
   `app/<route>/_components/` et monte dans `components/features/<domaine>/` au
   **2ᵉ** usage, pas avant.
-- **DEFAULT** routes en **français** (`/reserver`, `/tech/planning`,
+- **DEFAULT** routes en **français** (`/reserver`, `/interventions/du-jour`,
   `/admin/zones`), noms de fichiers composants en **anglais**
   (`reservation-form.tsx`, `intervention-card.tsx`).
-- **MUST NOT** poser sous `/client/`, `/tech/` ou `/admin/` une route ouverte
-  au visiteur anonyme — `src/proxy.ts` matche ces trois préfixes et la
-  redirigerait vers `/connexion`. Le tunnel de réservation est **public**
-  (Constitution §3.2) : il vit à la racine, `/reserver`.
+- **MUST NOT** poser une route ouverte au visiteur anonyme sous l'un des
+  **six préfixes** du `config.matcher` de `src/proxy.ts` : `/admin/`,
+  `/client/`, `/interventions/`, `/mes-interventions/`, `/mon-compte/` et
+  `/tech/`. Elle serait redirigée vers `/connexion`. Le tunnel de réservation
+  est **public** (Constitution §3.2) : il vit à la racine, `/reserver`.
+  `/tech/` et `/client/` n'hébergent plus aucune route, ce sont des entrées
+  mortes assumées qui referment la porte si l'une y réapparaissait, et l'espace
+  technicien vit sous `/interventions/`.
 
 Arborescence de référence : [[adr-006-archi-applicative-hch|ADR-006 v2]]
 §Structure cible, peuplée par [[s1-archi-stack|S1]] §3.
@@ -412,7 +506,37 @@ Arborescence de référence : [[adr-006-archi-applicative-hch|ADR-006 v2]]
 - **MUST** `src/lib/auth/dal.ts` avec `verifySession = cache(...)` et
   `getCurrentUser = cache(...)`. Tout RSC, Server Action et Route Handler passe
   par là.
-- **MUST** mot de passe hashé bcrypt, cost ≥ 10 (`src/lib/auth/password.ts`).
+- **MUST** mot de passe haché en **Argon2id**, format PHC, paramètres
+  d'[[adr-018-hachage-politique-mot-de-passe|ADR-018]] §1 : 19 MiB, 2
+  itérations, parallélisme 1, repli 12 MiB et 3 itérations. Paquet `argon2`,
+  dans `src/lib/auth/password.ts`. bcrypt est interdit en code neuf.
+- **MUST** migration progressive **au login**, sans reset : l'algorithme se
+  reconnaît au préfixe du hash (`$2b$` ou `$argon2id$`), et un hash bcrypt dont
+  le mot de passe est bon est recalculé en Argon2id à la connexion réussie.
+  **Aucune colonne `hash_algo`, aucune migration de schéma** - le format PHC
+  porte déjà l'algorithme et ses paramètres.
+- **MUST** normalisation Unicode **NFC** avant toute vérification de règle et
+  avant hachage, longueur **12 à 128 caractères** comptés après normalisation,
+  **aucune règle de composition**. Un hash bcrypt existant se vérifie **tel que
+  saisi**, non normalisé, puis se recalcule sur la forme NFC : sans cette règle,
+  un mot de passe ancien à caractère composé autrement ne passerait plus.
+- **MUST** liste noire vérifiée à la création, au changement et à la
+  réinitialisation, **jamais à la connexion** : mots de passe les plus courants
+  embarqués dans le dépôt, plus les termes du contexte (nom du service, nom du
+  client fictif, partie locale de l'email, prénom et nom saisis). Un refus dit
+  pourquoi. La provenance de la liste, son origine, sa licence et sa taille, est
+  à citer dans le dépôt à l'implémentation (ADR-018 §4, `todo-verify` ouvert).
+- **MUST** leurre de temps en **Argon2id aux paramètres courants**, sinon
+  l'écart de durée entre deux algorithmes trahit l'existence des comptes. Au
+  plus **4 hachages simultanés**, et paramètres lus dans un hash stocké
+  **refusés hors d'une fourchette raisonnable**. Pas de pepper en v1.
+- **MUST** révocation par `users.sessions_revoked_at` : tout jeton émis
+  **avant** cette date est refusé à la lecture du compte, qui a déjà lieu à
+  chaque requête (ADR-018 §8). Renseignée à la réinitialisation et au changement
+  du mot de passe.
+- **État du code au `cb08a35`** : encore `bcrypt` 6.0.0 cost 10
+  (`src/lib/auth/password.ts:3-11`), bornes 12 caractères et 72 octets
+  (`src/lib/validations/auth.ts:67-75`). La bascule est la tâche **T-B1-04**.
 - **MUST** session JWT signée `jose` (`src/lib/auth/session.ts`), cookie
   `httpOnly: true`, `secure: true`, `sameSite: 'lax'`, `path: '/'`, 7 jours.
 - **MUST** `src/proxy.ts` en **redirect optimiste seulement**, sur présence du
@@ -791,26 +915,33 @@ serveur et jointe par un tunnel SSH. Les deux postes attaquent **la même base**
 
 ### Savoir où tu es
 
-```bash
-docker info                                    # répond → daemon actif
-test -d "/c/Program Files/Docker"              # existe → Docker installé
-```
+**Le discriminant est le répertoire de travail, pas Docker**, et dans cet
+ordre :
 
-- **MUST** — poser cette question **avant** de proposer la moindre commande
+1. Le répertoire de travail est sous `C:\Users\Shadow\` → **Shadow**, aucune
+   commande Docker locale, la base de dev distante fait tout.
+2. Sinon, `docker info` répond → **PC maison, daemon actif**.
+3. Sinon → **PC maison, Docker Desktop arrêté**, le démarrer.
+
+- **MUST** - trancher cette question **avant** de proposer la moindre commande
   `docker`. Une commande Docker sur Shadow ne produit pas une erreur parlante,
   elle produit une session perdue à diagnostiquer un faux problème.
-- **MUST** — **les deux commandes, dans cet ordre**, et les lire ensemble :
-  `docker info` répond → **PC maison, daemon actif** · il échoue mais le
-  répertoire existe → **PC maison, Docker Desktop simplement arrêté**, le
-  démarrer · il échoue et le répertoire est absent → **Shadow**.
-- **MUST NOT** — conclure « Shadow » sur le seul échec de `docker info`. Faux
-  positif constaté le 2026-08-08 ([PR #15](https://github.com/BenSTAU/hch/pull/15)) :
-  la commande ne distingue pas *daemon arrêté* de *poste sans daemon*, et
-  appliquée à la lettre elle fait renoncer à Docker sur la machine qui l'a.
-- **MUST NOT** — utiliser `docker compose version` comme test : il **répond sur
+- **MUST NOT** - utiliser `test -d "/c/Program Files/Docker"` pour identifier la
+  machine : le répertoire **existe sur Shadow**, `Docker Desktop.exe` y est posé
+  et le CLI répond, alors que le daemon ne peut pas y tourner. La grille d'avant
+  en faisait sa troisième branche, donc inatteignable, et concluait « PC maison,
+  Docker Desktop simplement arrêté, le démarrer » sur la machine où il n'y a
+  rien à démarrer. Faux positif constaté le 2026-08-14
+  ([PR #49](https://github.com/BenSTAU/hch/pull/49)).
+- **MUST NOT** - conclure « Shadow » sur le seul échec de `docker info` : il ne
+  distingue pas *daemon arrêté* de *poste sans daemon*. Faux positif constaté le
+  2026-08-08 ([PR #15](https://github.com/BenSTAU/hch/pull/15)).
+- **MUST NOT** - utiliser `docker compose version` comme test : il **répond sur
   Shadow** (CLI v5.1.3 installée) alors que le daemon est absent. Faux positif
-  constaté le 2026-08-07. Seul `docker info` interroge le daemon.
-- **DEFAULT** — `T-J0-02` (Dockerfile) et `T-J0-09` (`docker-compose.test.yml`)
+  constaté le 2026-08-07. Seul `docker info` interroge le daemon, et il dit
+  l'état du daemon, jamais l'identité de la machine : les trois faux positifs
+  viennent tous de lui avoir demandé ça.
+- **DEFAULT** - `T-J0-02` (Dockerfile) et `T-J0-09` (`docker-compose.test.yml`)
   se traitent **au PC maison**, ce sont les deux seules tâches du jalon 0 qui
   exigent réellement Docker en local. Le piège `bcrypt` natif sur Alpine ne se
   révèle qu'au `docker build`.
