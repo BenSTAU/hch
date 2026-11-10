@@ -36,7 +36,7 @@ const { updateSettings } = await import("./update-settings");
 ///
 /// L'oracle était donc faux sur le mécanisme, pas sur le comportement attendu.
 /// Le corriger est aussi ce qui rend le test utile : il vérifie maintenant que
-/// le 403 **traverse** next-safe-action au lieu d'être avalé — un garde qui
+/// le 403 **traverse** next-safe-action au lieu d'être avalé - un garde qui
 /// lèverait autre chose qu'un `forbidden()` rendrait une erreur 500 générique
 /// là où Next doit rendre une page 403.
 function forbiddenError(): Error {
@@ -73,7 +73,7 @@ beforeEach(() => {
   });
 });
 
-describe("updateSettings — administrateur", () => {
+describe("updateSettings - administrateur", () => {
   it("accepte la modification et rend la main sur les clés changées", async () => {
     const result = await updateSettings(PAYLOAD);
 
@@ -82,7 +82,7 @@ describe("updateSettings — administrateur", () => {
 
   it("signe l'écriture avec l'identifiant de la SESSION, pas de la charge utile", async () => {
     // `updated_by` ne se soumet pas. S'il venait du POST, n'importe qui
-    // pourrait attribuer sa modification à un autre administrateur — et le
+    // pourrait attribuer sa modification à un autre administrateur - et le
     // journal d'audit désignerait un innocent.
     await updateSettings({
       settings: [
@@ -121,7 +121,88 @@ describe("updateSettings — administrateur", () => {
   });
 });
 
-describe("updateSettings — non-administrateur", () => {
+// ─────────────────────────────────────────────────────────────────────────
+// Tests ajoutés par l'agent testeur (verify-only) sur la PR de fond de
+// T-B1-01, constat F3.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("updateSettings, les clés que le refus désigne", () => {
+  // ⚠️ **Rien ne couvrait ce canal, ni ici ni dans `settings-form.test.tsx`.**
+  //
+  // Depuis le constat F3, un refus de concurrence ne porte plus sur tout le
+  // formulaire : l'action renvoie `staleKeys` pour que l'écran marque les
+  // champs concernés en `aria-invalid` (RGAA 11.10). `invalidKeys` existait
+  // déjà avec le même rôle. Les deux pouvaient disparaître de la charge utile
+  // sans qu'un seul test rougisse - le seul oracle existant est un
+  // `toMatchObject({ error })`, qui ignore les clés absentes.
+
+  it("nomme les lignes périmées, et elles seules", async () => {
+    updateAppSettings.mockResolvedValue({
+      ok: false,
+      reason: "stale",
+      keys: ["company.name", "company.email"],
+    });
+
+    const result = await updateSettings(PAYLOAD);
+
+    expect(result?.data).toEqual({
+      error: expect.any(String),
+      invalidKeys: [],
+      staleKeys: ["company.name", "company.email"],
+    });
+  });
+
+  it("nomme les lignes invalides, et elles seules", async () => {
+    updateAppSettings.mockResolvedValue({
+      ok: false,
+      reason: "invalid_values",
+      keys: ["company.tva"],
+    });
+
+    const result = await updateSettings(PAYLOAD);
+
+    expect(result?.data).toEqual({
+      error: expect.any(String),
+      invalidKeys: ["company.tva"],
+      staleKeys: [],
+    });
+  });
+
+  it("ne marque aucun champ sur une clé inconnue", async () => {
+    // `unknown_keys` ne peut pas venir de l'écran : aucun champ affiché ne
+    // correspond, donc marquer quoi que ce soit désignerait un innocent.
+    updateAppSettings.mockResolvedValue({
+      ok: false,
+      reason: "unknown_keys",
+      keys: ["company.inexistante"],
+    });
+
+    const result = await updateSettings(PAYLOAD);
+
+    expect(result?.data).toEqual({
+      error: expect.any(String),
+      invalidKeys: [],
+      staleKeys: [],
+    });
+  });
+
+  it("dit de recharger, et ne dit pas de corriger, sur un refus de concurrence", async () => {
+    // Le seul geste qui règle ce refus est le rechargement : modifier le champ
+    // le reproduirait à l'identique, le jeton resoumis étant toujours celui de
+    // la version périmée.
+    updateAppSettings.mockResolvedValue({
+      ok: false,
+      reason: "stale",
+      keys: ["company.name"],
+    });
+
+    const result = await updateSettings(PAYLOAD);
+
+    expect(result?.data?.error).toMatch(/recharge/i);
+  });
+});
+
+describe("updateSettings - non-administrateur", () => {
   it("refuse un client sans jamais atteindre la base", async () => {
     requireAdmin.mockRejectedValue(forbiddenError());
 
@@ -142,7 +223,7 @@ describe("updateSettings — non-administrateur", () => {
   });
 });
 
-describe("updateSettings — entrées hostiles", () => {
+describe("updateSettings - entrées hostiles", () => {
   it("refuse une charge utile vide", async () => {
     const result = await updateSettings({ settings: [] });
 
@@ -178,11 +259,11 @@ describe("updateSettings — entrées hostiles", () => {
 // `digest` qui décide : `isHTTPAccessFallbackError` le lit et ignore le
 // message.
 
-describe("updateSettings — le 403 traverse next-safe-action", () => {
+describe("updateSettings - le 403 traverse next-safe-action", () => {
   it("relance l'interruption avec son `digest` intact", async () => {
     // C'est le `digest` que Next relit pour choisir `src/app/forbidden.tsx` et
     // poser un vrai 403. Une erreur qui arriverait au client sans lui donnerait
-    // une page d'erreur générique — visuellement un bug, pas un refus.
+    // une page d'erreur générique - visuellement un bug, pas un refus.
     requireAdmin.mockRejectedValue(forbiddenError());
 
     await expect(updateSettings(PAYLOAD)).rejects.toMatchObject({
@@ -209,7 +290,7 @@ describe("updateSettings — le 403 traverse next-safe-action", () => {
     // Contre-épreuve du correctif d'oracle. Si next-safe-action relançait tout
     // ce qui lève, les deux tests ci-dessus passeraient même avec une garde
     // cassée. Ici la garde échoue sur une erreur ordinaire : l'action ne lève
-    // pas, elle renvoie un `serverError` générique. Aucune écriture non plus —
+    // pas, elle renvoie un `serverError` générique. Aucune écriture non plus -
     // c'est ce qui compte.
     requireAdmin.mockRejectedValue(new Error("garde en panne"));
 
@@ -222,7 +303,7 @@ describe("updateSettings — le 403 traverse next-safe-action", () => {
   });
 });
 
-describe("updateSettings — où se place la garde dans la chaîne", () => {
+describe("updateSettings - où se place la garde dans la chaîne", () => {
   it("exécute la garde de rôle AVANT la validation Zod", async () => {
     // next-safe-action exécute les middlewares, PUIS `validateInputs`, PUIS le
     // corps. La garde vit en `.use()` sur `adminActionClient` et non dans le

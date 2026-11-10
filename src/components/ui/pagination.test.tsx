@@ -7,10 +7,20 @@ import { render, screen } from "@testing-library/react";
 
 import { Pagination } from "./pagination";
 
+/// Le nom du paramètre de page est une **prop** depuis T-B1-01 : le composant
+/// ne connaît plus la convention d'URL de cette application.
+const CLE_PAGE = "page";
+
 describe("Pagination", () => {
   it("ne s'affiche pas quand il n'y a qu'une page", () => {
     const { container } = render(
-      <Pagination page={1} pages={1} base="/admin/forfaits" libelle="Pages" />,
+      <Pagination
+        page={1}
+        pages={1}
+        base="/admin/forfaits"
+        cleParametrePage={CLE_PAGE}
+        libelle="Pages"
+      />,
     );
 
     expect(container).toBeEmptyDOMElement();
@@ -18,7 +28,13 @@ describe("Pagination", () => {
 
   it("rend un lien par page", () => {
     render(
-      <Pagination page={1} pages={3} base="/admin/forfaits" libelle="Pages" />,
+      <Pagination
+        page={1}
+        pages={3}
+        base="/admin/forfaits"
+        cleParametrePage={CLE_PAGE}
+        libelle="Pages"
+      />,
     );
 
     expect(screen.getAllByRole("link")).toHaveLength(3);
@@ -28,7 +44,13 @@ describe("Pagination", () => {
     // Deux URL pour la même liste seraient deux entrées de cache et deux
     // adresses partagées pour un seul écran.
     render(
-      <Pagination page={2} pages={3} base="/admin/forfaits" libelle="Pages" />,
+      <Pagination
+        page={2}
+        pages={3}
+        base="/admin/forfaits"
+        cleParametrePage={CLE_PAGE}
+        libelle="Pages"
+      />,
     );
 
     expect(screen.getByRole("link", { name: /^1/ })).toHaveAttribute(
@@ -44,6 +66,7 @@ describe("Pagination", () => {
         page={1}
         pages={3}
         base="/admin/forfaits"
+        cleParametrePage={CLE_PAGE}
         parametres={{ tri: "price", sens: "desc" }}
         libelle="Pages"
       />,
@@ -61,6 +84,7 @@ describe("Pagination", () => {
         page={1}
         pages={2}
         base="/mes-interventions/passees"
+        cleParametrePage={CLE_PAGE}
         parametres={{ du: "", au: undefined }}
         libelle="Pages"
       />,
@@ -78,6 +102,7 @@ describe("Pagination", () => {
         page={2}
         pages={3}
         base="/admin/forfaits"
+        cleParametrePage={CLE_PAGE}
         libelle="Pagination du catalogue"
       />,
     );
@@ -91,9 +116,35 @@ describe("Pagination", () => {
     ).toBeInTheDocument();
   });
 
+  it("prend le nom du paramètre de page dans ses props", () => {
+    // L'oracle du découplage : le composant codait `page` en dur, et onze
+    // écrans allaient en hériter. Un retour à la constante littérale rougit
+    // ici.
+    render(
+      <Pagination
+        page={1}
+        pages={3}
+        base="/une/autre/liste"
+        cleParametrePage="numero"
+        libelle="Pages"
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /^2/ })).toHaveAttribute(
+      "href",
+      "/une/autre/liste?numero=2",
+    );
+  });
+
   it("ne présente aucune violation axe", async () => {
     const { container } = render(
-      <Pagination page={2} pages={4} base="/admin/forfaits" libelle="Pages" />,
+      <Pagination
+        page={2}
+        pages={4}
+        base="/admin/forfaits"
+        cleParametrePage={CLE_PAGE}
+        libelle="Pages"
+      />,
     );
 
     expect(await axe(container)).toHaveNoViolations();

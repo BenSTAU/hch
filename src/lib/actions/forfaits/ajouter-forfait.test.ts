@@ -54,12 +54,13 @@ const ADMIN = {
   roles: ["ROLE_ADMIN"],
 };
 
+/// ⚠️ **Sans `isActive`** : `US-FORFAIT-AJOUTER` ne l'énumère pas et le pose en
+/// défaut, le schéma d'ajout ne l'accepte donc plus (T-B1-01, constat F5).
 const SAISIE = {
   label: "Révision complète",
   description: "Entretien complet",
   duration: "60",
   price: "85",
-  isActive: true,
 };
 
 beforeEach(() => {
@@ -111,12 +112,14 @@ describe("ajouterForfait, cas nominal", () => {
     await ajouterForfait(SAISIE).catch(() => undefined);
 
     expect(creerForfait).toHaveBeenCalledWith(
+      // La disponibilité ne traverse PAS cette frontière : c'est `creerForfait`
+      // qui écrit `isActive: true`, parce que c'est la SPEC qui le fixe et non
+      // la saisie. Un `isActive` qui réapparaîtrait ici ferait rougir.
       {
         label: "Révision complète",
         description: "Entretien complet",
         duration: 60,
         price: "85.00",
-        isActive: true,
       },
       "admin-1",
     );

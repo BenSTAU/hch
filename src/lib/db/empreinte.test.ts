@@ -6,7 +6,7 @@
 // test ailleurs, elle laisserait silencieusement écraser une modification.
 import { describe, expect, it } from "vitest";
 
-import { empreinteFiche } from "./empreinte";
+import { empreinteFiche, empreinteValeur } from "./empreinte";
 
 const FICHE = ["Révision complète", "Entretien complet", 60, "85.00", true];
 
@@ -73,6 +73,58 @@ describe("empreinteFiche", () => {
 
   it("rend un jeton court et sûr dans une URL ou un attribut HTML", () => {
     const jeton = empreinteFiche(FICHE);
+
+    expect(jeton).toHaveLength(22);
+    expect(jeton).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tests ajoutés par l'agent testeur (verify-only) sur la PR de fond de
+// T-B1-01, constat F2. L'export est neuf et n'avait aucun test chez lui.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("empreinteValeur", () => {
+  it("distingue deux valeurs différentes", () => {
+    // La propriété dont dépend tout le refus de concurrence d'`app_settings` :
+    // le jeton d'une ligne EST son état, à l'encodage près.
+    expect(empreinteValeur("LeCycleLyonnais")).not.toBe(
+      empreinteValeur("Le Cycle Lyonnais"),
+    );
+  });
+
+  it("rend la même empreinte pour la même valeur", () => {
+    expect(empreinteValeur("04 72 00 00 00")).toBe(
+      empreinteValeur("04 72 00 00 00"),
+    );
+  });
+
+  it("ne confond pas la chaîne vide avec l'absence de valeur du gabarit fiche", () => {
+    // ⚠️ **Le piège exact que `jetonLigne` désamorce.** `empreinteFiche`
+    // encode `null` en « ~ » et la chaîne vide en « 0: » : deux jetons
+    // différents pour un seul état métier d'`app_settings`, « non renseigné ».
+    //
+    // C'est pour ça que `jetonLigne` (`queries/parametres.ts`) normalise par
+    // `?? ""` AVANT d'appeler cette fonction, et c'est pour ça que
+    // `empreinteValeur` n'accepte pas `null` dans sa signature. Un futur écran
+    // qui appellerait `empreinteFiche([valeur])` directement sur une colonne
+    // NULLable refuserait en boucle tout enregistrement d'une ligne jamais
+    // remplie, sans cause visible.
+    expect(empreinteValeur("")).not.toBe(empreinteFiche([null]));
+    expect(empreinteValeur("")).toBe(empreinteFiche([""]));
+  });
+
+  it("sépare deux valeurs que la seule concaténation confondrait", () => {
+    // Le préfixe de longueur d'`encoder` porte aussi sur le cas à une valeur :
+    // sans lui, une valeur contenant le séparateur se ferait passer pour une
+    // autre.
+    expect(empreinteValeur("a|b")).not.toBe(empreinteValeur("a|b "));
+  });
+
+  it("rend le même format de jeton que le gabarit fiche", () => {
+    // Les deux voyagent au navigateur par le même chemin - champ caché ou prop
+    // de composant - et le patron n'en expose qu'un seul format.
+    const jeton = empreinteValeur("LeCycleLyonnais");
 
     expect(jeton).toHaveLength(22);
     expect(jeton).toMatch(/^[A-Za-z0-9_-]+$/);

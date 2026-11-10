@@ -10,7 +10,7 @@ import { expect, type Page } from "@playwright/test";
 /// formulaire de connexion n'avait pas d'attribut `action`, et un clic avant
 /// hydratation le soumettait NATIVEMENT en GET. Depuis le passage à
 /// `<form action={formAction}>`, la soumission part en POST vers la Server
-/// Action que React n'ait hydraté ou non — la course n'existe plus, et la
+/// Action que React n'ait hydraté ou non - la course n'existe plus, et la
 /// reprise a été retirée plutôt que gardée « au cas où ». Si ce helper
 /// redevient instable, c'est le formulaire qu'il faut regarder.
 export async function seConnecter(
@@ -21,7 +21,7 @@ export async function seConnecter(
   await page.goto("/connexion");
   await page.getByLabel("Adresse email").fill(email);
   // `exact: true` depuis T-V3-03 : l'écran C6 porte une bascule d'affichage du
-  // mot de passe, dont le nom accessible — « Afficher le mot de passe » —
+  // mot de passe, dont le nom accessible - « Afficher le mot de passe » -
   // contient le libellé du champ. `getByLabel` compare en sous-chaîne
   // insensible à la casse et en résoudrait deux, exactement comme « Nom » face
   // à « Prénom » sur la PR #17.
@@ -30,5 +30,10 @@ export async function seConnecter(
 
   // Atteindre cette URL prouve trois choses d'un coup : le hash bcrypt a été
   // comparé, la session a été signée, et `requireAdmin()` a laissé passer.
-  await expect(page).toHaveURL(/\/admin\/parametres$/);
+  //
+  // ⚠️ **C'est le catalogue, et plus les paramètres, depuis T-B1-01.**
+  // `AFTER_LOGIN_ADMIN` vaut `/admin`, qui redirige vers la première entrée de
+  // l'espace. Un appelant qui a besoin d'un autre écran d'administration y
+  // navigue lui-même : ce helper prouve la connexion, pas une destination.
+  await expect(page).toHaveURL(/\/admin\/forfaits$/);
 }

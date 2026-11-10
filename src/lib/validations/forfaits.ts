@@ -55,15 +55,21 @@ const descriptionSchema = z
   .trim()
   .transform((valeur) => (valeur === "" ? null : valeur));
 
-const champsForfait = {
+/// Les quatre champs que les deux US font saisir : « nom, durée en minutes,
+/// prix TTC en euros, description optionnelle ».
+const champsSaisis = {
   label: labelSchema,
   description: descriptionSchema,
   duration: dureeSchema,
   price: prixSchema,
-  isActive: z.boolean(),
 };
 
-export const ajouterForfaitSchema = z.object(champsForfait);
+/// ⚠️ **Pas d'`isActive` à la création.** `US-FORFAIT-AJOUTER` ne l'énumère pas
+/// parmi ses champs et pose `is_active = true` en défaut. L'accepter ici
+/// permettrait de créer un forfait déjà désactivé, état que rien ne spécifie,
+/// alors que la désactivation est une action sur une fiche existante
+/// (`US-FORFAIT-MODIFIER` §Désactivation et réactivation).
+export const ajouterForfaitSchema = z.object(champsSaisis);
 
 /// La modification transporte deux coordonnées de plus : l'identifiant de la
 /// fiche et le jeton de version lu à son ouverture. Le jeton est opaque, il
@@ -72,7 +78,8 @@ export const ajouterForfaitSchema = z.object(champsForfait);
 export const modifierForfaitSchema = z.object({
   id: z.number().int().positive(),
   version: z.string().min(1),
-  ...champsForfait,
+  ...champsSaisis,
+  isActive: z.boolean(),
 });
 
 export type AjouterForfaitInput = z.infer<typeof ajouterForfaitSchema>;

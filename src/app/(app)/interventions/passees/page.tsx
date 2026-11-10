@@ -5,7 +5,7 @@ import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { requireTech } from "@/lib/auth/permissions";
 import { listerHistoriqueTech } from "@/lib/db/queries/interventions";
 import { lireJourCivil, lirePage } from "@/lib/interventions/fenetre";
-import { CHEMIN_TOURNEE_PASSEES } from "@/lib/routes";
+import { CHEMIN_TOURNEE_PASSEES, PARAM_PAGE } from "@/lib/routes";
 import { FiltrePeriode } from "@/components/features/interventions/filtre-periode";
 import { LigneTournee } from "@/components/features/interventions/ligne-tournee";
 import { Pagination } from "@/components/ui/pagination";
@@ -113,6 +113,7 @@ export default async function InterventionsPasseesTechPage({
         page={historique.page}
         pages={historique.pages}
         base={CHEMIN_TOURNEE_PASSEES}
+        cleParametrePage={PARAM_PAGE}
         parametres={{
           ...(parametres.du ? { du: parametres.du } : {}),
           ...(parametres.au ? { au: parametres.au } : {}),

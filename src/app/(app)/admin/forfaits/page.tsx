@@ -14,6 +14,9 @@ import {
 import {
   CHEMIN_ADMIN_FORFAITS,
   CHEMIN_ADMIN_FORFAIT_NOUVEAU,
+  PARAM_PAGE,
+  PARAM_SENS,
+  PARAM_TRI,
 } from "@/lib/routes";
 import { lireTriForfaits } from "@/lib/validations/forfaits";
 
@@ -121,7 +124,8 @@ export default async function AdminForfaitsPage({
         page={catalogue.page}
         pages={catalogue.pages}
         base={CHEMIN_ADMIN_FORFAITS}
-        parametres={{ tri, sens }}
+        cleParametrePage={PARAM_PAGE}
+        parametres={{ [PARAM_TRI]: tri, [PARAM_SENS]: sens }}
       />
     </>
   );

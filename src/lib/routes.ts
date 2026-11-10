@@ -81,3 +81,20 @@ export const CHEMIN_SUPPRESSION_COMPTE = "/mon-compte/supprimer";
 /// Retour après pseudonymisation - `US-COMPTE-SUPPRIMER` §Cas nominal. Le
 /// message voyage dans l'URL parce qu'il n'y a plus de session à ce moment-là.
 export const CHEMIN_COMPTE_SUPPRIME = "/?compte=supprime";
+
+/// Noms des paramètres d'URL que les listes partagent - pagination et tri.
+///
+/// Ils vivent ici pour la même raison que les chemins : des chaînes nues que le
+/// serveur lit et que le navigateur écrit. Et ils vivent ici **et pas dans
+/// `components/ui/`** : `pagination.tsx` et `tri-colonne.tsx` les codaient en
+/// dur, ce qui faisait échouer le test mental de `04-folder-structure` §8.1,
+/// « si je copie ce composant dans un autre projet, il marche tel quel ».
+/// Ces composants les reçoivent désormais en props, **sans défaut** : un défaut
+/// ramènerait la convention de cette application dans une primitive.
+///
+/// ⚠️ Portée exacte : la **construction** des liens. La lecture, elle, les
+/// nomme en propriétés d'objet (`searchParams` de Next, `lireTriForfaits`), où
+/// une constante ne peut pas se substituer à un nom de propriété.
+export const PARAM_PAGE = "page";
+export const PARAM_TRI = "tri";
+export const PARAM_SENS = "sens";

@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { seConnecter as seConnecterAdmin } from "../support/connexion";
 
-/// Smoke post-déploiement — tourne en STEP des jobs `deploy-staging` et
+/// Smoke post-déploiement - tourne en STEP des jobs `deploy-staging` et
 /// `deploy-prod`, contre l'environnement réellement servi : nginx, TLS,
 /// `auth_basic` côté staging, vraie base, résolution du conteneur par le
 /// réseau Docker. C'est la surface que la barrière (`tests/e2e/`) ne voit pas.
@@ -14,7 +14,7 @@ import { seConnecter as seConnecterAdmin } from "../support/connexion";
 /// Aucune requête Prisma ici, contrairement à la barrière : les bases staging
 /// et production vivent sur `hch_<env>_internal` sans port publié, invisibles
 /// du runner comme d'internet (PLAN S3 §2). Ce smoke ne prouve que ce qui
-/// passe par HTTP — et c'est exactement son objet.
+/// passe par HTTP - et c'est exactement son objet.
 
 const MODES = ["write", "read"] as const;
 type SmokeMode = (typeof MODES)[number];
@@ -23,7 +23,7 @@ type SmokeMode = (typeof MODES)[number];
 ///
 /// La production est en LECTURE SEULE par décision du cadrage du 2026-08-07 :
 /// un test qui écrit en production à chaque déploiement laisse une donnée que
-/// rien ne nettoie — le seed *établit* sans *rétablir*, il n'y a pas de
+/// rien ne nettoie - le seed *établit* sans *rétablir*, il n'y a pas de
 /// teardown fiable (concurrence sur `app_settings` sans verrou), et une clé de
 /// sonde dédiée apparaîtrait dans l'écran d'administration, dont le formulaire
 /// est générique.
@@ -31,7 +31,7 @@ function smokeMode(): SmokeMode {
   const brut = process.env["HCH_SMOKE_MODE"];
   if (!brut || !(MODES as readonly string[]).includes(brut)) {
     throw new Error(
-      `HCH_SMOKE_MODE doit valoir ${MODES.join(" ou ")} — reçu : ${brut ?? "rien"}`,
+      `HCH_SMOKE_MODE doit valoir ${MODES.join(" ou ")} - reçu : ${brut ?? "rien"}`,
     );
   }
   return brut as SmokeMode;
@@ -61,6 +61,10 @@ function motDePasseAdmin(): string {
 /// 200 base éteinte et ne prouverait rien du déploiement.
 async function seConnecter(page: Page) {
   await seConnecterAdmin(page, ADMIN_EMAIL, motDePasseAdmin());
+  // La connexion dépose sur le catalogue depuis T-B1-01. Tout ce que ce fichier
+  // observe ensuite - le champ société, les `<time>` de dernière modification -
+  // vit sur l'écran des paramètres, qui se demande désormais explicitement.
+  await page.goto("/admin/parametres");
 }
 
 /// Empreinte des dates de dernière modification, telles que l'écran les rend
@@ -83,18 +87,18 @@ async function empreinteDesDates(page: Page): Promise<string[]> {
 let empreinteInitiale: string[] | null = null;
 
 /// La lecture seule de production était
-/// garantie par la seule absence d'écriture dans les tests — une propriété
+/// garantie par la seule absence d'écriture dans les tests - une propriété
 /// négative, qu'aucune assertion ne tenait. Ces deux tests l'énoncent :
 /// après le passage complet du smoke, aucune ligne d'`app_settings` n'a bougé.
 ///
 /// Limite assumée : ils ne couvrent qu'`app_settings`. Une écriture ailleurs
 /// (un `last_login_at` posé au login, par exemple) resterait invisible d'ici.
-test("lecture seule — empreinte des paramètres avant le smoke", async ({
+test("lecture seule - empreinte des paramètres avant le smoke", async ({
   page,
 }) => {
   test.skip(
     smokeMode() === "write",
-    "staging écrit — l'empreinte n'a pas de sens",
+    "staging écrit - l'empreinte n'a pas de sens",
   );
 
   await seConnecter(page);
@@ -121,7 +125,7 @@ test("l'administrateur seedé modifie un paramètre société", async ({
 }) => {
   test.skip(
     smokeMode() === "read",
-    "production en lecture seule — aucune écriture, aucune entrée audit_logs",
+    "production en lecture seule - aucune écriture, aucune entrée audit_logs",
   );
 
   await seConnecter(page);
@@ -140,19 +144,19 @@ test("l'administrateur seedé modifie un paramètre société", async ({
   await expect(page.getByLabel(LIBELLE)).toHaveValue(valeurAttendue);
 });
 
-test("lecture seule — aucune date de modification n'a bougé", async ({
+test("lecture seule - aucune date de modification n'a bougé", async ({
   page,
 }) => {
   test.skip(
     smokeMode() === "write",
-    "staging écrit — l'empreinte n'a pas de sens",
+    "staging écrit - l'empreinte n'a pas de sens",
   );
 
   // Si l'empreinte est absente, l'ordre d'exécution a changé et ce garde ne
   // garde plus rien. On échoue plutôt que de passer au vert par vacuité.
   expect(
     empreinteInitiale,
-    "empreinte initiale non prise — l'ordre des tests du fichier a changé",
+    "empreinte initiale non prise - l'ordre des tests du fichier a changé",
   ).not.toBeNull();
 
   await seConnecter(page);

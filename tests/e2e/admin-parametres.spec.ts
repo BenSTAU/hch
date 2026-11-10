@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { seConnecter } from "../support/connexion";
 
-/// Barrière pré-déploiement du jalon 0 — le scénario que nomme le critère de
+/// Barrière pré-déploiement du jalon 0 - le scénario que nomme le critère de
 /// fin : un administrateur seedé se connecte et modifie un paramètre société.
 ///
 /// Ce n'est aucun des 5 golden paths d'ADR-014 §5, qui portent tous sur des
@@ -13,15 +13,15 @@ import { seConnecter } from "../support/connexion";
 ///
 /// Il tourne contre l'IMAGE `benstau/hch:<sha>` en CI, contre `pnpm dev` en
 /// local. Le smoke post-déploiement (`tests/smoke/`) exerce la même connexion
-/// contre les environnements déployés — deux surfaces, pas un doublon.
+/// contre les environnements déployés - deux surfaces, pas un doublon.
 
 /// Le premier des deux administrateurs de `prisma/seed.ts`. Adresse de
-/// fiction, présente dans un dépôt public — ce n'est pas un secret, seul le
+/// fiction, présente dans un dépôt public - ce n'est pas un secret, seul le
 /// mot de passe en est un.
 const ADMIN_EMAIL = "admin@homecyclhome.fr";
 
 /// Clé exercée : `string`, donc sans contrainte de format
-/// (`validateSettingValue`), et déjà seedée — `updateAppSettings` refuse toute
+/// (`validateSettingValue`), et déjà seedée - `updateAppSettings` refuse toute
 /// clé absente de la table.
 const CLE = "company.phone";
 const LIBELLE = "Téléphone affiché aux clients";
@@ -39,7 +39,7 @@ function motDePasseAdmin(): string {
   return password;
 }
 
-/// Valeur neuve à chaque exécution — sinon `updateAppSettings` ignore la ligne
+/// Valeur neuve à chaque exécution - sinon `updateAppSettings` ignore la ligne
 /// (« (row.value ?? '') === entry.value »), aucune écriture n'a lieu et le test
 /// vérifierait la persistance de ce qui était déjà là.
 ///
@@ -69,13 +69,16 @@ test("l'administrateur seedé se connecte et modifie un paramètre société", a
     // Requêtes par label et par rôle, jamais par testid : la hiérarchie
     // d'ADR-014 §Stack, et ce sont les mêmes ancrages qu'un lecteur d'écran.
     await seConnecter(page, ADMIN_EMAIL, motDePasseAdmin());
+    // La connexion dépose sur le catalogue depuis T-B1-01 : cet écran-ci se
+    // demande, il n'est plus l'atterrissage.
+    await page.goto("/admin/parametres");
 
     const champ = page.getByLabel(LIBELLE);
     await expect(champ).toBeVisible();
 
     // Lus AVANT la soumission : ce sont les deux oracles que l'assertion
     // d'audit ne portait pas. `after` seul ne dit rien du `before` (le diff
-    // peut être faux sans que rien ne le montre) ni de l'acteur — or c'est
+    // peut être faux sans que rien ne le montre) ni de l'acteur - or c'est
     // précisément la colonne qui donne sa valeur au journal (Constitution
     // §4.2 : « retracer les actions d'un compte »). Ajouté par l'agent
     // testeur sur T-J0-09.
@@ -98,7 +101,7 @@ test("l'administrateur seedé se connecte et modifie un paramètre société", a
     // Borne basse pour la recherche de la trace d'audit, prise AVANT la
     // soumission. Sans elle, `findFirst` remonte la trace d'une exécution
     // antérieure et l'assertion passe alors même qu'aucune écriture n'a eu
-    // lieu — constaté en neutralisant `writeAuditLog` : le test restait vert
+    // lieu - constaté en neutralisant `writeAuditLog` : le test restait vert
     // sur `not.toBeNull()`. La base de test est jetable, mais la base de
     // développement et celle de staging accumulent les runs.
     //
@@ -109,7 +112,7 @@ test("l'administrateur seedé se connecte et modifie un paramètre société", a
 
     await page.getByRole("button", { name: "Enregistrer" }).click();
 
-    // Le formulaire distingue « enregistré » de « rien à enregistrer » — la
+    // Le formulaire distingue « enregistré » de « rien à enregistrer » - la
     // seconde branche existe précisément pour ne pas mentir. On exige la
     // première, sinon un test qui n'écrit rien passerait au vert.
     await expect(page.getByRole("status")).toHaveText(
@@ -145,7 +148,7 @@ test("l'administrateur seedé se connecte et modifie un paramètre société", a
     });
     // L'acteur vient de `ctx.admin` du middleware `adminActionClient`, jamais
     // de la charge utile. Sans cette assertion, une trace attribuée au mauvais
-    // compte — ou à un identifiant en dur — passait inaperçue.
+    // compte - ou à un identifiant en dur - passait inaperçue.
     expect(trace?.actorId).toBe(admin.id);
 
     // `updated_by` porte la même exigence côté donnée : le formulaire dit qui
@@ -170,7 +173,7 @@ test("la page de connexion ne présente aucune violation axe", async ({
   //
   // `wcag21a` / `wcag21aa` : le RGAA 4.1
   // transpose WCAG **2.1**, et les seuls tags `wcag2*` laissaient hors du
-  // champ les règles propres à la 2.1 — `autocomplete-valid` notamment, qui
+  // champ les règles propres à la 2.1 - `autocomplete-valid` notamment, qui
   // porte sur un formulaire d'identification. Zéro violation supplémentaire
   // constatée à l'ajout : c'est un élargissement de couverture, pas un
   // correctif.
@@ -194,6 +197,7 @@ test("l'écran d'administration ne présente aucune violation axe", async ({
   page,
 }) => {
   await seConnecter(page, ADMIN_EMAIL, motDePasseAdmin());
+  await page.goto("/admin/parametres");
 
   const resultats = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
@@ -205,7 +209,7 @@ test("l'écran d'administration ne présente aucune violation axe", async ({
 /// Cas hostile absent du lot livré : la barrière ne vérifiait que le chemin
 /// nominal. Or `/admin/parametres` est un écran d'administration, et
 /// `src/proxy.ts` ne fait qu'un redirect **optimiste** sur présence du cookie
-/// — le rempart réel est `requireAdmin()` dans la page. Un test qui ne franchit
+/// - le rempart réel est `requireAdmin()` dans la page. Un test qui ne franchit
 /// jamais la porte sans clé ne prouve pas qu'elle est fermée.
 test("un visiteur non connecté n'atteint pas l'écran d'administration", async ({
   page,
@@ -223,7 +227,7 @@ test("un visiteur non connecté n'atteint pas l'écran d'administration", async 
   );
 });
 
-/// Ajout de l'agent testeur, 2026-08-11 — contrepartie du correctif hors
+/// Ajout de l'agent testeur, 2026-08-11 - contrepartie du correctif hors
 /// périmètre de T-V3-10.
 ///
 /// `src/proxy.ts:41-43` laisse désormais passer toute requête portant un
@@ -267,7 +271,7 @@ test("l'en-tête `Next-Action` désarme le proxy, jamais la page", async ({
 
 /// Le cas qui compte vraiment pour une authentification écrite à la main.
 ///
-/// `src/proxy.ts:17` ne teste que la PRÉSENCE du cookie — il ne lit ni la
+/// `src/proxy.ts:17` ne teste que la PRÉSENCE du cookie - il ne lit ni la
 /// signature ni la base. Un cookie forgé le franchit donc intégralement, et
 /// seul `getCurrentUser()` (`src/lib/auth/dal.ts:24-53`) l'arrête. Le test
 /// précédent, lui, s'arrête au proxy et ne dit rien du rempart réel : c'est
@@ -295,7 +299,7 @@ test("un cookie de session forgé franchit le proxy mais pas le DAL", async ({
   await expect(page.getByLabel(LIBELLE)).toHaveCount(0);
 });
 
-/// Non-régression du correctif T-J0-04 fix — le cœur du sujet.
+/// Non-régression du correctif T-J0-04 fix - le cœur du sujet.
 ///
 /// Avec `javaScriptEnabled: false`, aucun code React ne tourne : c'est
 /// exactement la fenêtre qui existait avant hydratation. Le formulaire doit
@@ -317,7 +321,10 @@ test.describe("sans JavaScript", () => {
       .fill(motDePasseAdmin());
     await page.getByRole("button", { name: "Se connecter" }).click();
 
-    await expect(page).toHaveURL(/\/admin\/parametres$/);
+    // Le catalogue, destination de `AFTER_LOGIN_ADMIN` depuis T-B1-01. Ce qui
+    // compte ici n'est pas l'écran atteint mais le fait d'en atteindre un : une
+    // soumission repartie en GET resterait sur `/connexion`.
+    await expect(page).toHaveURL(/\/admin\/forfaits$/);
 
     // L'assertion qui nomme le défaut : aucune valeur saisie ne doit se
     // retrouver dans l'URL, à aucun moment du parcours.

@@ -9,6 +9,8 @@
 //     absurde produit une 22003 rendue en 500 au lieu du message de la SPEC.
 import { describe, expect, it } from "vitest";
 
+import { PARAM_PAGE, PARAM_SENS, PARAM_TRI } from "@/lib/routes";
+
 import {
   ajouterForfaitSchema,
   lireTriForfaits,
@@ -148,6 +150,79 @@ describe("lireTriForfaits", () => {
       tri: "label",
       sens: "desc",
       page: 3,
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Test ajouté par l'agent testeur (verify-only) sur la PR de fond de
+// T-B1-01, constat F4.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("ajouterForfaitSchema, la disponibilité n'entre pas", () => {
+  it("écarte un `isActive` soumis par un appelant direct", () => {
+    // ⚠️ **Le chemin résiduel du constat F5, et il n'était pas couvert.**
+    //
+    // Retirer la case de l'écran ne retire pas le champ de l'endpoint : une
+    // Server Action exportée est un POST public (ADR-006 v2), et le schéma est
+    // la seule barrière sur ce chemin. `z.object()` dépouille les clés
+    // inconnues, donc `isActive: false` ne traverse pas - mais un `.passthrough()`
+    // ou un retour du champ dans `champsSaisis` le ferait, et aucun test
+    // existant ne le dirait : la constante `VALIDE` de ce fichier porte
+    // `isActive: true` depuis T-B1-01 et tous les `parse` passent malgré tout.
+    const resultat = ajouterForfaitSchema.parse({
+      ...VALIDE,
+      isActive: false,
+    });
+
+    expect(resultat).not.toHaveProperty("isActive");
+  });
+
+  it("garde `isActive` obligatoire à la MODIFICATION", () => {
+    // L'autre face : `US-FORFAIT-MODIFIER` §Désactivation et réactivation en
+    // fait un champ de la fiche. Le sortir des deux schémas d'un coup
+    // supprimerait la désactivation sans que rien ne le signale.
+    const sansDisponibilite = {
+      label: VALIDE.label,
+      description: VALIDE.description,
+      duration: VALIDE.duration,
+      price: VALIDE.price,
+      id: 1,
+      version: "jeton",
+    };
+
+    expect(modifierForfaitSchema.safeParse(sansDisponibilite).success).toBe(
+      false,
+    );
+    expect(
+      modifierForfaitSchema.safeParse({ ...sansDisponibilite, isActive: false })
+        .success,
+    ).toBe(true);
+  });
+});
+
+describe("lireTriForfaits, le contrat avec les constantes d'URL", () => {
+  it("lit les trois paramètres que `routes.ts` nomme", () => {
+    // ⚠️ Le constat F4 déplace les noms de paramètres dans `PARAM_PAGE`,
+    // `PARAM_TRI` et `PARAM_SENS` pour la CONSTRUCTION des liens, et laisse la
+    // LECTURE les nommer en propriétés d'objet - deux sources pour un même
+    // nom, que `src/lib/routes.ts` assume en commentaire.
+    //
+    // Renommer une constante produirait des liens que ce lecteur ignore en
+    // silence, en retombant sur ses défauts : aucun écran ne planterait, le
+    // tri cesserait simplement de répondre. Ce test ferme la boucle du côté
+    // `lib`, et c'est aussi le typage qui mord - des clés calculées qui ne
+    // correspondent plus à la signature font échouer `pnpm typecheck`.
+    const depuisLUrl = {
+      [PARAM_TRI]: "price",
+      [PARAM_SENS]: "desc",
+      [PARAM_PAGE]: "2",
+    };
+
+    expect(lireTriForfaits(depuisLUrl)).toEqual({
+      tri: "price",
+      sens: "desc",
+      page: 2,
     });
   });
 });

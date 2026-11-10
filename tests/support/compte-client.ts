@@ -7,11 +7,11 @@ import { expect, type Page } from "@playwright/test";
 /// Le seed ne pose que deux administrateurs et un technicien
 /// (`prisma/seed.ts`) : aucun client, parce que la SPEC veut que le client naisse
 /// du parcours public. Les scénarios qui ont besoin d'un client le CRÉENT donc,
-/// et le créent par l'interface — c'est le début de `GP-01`.
+/// et le créent par l'interface - c'est le début de `GP-01`.
 ///
 /// Extrait de `tests/e2e/inscription-activation.spec.ts` en T-V3-03, à
 /// l'identique. Deux fichiers avaient besoin de la même séquence, et la
-/// dupliquer ferait diverger deux oracles qui doivent rester le même — c'est
+/// dupliquer ferait diverger deux oracles qui doivent rester le même - c'est
 /// déjà le motif d'existence de `seConnecter` dans ce dossier.
 
 export const MOT_DE_PASSE_CLIENT = "un-mot-de-passe-long-v3";
@@ -29,7 +29,7 @@ export async function inscrire(page: Page, email: string): Promise<void> {
   await page.getByLabel("Prénom").fill("Camille");
   // `exact` obligatoire : `getByLabel` compare en SOUS-CHAÎNE insensible à la
   // casse, et « nom » est contenu dans « Prénom ». Sans lui, deux champs
-  // matchent et le mode strict de Playwright échoue — 9 tests sur 19 en CI sur
+  // matchent et le mode strict de Playwright échoue - 9 tests sur 19 en CI sur
   // la barrière de la PR #17. Le champ « Mot de passe » portait déjà la même
   // précaution, pour la même raison face à « Confirmer le mot de passe ».
   //
@@ -74,7 +74,7 @@ export async function creerClientActive(
 
 /// Connecte un client déjà activé.
 ///
-/// Distinct de `seConnecter` du dossier voisin, qui attend `/admin/parametres` :
+/// Distinct de `seConnecter` du dossier voisin, qui attend `/admin/forfaits` :
 /// un client n'a pas ce rôle, et depuis T-V3-10 il atterrit sur
 /// `/mes-interventions/a-venir` (`AFTER_LOGIN_CLIENT`). Attendre la mauvaise
 /// URL ferait échouer le helper sur une connexion pourtant réussie.
@@ -95,7 +95,7 @@ export async function seConnecterClient(
   // dans l'en-tête ; `US-COMPTE-DECONNECTER` §Contexte place l'action « dans le
   // menu utilisateur (avatar / initiales dans le header) », donc à un cran de
   // plus. Le déclencheur du menu est la preuve de session équivalente, et il
-  // reste indépendant de la destination — c'est ce qui faisait la valeur de
+  // reste indépendant de la destination - c'est ce qui faisait la valeur de
   // l'oracle précédent.
   await expect(
     page.getByRole("button", { name: /ouvrir le menu de/i }),

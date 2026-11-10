@@ -86,6 +86,11 @@ export type ChampsForfait = {
   isActive: boolean;
 };
 
+/// À la création, la disponibilité n'est pas saisie : `US-FORFAIT-AJOUTER` ne
+/// l'énumère pas et la pose en défaut. Le type le dit, plutôt que de laisser
+/// l'appelant fournir une valeur que la SPEC ne lui demande pas.
+export type ChampsCreationForfait = Omit<ChampsForfait, "isActive">;
+
 const SELECTION_ADMIN = {
   id: true,
   label: true,
@@ -242,13 +247,18 @@ function traduireNomPris<T>(erreur: unknown, refus: T): T {
 /// du 2026-10-16 : `old_price` est NOT NULL, et l'historique n'enregistre que
 /// des changements. La naissance du forfait est tracée par l'audit `CREATE`.
 export async function creerForfait(
-  champs: ChampsForfait,
+  champs: ChampsCreationForfait,
   actorId: string,
 ): Promise<ResultatCreationForfait> {
+  // `isActive` écrit explicitement et non laissé au défaut de colonne : c'est
+  // la SPEC qui fixe cette valeur, et l'audit `CREATE` doit la porter plutôt
+  // que de laisser relire le DDL pour savoir avec quoi la fiche est née.
+  const donnees = { ...champs, isActive: true };
+
   try {
     return await db.$transaction(async (tx) => {
       const forfait = await ecritureNommee(
-        tx.service.create({ data: champs, select: { id: true, label: true } }),
+        tx.service.create({ data: donnees, select: { id: true, label: true } }),
       );
 
       await writeAuditLog(
@@ -264,7 +274,7 @@ export async function creerForfait(
             description: { before: null, after: champs.description },
             duration: { before: null, after: champs.duration },
             price: { before: null, after: champs.price },
-            isActive: { before: null, after: champs.isActive },
+            isActive: { before: null, after: donnees.isActive },
           }),
         },
         tx,

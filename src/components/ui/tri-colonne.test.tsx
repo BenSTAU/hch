@@ -25,6 +25,8 @@ function rendre(props: Partial<ProprietesTriColonne> = {}) {
             triCourant="label"
             sensCourant="asc"
             base="/admin/forfaits"
+            cleParametreTri="tri"
+            cleParametreSens="sens"
             {...props}
           />
         </tr>
@@ -108,6 +110,18 @@ describe("TriColonne, cible du lien", () => {
     expect(screen.getByRole("link")).toHaveAttribute(
       "href",
       "/admin/forfaits?tri=price&sens=asc",
+    );
+  });
+
+  it("prend les noms des paramètres de tri dans ses props", () => {
+    // L'oracle du découplage de T-B1-01 : le composant écrivait `tri` et
+    // `sens` en dur, donc il ne marchait pas tel quel ailleurs
+    // (`04-folder-structure` §8.1). Un retour aux littéraux rougit ici.
+    rendre({ cleParametreTri: "order", cleParametreSens: "dir" });
+
+    expect(screen.getByRole("link")).toHaveAttribute(
+      "href",
+      "/admin/forfaits?order=price&dir=asc",
     );
   });
 

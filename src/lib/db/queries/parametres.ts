@@ -2,6 +2,7 @@ import "server-only";
 
 import { writeAuditLog } from "@/lib/audit/log";
 import { db } from "@/lib/db/client";
+import { empreinteValeur } from "@/lib/db/empreinte";
 import type { HorairesSemaine } from "@/lib/creneaux/derivation";
 import {
   cleHoraires,
@@ -18,13 +19,15 @@ export type AppSettingRow = {
   value: string | null;
   valueType: string;
   description: string | null;
+  /// Affichée par l'écran (« Modifié le »), et **plus jamais comparée** : le
+  /// jeton de concurrence est `version`.
   updatedAt: Date;
+  version: string;
 };
 
-/// `version` est l'`updated_at` lu à l'ouverture de l'écran, en ISO. C'est le
-/// jeton de concurrence : `app_settings` porte une colonne de version, on n'en
-/// fabrique donc pas une (contrairement à `services`, qui n'en a aucune et
-/// passe par une empreinte de contenu).
+/// `version` est l'empreinte de la valeur lue à l'ouverture de l'écran. C'est
+/// le jeton de concurrence, le même instrument que pour les forfaits, et il
+/// porte **une ligne** et non le formulaire entier.
 export type SettingEntry = { key: string; value: string; version: string };
 
 export type UpdateSettingsResult =
@@ -33,11 +36,29 @@ export type UpdateSettingsResult =
   | { ok: false; reason: "invalid_values"; keys: string[] }
   | { ok: false; reason: "stale"; keys: string[] };
 
+/// Le jeton d'une ligne, fabriqué sur la valeur **telle que l'écran la rend**
+/// et non sur la valeur brute : `NULL` en base et chaîne vide au formulaire
+/// décrivent le même état, « non renseigné », et le jeton doit dire la même
+/// chose qu'eux. Sans cette normalisation, un champ jamais renseigné serait vu
+/// comme édité à chaque soumission.
+///
+/// Exporté parce que c'est la **fabrique unique** : l'écran, le contrôle de
+/// concurrence et les tests en dépendent tous, et deux calculs écrits
+/// séparément divergeraient.
+export function jetonLigne(valeur: string | null): string {
+  return empreinteValeur(valeur ?? "");
+}
+
 /// Tri par clé : la page est un formulaire, et des champs qui changent de
 /// place d'un rendu à l'autre sont un défaut d'utilisabilité autant qu'un test
 /// E2E instable.
+///
+/// **Fabrique unique du jeton**, comme `versAdmin` l'est pour les forfaits :
+/// celui que l'écran rend et celui que l'enregistrement recalcule doivent
+/// sortir du même calcul. Deux calculs écrits séparément divergeraient, et tout
+/// enregistrement serait refusé sans cause visible.
 export async function listAppSettings(): Promise<AppSettingRow[]> {
-  return db.appSetting.findMany({
+  const lignes = await db.appSetting.findMany({
     select: {
       key: true,
       value: true,
@@ -47,6 +68,11 @@ export async function listAppSettings(): Promise<AppSettingRow[]> {
     },
     orderBy: { key: "asc" },
   });
+
+  return lignes.map((ligne) => ({
+    ...ligne,
+    version: jetonLigne(ligne.value),
+  }));
 }
 
 /// Applique une soumission du formulaire de configuration société.
@@ -65,8 +91,25 @@ export async function listAppSettings(): Promise<AppSettingRow[]> {
 ///     et une entrée d'audit du second affirmant un `before` qui n'était déjà
 ///     plus l'état réel.
 ///
-/// Le patron est décrit au-dessus de `modifierForfait`. Ici le jeton est la
-/// colonne `updated_at`, qui existe, plutôt qu'une empreinte de contenu.
+/// Le patron est décrit au-dessus de `modifierForfait`, et c'est **le même
+/// instrument** : une empreinte de contenu, pas la colonne `updated_at`.
+///
+/// ⚠️ **`updated_at` a été écarté comme jeton**, alors qu'il existe. Elle est
+/// en `TIMESTAMP(6)` avec `DEFAULT CURRENT_TIMESTAMP`, donc une ligne posée
+/// par du SQL porterait des microsecondes qu'un `Date` JavaScript perd : son
+/// enregistrement serait refusé en boucle, sans cause visible. Le danger était
+/// latent, pas actif, et aucune garde ne l'empêchait de devenir actif.
+/// L'empreinte n'a pas cette faiblesse, et un patron dont onze écrans héritent
+/// ne porte qu'un seul instrument. Arbitré le 2026-11-10 sur le constat F2 de
+/// la session vérificatrice. La colonne reste écrite, elle ne décide plus.
+///
+/// ⚠️ **Granularité par CLÉ, et c'est ce que la DoD 6 tranche.** Une fiche de
+/// forfait est une unité ; `app_settings` est N lignes indépendantes dans un
+/// même formulaire, et ce formulaire resoumet ses N champs à chaque envoi. Le
+/// contrôle ne porte donc que sur les lignes que l'administrateur a réellement
+/// éditées, ce que leur jeton atteste : personne n'est refusé parce qu'un
+/// collègue a touché une autre clé. Le tout-ou-rien demeure, sur les seules
+/// lignes écrites, et un refus nomme exactement ces lignes.
 export async function updateAppSettings(
   entries: SettingEntry[],
   actorId: string,
@@ -99,7 +142,9 @@ async function transactionSettings(
   return db.$transaction(async (tx) => {
     const current = await tx.appSetting.findMany({
       where: { key: { in: entries.map((entry) => entry.key) } },
-      select: { key: true, value: true, valueType: true, updatedAt: true },
+      // `updatedAt` n'est plus lu : il ne décide plus rien, et le sélectionner
+      // laisserait croire le contraire.
+      select: { key: true, value: true, valueType: true },
     });
     const byKey = new Map(current.map((row) => [row.key, row]));
 
@@ -119,27 +164,39 @@ async function transactionSettings(
       key: string;
       before: string | null;
       after: string;
-      /// L'`updated_at` lu dans CETTE transaction, pas celui envoyé par le
-      /// navigateur : c'est lui qui sert de prédicat à l'écriture.
-      version: Date;
     }[] = [];
 
     for (const entry of entries) {
       const row = byKey.get(entry.key);
       if (!row) continue; // inatteignable : `unknownKeys` a déjà filtré
 
-      // Fenêtre des minutes. Comparé avant la validation de la valeur : un
-      // refus de concurrence ne se corrige pas en changeant le champ, il se
-      // corrige en rechargeant.
-      if (row.updatedAt.toISOString() !== entry.version) {
-        staleKeys.push(entry.key);
-        continue;
-      }
-
       // `null` en base et chaîne vide dans le formulaire décrivent le même
       // état - « non renseigné ». Les distinguer ferait passer un champ vide
       // resoumis tel quel pour une modification.
       if ((row.value ?? "") === entry.value) continue;
+
+      // ⚠️ **Le champ que l'administrateur n'a pas édité sort ici**, et c'est
+      // ce qui donne sa granularité par clé au refus (DoD 6). La valeur
+      // soumise est celle que l'écran avait rendue - son jeton l'atteste -
+      // donc il n'y a rien à écrire sur cette ligne, et rien à écraser. Un
+      // collègue a pu la changer entre-temps : ça ne doit pas refuser la
+      // soumission d'un champ voisin, puisque celui-ci ne la touche pas.
+      //
+      // C'est le jeton qui le dit, et il est seul à pouvoir le dire : le
+      // formulaire resoumet ses N champs à chaque envoi, l'état stocké ne
+      // distingue donc pas « non édité » de « édité vers l'ancienne valeur ».
+      // Conséquence assumée : retaper à l'identique ce que l'écran affiche
+      // équivaut à ne pas y toucher.
+      if (jetonLigne(entry.value) === entry.version) continue;
+
+      // Reste une ligne réellement éditée. Son jeton doit décrire l'état
+      // stocké, sans quoi l'enregistrer écraserait la modification d'un autre
+      // administrateur - et l'entrée d'audit affirmerait un `before` qui
+      // n'était déjà plus l'état réel.
+      if (jetonLigne(row.value) !== entry.version) {
+        staleKeys.push(entry.key);
+        continue;
+      }
 
       // La validation ne porte QUE sur ce qui change. Sinon une ligne dont la
       // valeur stockée ne respecte pas son `value_type` - posée par un seed,
@@ -151,12 +208,7 @@ async function transactionSettings(
         continue;
       }
 
-      changed.push({
-        key: entry.key,
-        before: row.value,
-        after: entry.value,
-        version: row.updatedAt,
-      });
+      changed.push({ key: entry.key, before: row.value, after: entry.value });
     }
 
     // Le refus de concurrence passe AVANT celui de validation : une valeur
@@ -171,19 +223,10 @@ async function transactionSettings(
     }
 
     for (const change of changed) {
-      // `updateMany` et non `update`, pour le `where` élargi : c'est lui qui
-      // ferme la fenêtre des millisecondes.
-      //
-      // ⚠️ **Piège de précision.** La colonne est un `TIMESTAMP(6)` lu en
-      // `Date` JavaScript, qui ne va qu'à la milliseconde. Les lignes
-      // actuelles ont toutes été écrites par Prisma, donc à la milliseconde
-      // (vérifié en base le 2026-11-09). Une ligne insérée en SQL brut
-      // tomberait sur le `DEFAULT CURRENT_TIMESTAMP`, qui porte des
-      // microsecondes, et serait refusée en boucle sans cause visible : si
-      // `app_settings` reçoit un jour des lignes par migration, ce prédicat
-      // devra tronquer.
+      // `updateMany` et non `update`, pour le `where` élargi : il porte la
+      // valeur LUE, et c'est lui qui ferme la fenêtre des millisecondes.
       const ecriture = await tx.appSetting.updateMany({
-        where: { key: change.key, updatedAt: change.version },
+        where: { key: change.key, value: change.before },
         // `updatedBy` vient de l'appelant, jamais de la soumission - c'est la
         // Server Action qui le tire de la session.
         data: { value: change.after, updatedBy: actorId },

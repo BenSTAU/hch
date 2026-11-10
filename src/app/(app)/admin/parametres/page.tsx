@@ -42,6 +42,7 @@ export default async function ParametresPage() {
           valueType: setting.valueType,
           description: setting.description,
           updatedAt: setting.updatedAt.toISOString(),
+          version: setting.version,
         }))}
       />
     </div>

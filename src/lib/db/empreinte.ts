@@ -5,9 +5,13 @@ import { createHash } from "node:crypto";
 /// Jeton de version d'une fiche d'administration, pour refuser l'enregistrement
 /// d'une fiche modifiée depuis son ouverture.
 ///
-/// Employé par `services`, qui n'a **aucune colonne de version** (dictionnaire
-/// §services). `app_settings` porte `updated_at` et utilise cette colonne : on
-/// ne fabrique pas une version là où il en existe une.
+/// **L'instrument unique du patron**, pour les onze écrans d'administration.
+/// `services` n'a aucune colonne de version (dictionnaire §services), et
+/// `app_settings` en a une, `updated_at`, qui a pourtant été **écartée** :
+/// `TIMESTAMP(6)` contre un `Date` JavaScript à la milliseconde, le détail est
+/// au-dessus d'`updateAppSettings`. Deux instruments pour un seul rôle, dont un
+/// porteur d'un piège de précision, n'est pas ce qu'un patron doit léguer.
+/// Arbitré le 2026-11-10 sur le constat F2 de la session vérificatrice.
 ///
 /// ⚠️ **Un aller-retour A puis B puis A est invisible** : deux états identiques
 /// donnent la même empreinte. Sans conséquence, l'état enregistré étant alors
@@ -42,4 +46,22 @@ export function empreinteFiche(valeurs: readonly ValeurEmpreinte[]): string {
   const hash = createHash("sha256");
   for (const valeur of valeurs) hash.update(encoder(valeur), "utf8");
   return hash.digest("base64url").slice(0, LONGUEUR);
+}
+
+/// Jeton d'une **ligne clé-valeur**, dont l'état tient dans une seule colonne -
+/// `app_settings.value`. Chaque ligne est son unité de concurrence, là où une
+/// fiche de forfait n'en forme qu'une à cinq colonnes.
+///
+/// Sur une valeur unique, le jeton est informationnellement équivalent à cette
+/// valeur, et c'est précisément ce qui le rend juste ici : « périmé » veut dire
+/// « la valeur stockée n'est plus celle que l'écran a rendue », exactement ce
+/// que le prédicat de l'`updateMany` vérifie ensuite. L'empreinte garde la
+/// valeur précédente hors du navigateur et laisse un seul instrument au patron.
+///
+/// ⚠️ Prend la valeur **telle que l'écran la rend**, donc déjà normalisée par
+/// l'appelant. C'est `jetonLigne` de `queries/parametres.ts` qui tient cette
+/// normalisation, parce que l'équivalence `NULL` / chaîne vide est une règle
+/// d'`app_settings`, pas une propriété de l'empreinte.
+export function empreinteValeur(valeur: string): string {
+  return empreinteFiche([valeur]);
 }

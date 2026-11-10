@@ -17,6 +17,8 @@ export function TriColonne({
   triCourant,
   sensCourant,
   base,
+  cleParametreTri,
+  cleParametreSens,
   parametres = {},
 }: {
   libelle: string;
@@ -25,6 +27,12 @@ export function TriColonne({
   triCourant: string;
   sensCourant: SensTriColonne;
   base: string;
+  /// Noms des deux paramètres d'URL du tri. **Sans défaut**, même motif que la
+  /// pagination : une primitive qui connaît les noms de paramètres de cette
+  /// application ne marche pas telle quelle ailleurs
+  /// (`04-folder-structure` §8.1).
+  cleParametreTri: string;
+  cleParametreSens: string;
   /// Paramètres à conserver dans le lien. La page n'en fait pas partie :
   /// changer de tri ramène en page 1, la ligne cherchée ayant changé de place.
   parametres?: Record<string, string | undefined>;
@@ -39,8 +47,8 @@ export function TriColonne({
   for (const [nom, valeur] of Object.entries(parametres)) {
     if (valeur !== undefined && valeur !== "") recherche.set(nom, valeur);
   }
-  recherche.set("tri", cle);
-  recherche.set("sens", sensCible);
+  recherche.set(cleParametreTri, cle);
+  recherche.set(cleParametreSens, sensCible);
 
   const Icone = !active
     ? ArrowUpDown

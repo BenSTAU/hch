@@ -12,7 +12,12 @@ import {
 import { TriColonne } from "@/components/ui/tri-colonne";
 import type { ForfaitAdmin } from "@/lib/db/queries/forfaits";
 import { formatDuree, formatPrixEuros } from "@/lib/format";
-import { CHEMIN_ADMIN_FORFAITS, cheminAdminForfait } from "@/lib/routes";
+import {
+  CHEMIN_ADMIN_FORFAITS,
+  cheminAdminForfait,
+  PARAM_SENS,
+  PARAM_TRI,
+} from "@/lib/routes";
 import type { SensTriForfaits, TriForfaits } from "@/lib/validations/forfaits";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +52,8 @@ export function TableForfaits({
             triCourant={tri}
             sensCourant={sens}
             base={CHEMIN_ADMIN_FORFAITS}
+            cleParametreTri={PARAM_TRI}
+            cleParametreSens={PARAM_SENS}
           />
           <TriColonne
             libelle="Durée"
@@ -54,6 +61,8 @@ export function TableForfaits({
             triCourant={tri}
             sensCourant={sens}
             base={CHEMIN_ADMIN_FORFAITS}
+            cleParametreTri={PARAM_TRI}
+            cleParametreSens={PARAM_SENS}
           />
           <TriColonne
             libelle="Prix"
@@ -61,6 +70,8 @@ export function TableForfaits({
             triCourant={tri}
             sensCourant={sens}
             base={CHEMIN_ADMIN_FORFAITS}
+            cleParametreTri={PARAM_TRI}
+            cleParametreSens={PARAM_SENS}
           />
           <TableHead>Statut</TableHead>
         </TableRow>
