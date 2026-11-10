@@ -4,9 +4,8 @@ import { cn } from "@/lib/utils";
 /// ⚠️ **Écart assumé avec la primitive shadcn** : le conteneur reçoit
 /// `tabIndex={0}` et `role="group"`. Sans eux, un tableau qui déborde en
 /// largeur n'est pas défilable au clavier seul (WCAG 2.1.1, niveau A), et le
-/// dépôt vise RGAA A sur toute l'application. `aria-labelledby` pointe sur la
-/// légende du tableau, qui nomme déjà la région. Relevé par l'agent testeur
-/// sur T-B1-01 (A1).
+/// dépôt vise RGAA A sur toute l'application. Relevé par l'agent testeur sur
+/// T-B1-01 (A1).
 function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
     <div

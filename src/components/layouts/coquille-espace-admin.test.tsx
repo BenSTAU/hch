@@ -104,22 +104,31 @@ describe("CoquilleEspaceAdmin", () => {
 const RACINE_ADMIN = join(process.cwd(), "src/app/(app)/admin");
 const APP = join(process.cwd(), "src/app");
 
-/// Tous les `page.tsx` sous `/admin`, chemin relatif à `src/app`.
-function pagesAdmin(repertoire: string = RACINE_ADMIN): string[] {
-  const trouvees: string[] = [];
+/// Tous les fichiers portant ce nom sous `/admin`, récursivement.
+///
+/// ⚠️ **Récursif pour les layouts aussi, et ce n'est pas de la symétrie
+/// gratuite.** Le premier jet n'inspectait que les enfants directs de
+/// `/admin` : une garde posée dans `admin/layout.tsx` - le fichier même que le
+/// plan de la tâche prévoyait - ou dans un layout de sous-segment serait
+/// passée inaperçue. Relevé par la session vérificatrice (É4).
+function fichiersAdmin(
+  nom: "page.tsx" | "layout.tsx",
+  repertoire: string = RACINE_ADMIN,
+): string[] {
+  const trouves: string[] = [];
 
   for (const entree of readdirSync(repertoire, { withFileTypes: true })) {
     const chemin = join(repertoire, entree.name);
 
     // Les dossiers privés `_components/` ne portent pas de route.
     if (entree.isDirectory() && !entree.name.startsWith("_")) {
-      trouvees.push(...pagesAdmin(chemin));
+      trouves.push(...fichiersAdmin(nom, chemin));
       continue;
     }
-    if (entree.name === "page.tsx") trouvees.push(chemin);
+    if (entree.name === nom) trouves.push(chemin);
   }
 
-  return trouvees;
+  return trouves;
 }
 
 /// Le discriminant est l'**import**, pas la mention ni la forme de l'appel.
@@ -139,14 +148,15 @@ const IMPORT_GARDE =
   /import\s*\{[^}]*\brequireAdmin\b[^}]*\}\s*from\s*"@\/lib\/auth\/permissions"/;
 
 describe("garde de rôle de l'espace d'administration", () => {
-  it("trouve bien des pages à inspecter", () => {
-    // Sans ce contrôle, un changement d'arborescence rendrait la boucle
-    // ci-dessous vide, donc verte, donc muette.
-    expect(pagesAdmin().length).toBeGreaterThanOrEqual(4);
+  it("trouve bien des pages et des layouts à inspecter", () => {
+    // Sans ce contrôle, un changement d'arborescence rendrait les boucles
+    // ci-dessous vides, donc vertes, donc muettes.
+    expect(fichiersAdmin("page.tsx").length).toBeGreaterThanOrEqual(4);
+    expect(fichiersAdmin("layout.tsx").length).toBeGreaterThanOrEqual(2);
   });
 
   it("appelle `requireAdmin()` dans CHAQUE page de l'espace", () => {
-    const sansGarde = pagesAdmin()
+    const sansGarde = fichiersAdmin("page.tsx")
       .filter((chemin) => {
         const source = readFileSync(chemin, "utf8");
         return !APPEL_GARDE.test(source) || !IMPORT_GARDE.test(source);
@@ -156,20 +166,12 @@ describe("garde de rôle de l'espace d'administration", () => {
     expect(sansGarde).toEqual([]);
   });
 
-  it("ne confie la garde à aucun layout de segment", () => {
+  it("ne confie la garde à AUCUN layout de l'espace, à aucune profondeur", () => {
     // Le piège inverse : un `requireAdmin()` posé dans un `layout.tsx`
     // paraîtrait couvrir tout le segment, et deviendrait obsolète dès la
     // première navigation client (Partial Rendering).
-    const layouts = readdirSync(RACINE_ADMIN, { withFileTypes: true })
-      .filter((entree) => entree.isDirectory() && !entree.name.startsWith("_"))
-      .map((entree) => join(RACINE_ADMIN, entree.name, "layout.tsx"))
-      .filter((chemin) => {
-        try {
-          return IMPORT_GARDE.test(readFileSync(chemin, "utf8"));
-        } catch {
-          return false;
-        }
-      })
+    const layouts = fichiersAdmin("layout.tsx")
+      .filter((chemin) => IMPORT_GARDE.test(readFileSync(chemin, "utf8")))
       .map((chemin) => relative(APP, chemin));
 
     expect(layouts).toEqual([]);

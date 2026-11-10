@@ -573,10 +573,18 @@ describe("updateAppSettings, refus d'une ligne modifiée entre-temps", () => {
     });
   });
 
-  it("fait porter le prédicat sur l'`updated_at` lu, pas sur celui du navigateur", async () => {
-    // Le jeton reçu sert à produire le message ; c'est la valeur relue en base
-    // qui entre dans le `WHERE`. Les confondre ferait écrire un prédicat
-    // choisi par l'appelant.
+  it("conditionne l'écriture à l'`updated_at` de la ligne", async () => {
+    // ⚠️ Ce test fige la PRÉSENCE du prédicat de version, pas sa provenance.
+    //
+    // Son libellé disait « sur l'`updated_at` lu, pas sur celui du
+    // navigateur », et c'était une affirmation invérifiable : le contrôle de
+    // version qui précède garantit que les deux valeurs sont égales sur tout
+    // chemin qui atteint l'écriture, donc un prédicat construit depuis la
+    // charge utile rendrait ce test vert à l'identique. Relevé par la session
+    // vérificatrice (É3).
+    //
+    // Ce qui mord ici : retirer `updatedAt` du `where` fait rougir, et c'est
+    // cette clause qui ferme la fenêtre des millisecondes.
     await updateAppSettings(
       [{ key: "company.name", value: "Le Cycle Lyonnais", version: VERSION }],
       "admin-1",

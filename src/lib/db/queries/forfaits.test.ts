@@ -661,3 +661,100 @@ describe("creerForfait, forfait créé hors vente", () => {
     );
   });
 });
+
+describe("modifierForfait, réactivation", () => {
+  // Jusqu'ici tous les tests relisaient une ligne `isActive: true` : aucun ne
+  // faisait passer un forfait de `false` à `true` au niveau de la requête, et
+  // la DoD 7 écrit « désactivation **et** réactivation, vérifié par test ».
+  // Relevé par la session vérificatrice (É2).
+  const LIGNE_RETIREE = { ...LIGNE_REVISION, isActive: false };
+
+  async function ouvrirFicheRetiree() {
+    findUnique.mockResolvedValue(LIGNE_RETIREE);
+    const fiche = await lireForfaitAdmin(1);
+    if (!fiche) throw new Error("fixture : la fiche doit exister");
+    return fiche;
+  }
+
+  it("remet le forfait en vente sans toucher à ses autres colonnes", async () => {
+    const fiche = await ouvrirFicheRetiree();
+
+    const resultat = await modifierForfait(
+      { ...SAISIE, id: 1, version: fiche.version, isActive: true },
+      "admin-1",
+    );
+
+    expect(resultat).toEqual({
+      ok: true,
+      label: "Révision complète",
+      changements: ["isActive"],
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { isActive: true } }),
+    );
+  });
+
+  it("fait porter le prédicat sur le statut LU, donc `false`", async () => {
+    // Si le prédicat portait le statut soumis, réactiver un forfait déjà
+    // réactivé par un autre administrateur passerait au lieu d'être refusé.
+    const fiche = await ouvrirFicheRetiree();
+
+    await modifierForfait(
+      { ...SAISIE, id: 1, version: fiche.version, isActive: true },
+      "admin-1",
+    );
+
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 1, isActive: false }),
+      }),
+    );
+  });
+
+  it("trace la réactivation dans l'audit", async () => {
+    const fiche = await ouvrirFicheRetiree();
+
+    await modifierForfait(
+      { ...SAISIE, id: 1, version: fiche.version, isActive: true },
+      "admin-1",
+    );
+
+    expect(writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "UPDATE",
+        details: { isActive: { before: false, after: true } },
+      }),
+      tx,
+    );
+  });
+
+  it("n'écrit aucune ligne d'historique : le prix n'a pas bougé", async () => {
+    const fiche = await ouvrirFicheRetiree();
+
+    await modifierForfait(
+      { ...SAISIE, id: 1, version: fiche.version, isActive: true },
+      "admin-1",
+    );
+
+    expect(historiqueCreate).not.toHaveBeenCalled();
+  });
+
+  it("REFUSE la réactivation quand un homonyme actif existe déjà", async () => {
+    // `US-FORFAIT-MODIFIER` §Désactivation et réactivation : « il réapparaît au
+    // tunnel et à la vitrine, **sauf si un autre forfait actif porte déjà le
+    // même nom** ». Ce chemin-là traverse l'index partiel par le passage de
+    // `is_active` à `true`, pas par un changement de libellé - c'est un autre
+    // chemin que celui que le test de renommage couvre.
+    const fiche = await ouvrirFicheRetiree();
+    updateMany.mockRejectedValue({ code: "P2002" });
+
+    const resultat = await modifierForfait(
+      { ...SAISIE, id: 1, version: fiche.version, isActive: true },
+      "admin-1",
+    );
+
+    expect(resultat).toEqual({ ok: false, reason: "nom_pris" });
+    expect(historiqueCreate).not.toHaveBeenCalled();
+    expect(writeAuditLog).not.toHaveBeenCalled();
+  });
+});
