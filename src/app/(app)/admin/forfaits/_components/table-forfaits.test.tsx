@@ -10,6 +10,8 @@ import { axe } from "jest-axe";
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 
+import { lireTriForfaits } from "@/lib/validations/forfaits";
+
 import { TableForfaits } from "./table-forfaits";
 
 const REVISION = {
@@ -135,5 +137,62 @@ describe("TableForfaits, accessibilité", () => {
     const { container } = rendre();
 
     expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tests ajoutés par l'agent testeur (verify-only) sur la PR de fond de
+// T-B1-01, constat F4.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("TableForfaits, l'URL écrite est celle que la page relit", () => {
+  // ⚠️ **Le découplage a créé deux sources pour un même nom.**
+  //
+  // Le constat F4 sort `page`, `tri` et `sens` des primitives et les met dans
+  // `PARAM_PAGE` / `PARAM_TRI` / `PARAM_SENS` (`src/lib/routes.ts`). Mais la
+  // LECTURE, elle, les nomme toujours en propriétés d'objet - `searchParams`
+  // de Next et `lireTriForfaits` - et `routes.ts` le reconnaît en commentaire.
+  //
+  // Conséquence : renommer une constante produirait des liens que le lecteur
+  // ignore en silence, en retombant sur ses défauts (`label`, `asc`, page 1).
+  // Aucun écran ne planterait, aucun test livré ne rougirait, et le tri
+  // cesserait simplement de fonctionner. Ce test ferme la boucle : ce que le
+  // tableau ÉCRIT dans le lien est relu par le lecteur de la page.
+  //
+  // Les tests livrés de `tri-colonne.test.tsx` passent des noms arbitraires
+  // (`order`, `dir`) : ils prouvent que la prop est honorée, pas que la
+  // convention des deux bouts coïncide.
+  it("produit un lien que `lireTriForfaits` sait relire", () => {
+    rendre();
+
+    const lien = screen.getByRole("link", { name: /Prix/ });
+    const requete = new URL(
+      lien.getAttribute("href") ?? "",
+      "https://exemple.test",
+    ).searchParams;
+
+    // Exactement ce que fait la page : les paramètres d'URL arrivent en objet.
+    const relu = lireTriForfaits(Object.fromEntries(requete));
+
+    expect(relu).toEqual({ tri: "price", sens: "asc", page: 1 });
+  });
+
+  it("produit un lien de tri descendant que le lecteur relit aussi", () => {
+    // Le second clic sur la colonne courante inverse le sens : c'est la seule
+    // valeur de `sens` que le lecteur distingue de son défaut, donc la seule
+    // qui prouve que le nom du paramètre porte.
+    render(<TableForfaits forfaits={[REVISION]} tri="price" sens="asc" />);
+
+    const lien = screen.getByRole("link", { name: /Prix/ });
+    const requete = new URL(
+      lien.getAttribute("href") ?? "",
+      "https://exemple.test",
+    ).searchParams;
+
+    expect(lireTriForfaits(Object.fromEntries(requete))).toEqual({
+      tri: "price",
+      sens: "desc",
+      page: 1,
+    });
   });
 });

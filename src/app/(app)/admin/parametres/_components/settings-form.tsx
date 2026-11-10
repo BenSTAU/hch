@@ -8,16 +8,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-/// Une ligne d'`app_settings` telle qu'elle traverse la frontière serveur →
+/// Une ligne d'`app_settings` telle qu'elle traverse la frontière serveur vers
 /// client. `updatedAt` arrive en ISO : la page ne peut pas la formater pour un
 /// fuseau qu'elle ne connaît pas, et un formatage divergent entre serveur et
 /// navigateur casserait l'hydratation.
+///
+/// `version` est le jeton de concurrence de CETTE ligne, fabriqué par
+/// `listAppSettings`. Opaque, et sans pouvoir : il désigne une version, il
+/// n'autorise rien. `updatedAt` ne sert plus qu'à l'affichage.
 export type SettingField = {
   key: string;
   value: string | null;
   valueType: string;
   description: string | null;
   updatedAt: string;
+  version: string;
 };
 
 /// Formatage figé en UTC et en français : le rendu serveur et le rendu client
@@ -30,7 +35,7 @@ const DATE_FORMAT = new Intl.DateTimeFormat("fr-FR", {
   timeZone: "UTC",
 });
 
-/// Traduit le `value_type` en indices de saisie. Purement ergonomique — la
+/// Traduit le `value_type` en indices de saisie. Purement ergonomique - la
 /// validation qui compte vit dans `validateSettingValue`, côté serveur, parce
 /// qu'un attribut HTML se contourne.
 function inputAttributes(valueType: string) {
@@ -46,7 +51,7 @@ function inputAttributes(valueType: string) {
 
 /// Formulaire **générique** : un champ par ligne d'`app_settings`, pas cinq
 /// champs codés en dur. C'est la raison d'être du modèle clé-valeur telle que
-/// le dictionnaire la formule — *« ajouter un nouveau champ société ne
+/// le dictionnaire la formule - *« ajouter un nouveau champ société ne
 /// requiert pas de migration SQL »*. Coder les champs annulerait la propriété
 /// qu'on a payée en choisissant ce modèle.
 export function SettingsForm({ settings }: { settings: SettingField[] }) {
@@ -55,7 +60,7 @@ export function SettingsForm({ settings }: { settings: SettingField[] }) {
 
   // `validationErrors` est un canal distinct de `data` et de `serverError`
   // (next-safe-action). Ne pas le lire laissait une soumission refusée par Zod
-  // se solder par un clic sans effet — WCAG 3.3.1, niveau A. Relevé par
+  // se solder par un clic sans effet - WCAG 3.3.1, niveau A. Relevé par
   // l'agent testeur sur T-J0-05 (B1).
   const errorMessage =
     result.data?.error ??
@@ -66,6 +71,13 @@ export function SettingsForm({ settings }: { settings: SettingField[] }) {
 
   const invalidKeys = new Set(result.data?.invalidKeys ?? []);
 
+  // Les lignes que le refus de concurrence désigne. Le jeton porte la LIGNE
+  // depuis T-B1-01 (constat F3) : un refus ne concerne plus tout le
+  // formulaire, et marquer les champs concernés est la seule façon de dire
+  // lesquels afficheront une autre valeur après rechargement. `aria-invalid`
+  // dit « ce champ est la cause du refus », le message global dit quoi faire.
+  const staleKeys = new Set(result.data?.staleKeys ?? []);
+
   const changed = result.data?.changedKeys;
   const statusMessage =
     changed === undefined
@@ -73,7 +85,7 @@ export function SettingsForm({ settings }: { settings: SettingField[] }) {
       : changed.length > 0
         ? `Modifications enregistrées (${changed.length}).`
         : // Sans cette branche, une soumission sans modification afficherait
-          // « enregistré » alors qu'aucune écriture n'a eu lieu — le message
+          // « enregistré » alors qu'aucune écriture n'a eu lieu - le message
           // mentirait sur l'état de la base.
           "Aucune modification à enregistrer.";
 
@@ -96,14 +108,14 @@ export function SettingsForm({ settings }: { settings: SettingField[] }) {
             key: setting.key,
             value: String(data.get(setting.key) ?? ""),
             // La version rendue avec l'écran. Le serveur la compare à l'état
-            // courant et refuse si la ligne a bougé entre-temps.
-            version: setting.updatedAt,
+            // courant et refuse si CETTE ligne a bougé entre-temps.
+            version: setting.version,
           })),
         });
       }}
     >
       {/* Deux régions distinctes : `alert` interrompt, `status` attend une
-          pause. Elles restent DANS LE FLUX même vides — une région live
+          pause. Elles restent DANS LE FLUX même vides - une région live
           révélée en même temps que son contenu n'est pas annoncée de façon
           fiable par tous les couples lecteur/navigateur, et `empty:hidden`
           produisait exactement ce cas. Relevé par l'agent testeur. */}
@@ -131,7 +143,11 @@ export function SettingsForm({ settings }: { settings: SettingField[] }) {
             id={setting.key}
             name={setting.key}
             defaultValue={setting.value ?? ""}
-            aria-invalid={invalidKeys.has(setting.key) || undefined}
+            aria-invalid={
+              invalidKeys.has(setting.key) ||
+              staleKeys.has(setting.key) ||
+              undefined
+            }
             aria-describedby={`${setting.key}-meta`}
             {...inputAttributes(setting.valueType)}
           />
@@ -140,7 +156,7 @@ export function SettingsForm({ settings }: { settings: SettingField[] }) {
               l'administrateur et il expose la forme du modèle sur une page
               qu'un poste partagé peut avoir sous les yeux. Elle reste le seul
               identifiant accepté par le serveur, transportée par `name` et
-              par le rendu serveur — jamais affichée, jamais éditable.
+              par le rendu serveur - jamais affichée, jamais éditable.
 
               Ne subsiste que la date, qui est l'information que
               US-SOCIETE-AFFICHER motive : « vérifier qu'elles sont à jour ». */}

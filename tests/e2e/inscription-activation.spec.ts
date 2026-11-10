@@ -8,13 +8,13 @@ import {
   inscrire,
 } from "../support/compte-client";
 
-/// Inscription et activation de bout en bout — T-V3-02, `US-COMPTE-CREER` et
+/// Inscription et activation de bout en bout - T-V3-02, `US-COMPTE-CREER` et
 /// `US-COMPTE-ACTIVER`.
 ///
 /// Le fichier ne dépend d'AUCUN transport email, et c'est la propriété qui
 /// compte (ADR-017 §Contraintes). Deux conséquences de conception :
 ///
-///   · pour la partie inscription, l'oracle est la BASE — une ligne `users`
+///   · pour la partie inscription, l'oracle est la BASE - une ligne `users`
 ///     inactive, une ligne `auth_providers` locale, un jeton non consommé à
 ///     24 h ;
 ///   · pour la partie activation, le test **pose son propre jeton** avec un
@@ -55,7 +55,7 @@ function hash(token: string): string {
 ///
 /// Constaté en rejouant la barrière, pas en relisant le fichier : le second
 /// élément ne vient pas de notre balisage. Les tests unitaires sous RTL ne le
-/// voient pas non plus — ils rendent le composant, pas le document Next.
+/// voient pas non plus - ils rendent le composant, pas le document Next.
 function alerte(page: import("@playwright/test").Page) {
   return page.getByRole("main").getByRole("alert");
 }
@@ -89,7 +89,7 @@ test.describe("inscription", () => {
     expect(compte).not.toBeNull();
     expect(compte?.roles).toEqual(["ROLE_CLIENT"]);
     // US-COMPTE-CREER : `is_active = false` à la création. La colonne a
-    // `DEFAULT true` — l'oublier créerait un compte utilisable sans vérifier
+    // `DEFAULT true` - l'oublier créerait un compte utilisable sans vérifier
     // l'email.
     expect(compte?.isActive).toBe(false);
 
@@ -222,9 +222,8 @@ test.describe("activation", () => {
     await page.getByRole("button", { name: "Se connecter" }).click();
 
     // ⚠️ On vérifie que la connexion N'EST PLUS REFUSÉE, pas la destination.
-    // `AFTER_LOGIN` vaut `/admin/parametres` depuis T-J0-05, faute d'espace
-    // client — un ROLE_CLIENT y arrive donc sur un 403. Report nommé vers
-    // T-V3-03, qui porte le parcours de connexion.
+    // Celle-ci dépend du rôle depuis T-V3-10 (`afterLoginPath`), et c'est
+    // `connexion-deconnexion.spec.ts` qui en porte les oracles.
     await expect(page).not.toHaveURL(/\/connexion/);
     await expect(page.getByText(/Identifiants invalides/i)).toHaveCount(0);
   });

@@ -29,10 +29,10 @@ const settingEntrySchema = z.object({
     // erreur Postgres 22001 rendue en 500 au lieu d'un refus lisible.
     .max(100, "Clé de paramètre trop longue"),
   value: z.string(),
-  /// L'`updated_at` de la ligne au moment où l'écran l'a rendue, en ISO. Jeton
-  /// de concurrence, jamais interprété ici : il est seulement comparé, côté
-  /// serveur, à l'état courant. Une soumission sans jeton ne peut pas dire sur
-  /// quelle version elle porte, donc elle est refusée.
+  /// Empreinte opaque de la valeur de la ligne au moment où l'écran l'a rendue.
+  /// Jeton de concurrence, jamais interprété ici : il est seulement comparé,
+  /// côté serveur, à l'état courant. Une soumission sans jeton ne peut pas dire
+  /// sur quelle version elle porte, donc elle est refusée.
   version: z.string().min(1, "Version de paramètre manquante"),
 });
 
@@ -62,7 +62,7 @@ export function validateSettingValue(
 ): SettingValueCheck {
   // Le type est contrôlé AVANT la porte du vide : dans l'ordre inverse, un
   // `value_type` inconnu passait tant que la valeur était vide et échouait dès
-  // qu'elle ne l'était plus — deux verdicts contradictoires sur la même ligne.
+  // qu'elle ne l'était plus - deux verdicts contradictoires sur la même ligne.
   // Le CHECK SQL de la migration 002 rend le cas inatteignable aujourd'hui ;
   // l'ordre, lui, ne dépend pas de la base.
   if (!isSettingValueType(valueType)) {

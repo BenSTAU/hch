@@ -2,7 +2,7 @@
 //
 // Helper métier de la configuration société. CLAUDE.md §Server Actions impose
 // de le séparer de la Server Action : pas de `revalidatePath`, pas de
-// `redirect`, pas de contexte Next — donc testable ici, en isolation.
+// `redirect`, pas de contexte Next - donc testable ici, en isolation.
 //
 // Ce qu'il porte et qui ne peut pas vivre ailleurs : le **diff**. Écrire les
 // cinq champs du formulaire à chaque soumission produirait cinq entrées
@@ -42,13 +42,28 @@ vi.mock("@/lib/audit/log", () => ({
     writeAuditLog(entry, client),
 }));
 
-const { listAppSettings, lireContactSociete, updateAppSettings } =
+const { jetonLigne, listAppSettings, lireContactSociete, updateAppSettings } =
   await import("./parametres");
 
-/// Le jeton de concurrence que l'écran a rendu : l'`updated_at` des fixtures,
-/// en ISO. Une soumission qui le porte décrit l'état courant ; toute autre
-/// valeur décrit une fiche périmée.
-const VERSION = "2026-08-05T10:00:00.000Z";
+/// Le jeton de concurrence que l'écran a rendu pour UNE ligne : l'empreinte de
+/// sa valeur stockée, fabriquée par `listAppSettings` et renvoyée telle quelle
+/// par le formulaire. Une soumission qui le porte décrit l'état courant de
+/// cette ligne, toute autre valeur décrit une ligne périmée.
+///
+/// ⚠️ **Un jeton par LIGNE**, et plus un par formulaire. `app_settings` n'est
+/// pas une fiche, c'est N lignes indépendantes dans un même écran (T-B1-01,
+/// constat F3). La fonction réelle est employée ici, comme `lireForfaitAdmin`
+/// l'est dans `forfaits.test.ts` : la fabrique est unique ou elle ne sert à
+/// rien.
+const jeton = jetonLigne;
+
+/// Un jeton qui ne décrit aucun état stocké. 22 caractères base64url, comme
+/// ceux que produit `empreinteValeur`.
+const JETON_PERIME = "Zzzz00000000000000000A";
+
+/// Pour une clé absente de la base : `unknownKeys` filtre avant tout contrôle
+/// de version, la valeur du jeton n'entre donc jamais en jeu.
+const JETON_SANS_OBJET = JETON_PERIME;
 
 const CURRENT = [
   {
@@ -88,23 +103,35 @@ describe("listAppSettings", () => {
   });
 });
 
-describe("updateAppSettings — cas nominal", () => {
+describe("updateAppSettings - cas nominal", () => {
   it("écrit la valeur modifiée et signe la ligne", async () => {
     const result = await updateAppSettings(
-      [{ key: "company.name", value: "Le Cycle Lyonnais", version: VERSION }],
+      [
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
+      ],
       "admin-1",
     );
 
     expect(result).toEqual({ ok: true, changedKeys: ["company.name"] });
     expect(updateMany).toHaveBeenCalledWith({
-      where: { key: "company.name", updatedAt: new Date(VERSION) },
+      where: { key: "company.name", value: "LeCycleLyonnais" },
       data: { value: "Le Cycle Lyonnais", updatedBy: "admin-1" },
     });
   });
 
   it("écrit une entrée d'audit portant le diff", async () => {
     await updateAppSettings(
-      [{ key: "company.name", value: "Le Cycle Lyonnais", version: VERSION }],
+      [
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
+      ],
       "admin-1",
     );
 
@@ -123,11 +150,15 @@ describe("updateAppSettings — cas nominal", () => {
   it("n'écrit pas les valeurs inchangées", async () => {
     const result = await updateAppSettings(
       [
-        { key: "company.name", value: "LeCycleLyonnais", version: VERSION },
+        {
+          key: "company.name",
+          value: "LeCycleLyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
         {
           key: "company.email",
           value: "nouveau@homecyclhome.fr",
-          version: VERSION,
+          version: jeton("contact@homecyclhome.fr"),
         },
       ],
       "admin-1",
@@ -140,7 +171,13 @@ describe("updateAppSettings — cas nominal", () => {
 
   it("ne touche à rien quand rien n'a changé", async () => {
     const result = await updateAppSettings(
-      [{ key: "company.name", value: "LeCycleLyonnais", version: VERSION }],
+      [
+        {
+          key: "company.name",
+          value: "LeCycleLyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
+      ],
       "admin-1",
     );
 
@@ -154,7 +191,13 @@ describe("updateAppSettings — cas nominal", () => {
     // transaction laisserait une entrée d'audit décrivant une modification
     // qui n'a jamais été committée.
     await updateAppSettings(
-      [{ key: "company.name", value: "Autre", version: VERSION }],
+      [
+        {
+          key: "company.name",
+          value: "Autre",
+          version: jeton("LeCycleLyonnais"),
+        },
+      ],
       "admin-1",
     );
 
@@ -162,13 +205,13 @@ describe("updateAppSettings — cas nominal", () => {
   });
 });
 
-describe("updateAppSettings — refus", () => {
+describe("updateAppSettings - refus", () => {
   it("refuse une clé absente de la base sans rien écrire", async () => {
     // La table est clé-valeur et le formulaire est piloté par ses lignes :
     // une clé inconnue vient forcément d'ailleurs que de l'écran. `upsert`
     // ici laisserait n'importe qui peupler la configuration société.
     const result = await updateAppSettings(
-      [{ key: "company.inexistante", value: "x", version: VERSION }],
+      [{ key: "company.inexistante", value: "x", version: JETON_SANS_OBJET }],
       "admin-1",
     );
 
@@ -188,12 +231,12 @@ describe("updateAppSettings — refus", () => {
         value: "20",
         valueType: "number",
         description: "Taux de TVA",
-        updatedAt: new Date(VERSION),
+        updatedAt: new Date("2026-08-05T10:00:00Z"),
       },
     ]);
 
     const result = await updateAppSettings(
-      [{ key: "company.tva", value: "vingt", version: VERSION }],
+      [{ key: "company.tva", value: "vingt", version: jeton("20") }],
       "admin-1",
     );
 
@@ -210,8 +253,12 @@ describe("updateAppSettings — refus", () => {
     // la base en désaccord, et l'administrateur ne sait pas ce qui est passé.
     const result = await updateAppSettings(
       [
-        { key: "company.name", value: "Le Cycle Lyonnais", version: VERSION },
-        { key: "company.inexistante", value: "x", version: VERSION },
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
+        { key: "company.inexistante", value: "x", version: JETON_SANS_OBJET },
       ],
       "admin-1",
     );
@@ -227,7 +274,7 @@ describe("updateAppSettings — refus", () => {
 // modification qui n'en laisse aucune. `NULL` en base et chaîne vide au
 // formulaire décrivent le même état, c'est là que la confusion naîtrait.
 
-describe("updateAppSettings — frontière NULL / chaîne vide", () => {
+describe("updateAppSettings - frontière NULL / chaîne vide", () => {
   const NULLABLE = [
     {
       key: "company.siret",
@@ -246,7 +293,7 @@ describe("updateAppSettings — frontière NULL / chaîne vide", () => {
     findMany.mockResolvedValue(NULLABLE);
 
     const result = await updateAppSettings(
-      [{ key: "company.siret", value: "", version: VERSION }],
+      [{ key: "company.siret", value: "", version: jeton(null) }],
       "admin-1",
     );
 
@@ -261,7 +308,7 @@ describe("updateAppSettings — frontière NULL / chaîne vide", () => {
     findMany.mockResolvedValue(NULLABLE);
 
     await updateAppSettings(
-      [{ key: "company.siret", value: "12345678900011", version: VERSION }],
+      [{ key: "company.siret", value: "12345678900011", version: jeton(null) }],
       "admin-1",
     );
 
@@ -278,16 +325,16 @@ describe("updateAppSettings — frontière NULL / chaîne vide", () => {
     // Constat : l'effacement d'un champ rempli stocke `''`. La colonne reste
     // NULLable et le seed pose des `''`, donc les deux valeurs coexistent en
     // base pour un même état métier « non renseigné ». Sans conséquence tant
-    // que toute lecture passe par `value ?? ""` — mais une requête SQL directe
+    // que toute lecture passe par `value ?? ""` - mais une requête SQL directe
     // écrite plus tard avec `WHERE value IS NULL` ne verrait pas ces lignes.
     const result = await updateAppSettings(
-      [{ key: "company.name", value: "", version: VERSION }],
+      [{ key: "company.name", value: "", version: jeton("LeCycleLyonnais") }],
       "admin-1",
     );
 
     expect(result).toEqual({ ok: true, changedKeys: ["company.name"] });
     expect(updateMany).toHaveBeenCalledWith({
-      where: { key: "company.name", updatedAt: new Date(VERSION) },
+      where: { key: "company.name", value: "LeCycleLyonnais" },
       data: { value: "", updatedBy: "admin-1" },
     });
     expect(writeAuditLog).toHaveBeenCalledWith(
@@ -299,7 +346,7 @@ describe("updateAppSettings — frontière NULL / chaîne vide", () => {
   });
 });
 
-describe("updateAppSettings — ordre des contrôles", () => {
+describe("updateAppSettings - ordre des contrôles", () => {
   it("annonce la clé inconnue avant la valeur invalide", async () => {
     // L'ordre n'est pas cosmétique : `invalid_values` renvoie les clés
     // fautives à l'utilisateur, `unknown_keys` non. Si une clé inconnue
@@ -318,8 +365,12 @@ describe("updateAppSettings — ordre des contrôles", () => {
 
     const result = await updateAppSettings(
       [
-        { key: "company.tva", value: "vingt", version: VERSION },
-        { key: "<img src=x onerror=alert(1)>", value: "x", version: VERSION },
+        { key: "company.tva", value: "vingt", version: jeton("20") },
+        {
+          key: "<img src=x onerror=alert(1)>",
+          value: "x",
+          version: JETON_SANS_OBJET,
+        },
       ],
       "admin-1",
     );
@@ -352,8 +403,12 @@ describe("updateAppSettings — ordre des contrôles", () => {
 
     const result = await updateAppSettings(
       [
-        { key: "company.name", value: "Le Cycle Lyonnais", version: VERSION },
-        { key: "company.tva", value: "vingt", version: VERSION },
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
+        { key: "company.tva", value: "vingt", version: jeton("20") },
       ],
       "admin-1",
     );
@@ -385,8 +440,12 @@ describe("updateAppSettings — ordre des contrôles", () => {
 
     const result = await updateAppSettings(
       [
-        { key: "company.tva", value: "vingt", version: VERSION },
-        { key: "company.name", value: "Le Cycle Lyonnais", version: VERSION },
+        { key: "company.tva", value: "vingt", version: jeton("vingt") },
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
       ],
       "admin-1",
     );
@@ -395,13 +454,13 @@ describe("updateAppSettings — ordre des contrôles", () => {
     expect(updateMany).toHaveBeenCalledOnce();
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { key: "company.name", updatedAt: new Date(VERSION) },
+        where: { key: "company.name", value: "LeCycleLyonnais" },
       }),
     );
   });
 });
 
-describe("updateAppSettings — signature de l'écriture", () => {
+describe("updateAppSettings - signature de l'écriture", () => {
   it("signe chaque ligne modifiée du même acteur, et aucune autre", async () => {
     // `updated_by` (dictionnaire §app_settings) et `actor_id`
     // (§audit_logs) doivent désigner le même compte, et n'apparaître que sur
@@ -410,11 +469,15 @@ describe("updateAppSettings — signature de l'écriture", () => {
     // faite.
     await updateAppSettings(
       [
-        { key: "company.name", value: "Le Cycle Lyonnais", version: VERSION },
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
         {
           key: "company.email",
           value: "contact@homecyclhome.fr",
-          version: VERSION,
+          version: jeton("contact@homecyclhome.fr"),
         },
       ],
       "admin-1",
@@ -423,7 +486,7 @@ describe("updateAppSettings — signature de l'écriture", () => {
     expect(updateMany).toHaveBeenCalledOnce();
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { key: "company.name", updatedAt: new Date(VERSION) },
+        where: { key: "company.name", value: "LeCycleLyonnais" },
       }),
     );
     expect(writeAuditLog).toHaveBeenCalledOnce();
@@ -441,7 +504,13 @@ describe("updateAppSettings — signature de l'écriture", () => {
     // L'index `(entity_type, entity_id)` de la migration 003 sert à relire le
     // journal en SQL. `AppSetting` y serait introuvable.
     await updateAppSettings(
-      [{ key: "company.name", value: "Autre", version: VERSION }],
+      [
+        {
+          key: "company.name",
+          value: "Autre",
+          version: jeton("LeCycleLyonnais"),
+        },
+      ],
       "admin-1",
     );
 
@@ -511,7 +580,7 @@ describe("updateAppSettings, refus d'une ligne modifiée entre-temps", () => {
         {
           key: "company.name",
           value: "Le Cycle Lyonnais",
-          version: "2026-01-01T00:00:00.000Z",
+          version: JETON_PERIME,
         },
       ],
       "admin-2",
@@ -532,7 +601,13 @@ describe("updateAppSettings, refus d'une ligne modifiée entre-temps", () => {
     updateMany.mockResolvedValue({ count: 0 });
 
     const resultat = await updateAppSettings(
-      [{ key: "company.name", value: "Le Cycle Lyonnais", version: VERSION }],
+      [
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
+      ],
       "admin-2",
     );
 
@@ -556,11 +631,15 @@ describe("updateAppSettings, refus d'une ligne modifiée entre-temps", () => {
 
     const resultat = await updateAppSettings(
       [
-        { key: "company.name", value: "Le Cycle Lyonnais", version: VERSION },
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
         {
           key: "company.email",
           value: "nouveau@homecyclhome.fr",
-          version: VERSION,
+          version: jeton("contact@homecyclhome.fr"),
         },
       ],
       "admin-2",
@@ -573,41 +652,54 @@ describe("updateAppSettings, refus d'une ligne modifiée entre-temps", () => {
     });
   });
 
-  it("conditionne l'écriture à l'`updated_at` de la ligne", async () => {
-    // ⚠️ Ce test fige la PRÉSENCE du prédicat de version, pas sa provenance.
+  it("conditionne l'écriture à la valeur lue de la ligne", async () => {
+    // ⚠️ Ce test fige la PRÉSENCE du prédicat, pas sa provenance.
     //
     // Son libellé disait « sur l'`updated_at` lu, pas sur celui du
     // navigateur », et c'était une affirmation invérifiable : le contrôle de
-    // version qui précède garantit que les deux valeurs sont égales sur tout
-    // chemin qui atteint l'écriture, donc un prédicat construit depuis la
-    // charge utile rendrait ce test vert à l'identique. Relevé par la session
-    // vérificatrice (É3).
+    // version qui précède garantit que les deux valeurs décrivent le même état
+    // sur tout chemin qui atteint l'écriture, donc un prédicat construit
+    // depuis la charge utile rendrait ce test vert à l'identique. Relevé par
+    // la session vérificatrice (É3).
     //
-    // Ce qui mord ici : retirer `updatedAt` du `where` fait rougir, et c'est
-    // cette clause qui ferme la fenêtre des millisecondes.
+    // Ce qui mord ici : retirer `value` du `where` fait rougir, et c'est cette
+    // clause qui ferme la fenêtre des millisecondes. Depuis le constat F2,
+    // elle porte la valeur LUE et non l'`updated_at` - le même instrument que
+    // le jeton, au lieu de deux.
     await updateAppSettings(
-      [{ key: "company.name", value: "Le Cycle Lyonnais", version: VERSION }],
+      [
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
+      ],
       "admin-1",
     );
 
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { key: "company.name", updatedAt: new Date(VERSION) },
+        where: { key: "company.name", value: "LeCycleLyonnais" },
       }),
     );
   });
 
   it("ne refuse pas une ligne resoumise sans modification", async () => {
-    // Un champ non touché est resoumis tel quel à chaque envoi. Son jeton EST
-    // contrôlé comme les autres - le contrôle précède la comparaison de
-    // valeur - mais il décrit l'état courant, donc rien ne le refuse, et
-    // l'absence de changement le sort du lot avant l'écriture.
+    // Un champ non touché est resoumis tel quel à chaque envoi. La
+    // comparaison de valeur le sort du lot AVANT tout contrôle de jeton :
+    // rien n'est écrit sur cette ligne, donc il n'y a rien à y écraser.
     //
-    // ⚠️ Ne pas lire ce test comme « une ligne non modifiée échappe au
-    // contrôle » : c'est l'inverse, et T11 ci-dessus fige ce que donne une
-    // ligne non modifiée dont le jeton a vieilli.
+    // ⚠️ Depuis le constat F3, une ligne non modifiée échappe bel et bien au
+    // contrôle, et c'est voulu : le test « ne refuse personne pour une ligne
+    // qu'il n'a pas touchée » ci-dessous fige l'autre face de cette règle.
     const resultat = await updateAppSettings(
-      [{ key: "company.name", value: "LeCycleLyonnais", version: VERSION }],
+      [
+        {
+          key: "company.name",
+          value: "LeCycleLyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
+      ],
       "admin-1",
     );
 
@@ -633,11 +725,15 @@ describe("updateAppSettings, le lot est vraiment annulé", () => {
 
     await updateAppSettings(
       [
-        { key: "company.name", value: "Le Cycle Lyonnais", version: VERSION },
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
         {
           key: "company.email",
           value: "nouveau@homecyclhome.fr",
-          version: VERSION,
+          version: jeton("contact@homecyclhome.fr"),
         },
       ],
       "admin-2",
@@ -653,7 +749,13 @@ describe("updateAppSettings, le lot est vraiment annulé", () => {
     // Contrôle du mouchard : sans ce test, un `$transaction` qui annulerait
     // toujours rendrait le précédent vert pour une mauvaise raison.
     await updateAppSettings(
-      [{ key: "company.name", value: "Le Cycle Lyonnais", version: VERSION }],
+      [
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
+      ],
       "admin-1",
     );
 
@@ -666,7 +768,7 @@ describe("updateAppSettings, le lot est vraiment annulé", () => {
     // sinon chaque refus de saisie remonterait une exception au lieu d'un
     // résultat.
     const resultat = await updateAppSettings(
-      [{ key: "company.inexistante", value: "x", version: VERSION }],
+      [{ key: "company.inexistante", value: "x", version: JETON_SANS_OBJET }],
       "admin-1",
     );
 
@@ -695,8 +797,16 @@ describe("updateAppSettings, lot hostile", () => {
 
     const resultat = await updateAppSettings(
       [
-        { key: "company.name", value: "Premier", version: VERSION },
-        { key: "company.name", value: "Second", version: VERSION },
+        {
+          key: "company.name",
+          value: "Premier",
+          version: jeton("LeCycleLyonnais"),
+        },
+        {
+          key: "company.name",
+          value: "Second",
+          version: jeton("LeCycleLyonnais"),
+        },
       ],
       "attaquant",
     );
@@ -706,36 +816,347 @@ describe("updateAppSettings, lot hostile", () => {
   });
 });
 
-describe("updateAppSettings, portée du jeton sur le lot", () => {
-  it("refuse le lot quand une ligne NON éditée a bougé", async () => {
-    // Le formulaire resoumet ses cinq champs à chaque envoi, chacun avec son
-    // jeton. Si un autre administrateur a touché `company.email` pendant que
-    // celui-ci ne modifiait que `company.name`, le lot est refusé EN ENTIER.
+describe("updateAppSettings, granularité du jeton", () => {
+  it("ne refuse personne pour une ligne qu'il n'a pas touchée", async () => {
+    // ⚠️ **Renversement assumé d'un comportement délibéré** (T-B1-01,
+    // constat F3). Ce fichier figeait l'inverse - « refuse le lot quand une
+    // ligne NON éditée a bougé » - parce que le contrôle de jeton précédait la
+    // comparaison de valeur. Ce n'était pas un oubli : c'était écrit et testé.
     //
-    // ⚠️ C'est la lecture stricte, et elle contredit le commentaire du test
-    // « ne refuse pas une ligne resoumise sans modification », qui affirme
-    // qu'un champ non touché n'a « aucune raison d'être contrôlé ». Le code
-    // contrôle le jeton AVANT de comparer la valeur
-    // (`src/lib/db/queries/parametres.ts`, boucle de `transactionSettings`) :
-    // ce test fixe le comportement réel, pour qu'un relâchement futur de
-    // l'ordre des contrôles ne passe pas inaperçu.
+    // La DoD 6 tranche dans l'autre sens, et voici pourquoi : `app_settings`
+    // n'est pas une fiche, c'est N lignes indépendantes dans un même
+    // formulaire, qui resoumet ses cinq champs à chaque envoi. Sous l'ancienne
+    // règle, un administrateur était refusé parce qu'un collègue avait touché
+    // une AUTRE clé - un écran partagé se bloquait lui-même.
+    //
+    // Ici, `company.email` a bougé sous l'écran et n'est pas le champ que
+    // l'administrateur a édité : il le resoumet tel que l'écran l'affichait,
+    // et c'est son jeton qui l'atteste. Rien n'est écrit sur cette ligne, donc
+    // rien n'y est écrasé - la valeur du collègue reste.
     findMany.mockResolvedValue([
-      { ...CURRENT[0], updatedAt: new Date(VERSION) },
+      { ...CURRENT[0] },
+      { ...CURRENT[1], value: "autre-contact@homecyclhome.fr" },
+    ]);
+
+    const resultat = await updateAppSettings(
+      [
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
+        {
+          key: "company.email",
+          // Valeur INCHANGÉE : l'administrateur n'a pas touché ce champ, et
+          // son jeton décrit l'état d'avant.
+          value: "contact@homecyclhome.fr",
+          version: jeton("contact@homecyclhome.fr"),
+        },
+      ],
+      "admin-2",
+    );
+
+    expect(resultat).toEqual({ ok: true, changedKeys: ["company.name"] });
+    expect(updateMany).toHaveBeenCalledOnce();
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { key: "company.name", value: "LeCycleLyonnais" },
+      }),
+    );
+  });
+
+  it("tient la frontière NULL / chaîne vide dans le jeton", async () => {
+    // Le point où cette règle pouvait se perdre. Une ligne jamais renseignée
+    // porte `NULL` en base et se rend `""` au formulaire : son jeton est donc
+    // fabriqué sur la valeur RENDUE (`jetonLigne`). Sans cette normalisation,
+    // un champ vide passerait pour édité à chaque soumission, et un collègue
+    // qui l'a renseigné entre-temps ferait refuser tout le lot.
+    findMany.mockResolvedValue([
+      { ...CURRENT[0] },
       {
-        ...CURRENT[1],
-        // Ligne touchée par quelqu'un d'autre depuis le rendu de l'écran.
-        updatedAt: new Date("2026-08-05T11:30:00.000Z"),
+        key: "company.siret",
+        // Renseigné par un collègue depuis le rendu de l'écran.
+        value: "12345678900011",
+        valueType: "string",
+        description: "Numéro SIRET",
+        updatedAt: new Date("2026-08-05T10:00:00Z"),
       },
     ]);
 
     const resultat = await updateAppSettings(
       [
-        { key: "company.name", value: "Le Cycle Lyonnais", version: VERSION },
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
+        { key: "company.siret", value: "", version: jeton(null) },
+      ],
+      "admin-2",
+    );
+
+    expect(resultat).toEqual({ ok: true, changedKeys: ["company.name"] });
+  });
+
+  it("refuse la ligne qu'il a touchée, et nomme celle-là", async () => {
+    // L'autre face de la même règle, et c'est elle qui tient la DoD 5 sur cet
+    // écran : sur la ligne réellement modifiée, un jeton qui ne décrit plus
+    // l'état stocké est refusé. Le refus nomme cette clé, et c'est ce que le
+    // formulaire marque en `aria-invalid`.
+    findMany.mockResolvedValue([
+      { ...CURRENT[0], value: "Nom posé par un collègue" },
+      { ...CURRENT[1] },
+    ]);
+
+    const resultat = await updateAppSettings(
+      [
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jeton("LeCycleLyonnais"),
+        },
+      ],
+      "admin-2",
+    );
+
+    expect(resultat).toEqual({
+      ok: false,
+      reason: "stale",
+      keys: ["company.name"],
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(writeAuditLog).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tests ajoutés par l'agent testeur (verify-only) sur la PR de fond de
+// T-B1-01, constats F2 et F3.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("jetonLigne, la fabrique est vraiment unique", () => {
+  // ⚠️ **Le trou le plus coûteux du dispositif, et il n'était pas couvert.**
+  //
+  // `listAppSettings` fabrique le jeton que l'écran rend, et la boucle de
+  // `transactionSettings` le refabrique pour le comparer. Les deux appellent
+  // `jetonLigne`, mais AUCUN test ne reliait les deux bouts : tous les tests
+  // existants construisent leur jeton à la main, donc ils exercent la boucle
+  // contre elle-même et resteraient verts si `listAppSettings` fabriquait son
+  // jeton autrement - sur la valeur brute au lieu de la valeur rendue, sur
+  // `updatedAt`, sur une constante.
+  //
+  // Le mode d'échec est celui que le module nomme au-dessus de
+  // `listAppSettings` : « tout enregistrement serait refusé sans cause
+  // visible ». Il ne se verrait qu'à l'usage, et il ne casserait rien d'autre.
+  it("fait accepter une soumission construite depuis la lecture de l'écran", async () => {
+    const lues = await listAppSettings();
+    const ligne = lues.find((courante) => courante.key === "company.name");
+
+    const resultat = await updateAppSettings(
+      [
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: ligne?.version ?? "",
+        },
+      ],
+      "admin-1",
+    );
+
+    expect(resultat).toEqual({ ok: true, changedKeys: ["company.name"] });
+  });
+
+  it("fait accepter la première saisie d'une ligne NULL en base", async () => {
+    // Le point exact où la normalisation `?? ""` pouvait se perdre : la base
+    // rend `null`, le formulaire rend `""`. Si les deux bouts ne normalisaient
+    // pas pareil, une clé jamais renseignée serait la seule à ne jamais
+    // pouvoir être enregistrée - et `company.siret` comme `company.address`
+    // sont dans ce cas au seed.
+    findMany.mockResolvedValue([
+      {
+        key: "company.siret",
+        value: null,
+        valueType: "string",
+        description: "Numéro SIRET",
+        updatedAt: new Date("2026-08-05T10:00:00Z"),
+      },
+    ]);
+
+    const lues = await listAppSettings();
+
+    const resultat = await updateAppSettings(
+      [
+        {
+          key: "company.siret",
+          value: "12345678900011",
+          version: lues[0]?.version ?? "",
+        },
+      ],
+      "admin-1",
+    );
+
+    expect(resultat).toEqual({ ok: true, changedKeys: ["company.siret"] });
+  });
+
+  it("rend un jeton distinct par ligne, jamais un jeton de lot", async () => {
+    // Le jeton porte LA LIGNE depuis le constat F3. Deux lignes de valeurs
+    // différentes qui partageraient un jeton ramèneraient la granularité au
+    // formulaire sans que rien ne le dise.
+    const lues = await listAppSettings();
+
+    expect(lues).toHaveLength(2);
+    expect(lues[0]?.version).not.toBe(lues[1]?.version);
+    expect(lues[0]?.version).toBe(jetonLigne("LeCycleLyonnais"));
+  });
+
+  it("garde `updatedAt`, que l'écran affiche encore", async () => {
+    // `updated_at` ne décide plus rien (constat F2) mais il reste la seule
+    // information que `US-SOCIETE-AFFICHER` motive, « vérifier qu'elles sont à
+    // jour ». Le retirer de la sélection casserait l'écran sans toucher au
+    // contrôle de concurrence.
+    const lues = await listAppSettings();
+
+    expect(lues[0]?.updatedAt).toEqual(new Date("2026-08-05T10:00:00Z"));
+  });
+});
+
+describe("updateAppSettings, ce que l'ordre des trois contrôles laisse passer", () => {
+  it("laisse tomber en silence l'écriture d'un appelant qui forge son jeton", async () => {
+    // ⚠️ **Caractérisation d'un trou réel, dans la direction sûre.**
+    //
+    // Le jeton n'est pas un secret : c'est l'empreinte d'une valeur connue,
+    // sans sel. Un appelant direct de la Server Action peut donc fabriquer
+    // `jetonLigne(<valeur qu'il soumet>)`, ce qui fait tomber son entrée dans
+    // le contrôle 2 - « champ non édité » - et sortir de la boucle.
+    //
+    // Conséquence : il PERD son écriture, il n'en gagne aucune. Pour écraser
+    // la ligne d'un autre, il devrait produire `jetonLigne(<valeur stockée>)`,
+    // donc connaître l'état courant, donc ne pas être périmé. L'asymétrie est
+    // dans le bon sens, et c'est ce que ce test fige : le jour où l'ordre des
+    // contrôles bougerait, ce test dirait dans quel sens.
+    //
+    // Le défaut résiduel est le MESSAGE, pas l'écriture : le résultat est
+    // `ok: true` avec zéro changement, et l'écran afficherait « Aucune
+    // modification à enregistrer » pour une soumission qui en demandait une.
+    // Inaccessible depuis l'écran, qui renvoie le jeton qu'il a reçu.
+    const resultat = await updateAppSettings(
+      [
+        {
+          key: "company.name",
+          value: "Valeur de l'attaquant",
+          version: jetonLigne("Valeur de l'attaquant"),
+        },
+      ],
+      "attaquant",
+    );
+
+    expect(resultat).toEqual({ ok: true, changedKeys: [] });
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("accepte l'aller-retour A puis B puis A, sur l'état réellement stocké", async () => {
+    // Deux états identiques donnent la même empreinte : un cycle A → B → A est
+    // invisible au jeton, et le module le documente. Ce que ce test ajoute est
+    // la conséquence sur l'ÉCRITURE - `before` est lu sur la ligne dans la
+    // transaction, pas déduit du jeton, donc le prédicat et l'audit décrivent
+    // l'état réel même quand le jeton ne distingue pas.
+    const resultat = await updateAppSettings(
+      [
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jetonLigne("LeCycleLyonnais"),
+        },
+      ],
+      "admin-1",
+    );
+
+    expect(resultat).toEqual({ ok: true, changedKeys: ["company.name"] });
+    expect(writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: { before: "LeCycleLyonnais", after: "Le Cycle Lyonnais" },
+      }),
+      tx,
+    );
+  });
+
+  it("nomme TOUTES les lignes éditées périmées, pas seulement la première", async () => {
+    // Le refus est devenu une liste de clés pour que le formulaire les marque
+    // (`staleKeys`). Un `return` au premier périmé donnerait un `aria-invalid`
+    // sur un champ et rien sur l'autre, alors que les deux afficheront une
+    // valeur différente au rechargement.
+    findMany.mockResolvedValue([
+      { ...CURRENT[0], value: "Nom posé par un collègue" },
+      { ...CURRENT[1], value: "autre@homecyclhome.fr" },
+    ]);
+
+    const resultat = await updateAppSettings(
+      [
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jetonLigne("LeCycleLyonnais"),
+        },
         {
           key: "company.email",
-          // Valeur INCHANGÉE : l'administrateur n'a pas touché ce champ.
+          value: "nouveau@homecyclhome.fr",
+          version: jetonLigne("contact@homecyclhome.fr"),
+        },
+      ],
+      "admin-2",
+    );
+
+    expect(resultat).toEqual({
+      ok: false,
+      reason: "stale",
+      keys: ["company.name", "company.email"],
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("ne refuse pas la ligne non éditée dont un collègue a vidé la valeur", async () => {
+    // La frontière `NULL` / chaîne vide sur la ligne NON éditée, dans l'autre
+    // sens que le test livré : l'écran avait rendu une valeur, un collègue l'a
+    // effacée. Une soumission qui ne touche pas ce champ ne doit rien refuser,
+    // et ne rien écrire - sinon elle restaurerait la valeur effacée.
+    findMany.mockResolvedValue([
+      { ...CURRENT[0] },
+      { ...CURRENT[1], value: null },
+    ]);
+
+    const resultat = await updateAppSettings(
+      [
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: jetonLigne("LeCycleLyonnais"),
+        },
+        {
+          key: "company.email",
           value: "contact@homecyclhome.fr",
-          version: VERSION,
+          version: jetonLigne("contact@homecyclhome.fr"),
+        },
+      ],
+      "admin-2",
+    );
+
+    expect(resultat).toEqual({ ok: true, changedKeys: ["company.name"] });
+    expect(updateMany).toHaveBeenCalledOnce();
+  });
+
+  it("refuse la ligne éditée dont un collègue a vidé la valeur", async () => {
+    // Même situation, mais le champ EST édité : le jeton décrit « une valeur
+    // qui n'est plus là », donc l'enregistrer écraserait l'effacement du
+    // collègue et l'audit affirmerait un `before` faux.
+    findMany.mockResolvedValue([{ ...CURRENT[1], value: null }]);
+
+    const resultat = await updateAppSettings(
+      [
+        {
+          key: "company.email",
+          value: "nouveau@homecyclhome.fr",
+          version: jetonLigne("contact@homecyclhome.fr"),
         },
       ],
       "admin-2",
@@ -747,6 +1168,75 @@ describe("updateAppSettings, portée du jeton sur le lot", () => {
       keys: ["company.email"],
     });
     expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("n'écrase pas une ligne devenue NULL que le prédicat ne retrouve plus", async () => {
+    // Le seul angle mort du jeton pris seul : `jetonLigne(null)` et
+    // `jetonLigne("")` sont égaux, donc un passage de `""` à `NULL` (ou
+    // l'inverse) entre le rendu et la soumission ne le fait pas broncher.
+    // C'est le prédicat de l'`updateMany` qui ferme le cas - son `where` porte
+    // la valeur LUE dans la transaction - et le `count === 0` lève plutôt que
+    // de laisser passer. Ce test tient la ceinture ET la bretelle.
+    findMany.mockResolvedValue([
+      {
+        key: "company.siret",
+        value: "",
+        valueType: "string",
+        description: "Numéro SIRET",
+        updatedAt: new Date("2026-08-05T10:00:00Z"),
+      },
+    ]);
+    updateMany.mockResolvedValue({ count: 0 });
+
+    const resultat = await updateAppSettings(
+      [
+        {
+          key: "company.siret",
+          value: "12345678900011",
+          version: jetonLigne(null),
+        },
+      ],
+      "admin-2",
+    );
+
+    expect(resultat).toEqual({
+      ok: false,
+      reason: "stale",
+      keys: ["company.siret"],
+    });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { key: "company.siret", value: "" },
+      data: { value: "12345678900011", updatedBy: "admin-2" },
+    });
+    expect(transactionAnnulee).toHaveBeenCalledOnce();
     expect(writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("laisse tomber une valeur invalide qu'un jeton forgé sort de la boucle", async () => {
+    // Suite du premier test de ce describe, sur la branche de validation : le
+    // contrôle 2 précède `validateSettingValue`, donc un jeton forgé fait
+    // sortir l'entrée avant qu'elle soit validée. Encore une fois rien n'est
+    // écrit, et encore une fois le résultat dit `ok`.
+    //
+    // ⚠️ Ce test CARACTÉRISE, il n'approuve pas : si l'ordre devait changer
+    // pour refuser explicitement une entrée dont le jeton ne décrit ni l'état
+    // stocké ni rien de rendu, c'est ici qu'il faudra le dire.
+    findMany.mockResolvedValue([
+      {
+        key: "company.tva",
+        value: "20",
+        valueType: "number",
+        description: "Taux de TVA",
+        updatedAt: new Date("2026-08-05T10:00:00Z"),
+      },
+    ]);
+
+    const resultat = await updateAppSettings(
+      [{ key: "company.tva", value: "vingt", version: jetonLigne("vingt") }],
+      "attaquant",
+    );
+
+    expect(resultat).toEqual({ ok: true, changedKeys: [] });
+    expect(updateMany).not.toHaveBeenCalled();
   });
 });

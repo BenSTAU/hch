@@ -14,6 +14,7 @@ export function Pagination({
   page,
   pages,
   base,
+  cleParametrePage,
   parametres = {},
   libelle,
 }: {
@@ -21,6 +22,11 @@ export function Pagination({
   pages: number;
   /// Chemin de la liste paginée.
   base: string;
+  /// Nom du paramètre d'URL qui porte le numéro de page. **Sans défaut** :
+  /// l'écrire ici en dur ferait vivre la convention d'URL de l'application
+  /// dans une primitive, et ce composant ne marcherait plus tel quel dans un
+  /// autre projet (`04-folder-structure` §8.1).
+  cleParametrePage: string;
   /// Les paramètres d'URL à conserver d'une page à l'autre - filtres, tri.
   /// Les perdre afficherait la page 2 d'une autre liste que celle regardée.
   parametres?: Record<string, string | undefined>;
@@ -35,7 +41,7 @@ export function Pagination({
     for (const [cle, valeur] of Object.entries(parametres)) {
       if (valeur !== undefined && valeur !== "") recherche.set(cle, valeur);
     }
-    if (cible > 1) recherche.set("page", String(cible));
+    if (cible > 1) recherche.set(cleParametrePage, String(cible));
 
     const requete = recherche.toString();
     return requete ? `${base}?${requete}` : base;

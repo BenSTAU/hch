@@ -7,7 +7,7 @@ import {
   listerInterventionsPassees,
 } from "@/lib/db/queries/interventions";
 import { lireJourCivil, lirePage } from "@/lib/interventions/fenetre";
-import { CHEMIN_ESPACE_CLIENT_PASSEES } from "@/lib/routes";
+import { CHEMIN_ESPACE_CLIENT_PASSEES, PARAM_PAGE } from "@/lib/routes";
 import { FiltrePeriode } from "@/components/features/interventions/filtre-periode";
 import { Pagination } from "@/components/ui/pagination";
 import { CHEMIN_RESERVATION } from "@/components/layouts/site-navigation";
@@ -107,6 +107,7 @@ export default async function InterventionsPasseesPage({
         page={passees.page}
         pages={passees.pages}
         base={CHEMIN_ESPACE_CLIENT_PASSEES}
+        cleParametrePage={PARAM_PAGE}
         parametres={{
           ...(parametres.du ? { du: parametres.du } : {}),
           ...(parametres.au ? { au: parametres.au } : {}),

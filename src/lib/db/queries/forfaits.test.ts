@@ -6,7 +6,7 @@
 //
 //   · `is_active = false` est MASQUÉ ici, alors que la vue admin le grise ;
 //   · le prix sort en chaîne à deux décimales, jamais en `Decimal` ni en
-//     `number` — l'un ne se sérialise pas, l'autre perd les centimes ;
+//     `number` - l'un ne se sérialise pas, l'autre perd les centimes ;
 //   · l'ordre est le prix croissant, pas l'ordre d'insertion.
 //
 // Les trois sont invisibles à la relecture de la vue, qui reçoit un tableau déjà
@@ -205,6 +205,16 @@ const SAISIE = {
   isActive: true,
 };
 
+/// Ce qu'un administrateur saisit à la CRÉATION : les quatre champs de
+/// `US-FORFAIT-AJOUTER`, sans la disponibilité, que la SPEC n'énumère pas et
+/// pose en défaut (T-B1-01, constat F5).
+const SAISIE_CREATION = {
+  label: SAISIE.label,
+  description: SAISIE.description,
+  duration: SAISIE.duration,
+  price: SAISIE.price,
+};
+
 describe("listForfaitsAdmin", () => {
   it("n'exclut pas les forfaits inactifs", async () => {
     // L'inverse exact de la vue publique, sur la même table : un `where` ici
@@ -297,13 +307,13 @@ describe("creerForfait", () => {
     // Amendement SPEC du 2026-10-16 : `old_price` est NOT NULL, et
     // l'historique n'enregistre que des changements. La naissance du forfait
     // est tracée par l'audit `CREATE`.
-    await creerForfait(SAISIE, "admin-1");
+    await creerForfait(SAISIE_CREATION, "admin-1");
 
     expect(historiqueCreate).not.toHaveBeenCalled();
   });
 
   it("trace un audit `CREATE` dans la transaction", async () => {
-    await creerForfait(SAISIE, "admin-1");
+    await creerForfait(SAISIE_CREATION, "admin-1");
 
     expect(writeAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -324,7 +334,7 @@ describe("creerForfait", () => {
     // n'existe pas encore.
     create.mockRejectedValue({ code: "P2002" });
 
-    await expect(creerForfait(SAISIE, "admin-1")).resolves.toEqual({
+    await expect(creerForfait(SAISIE_CREATION, "admin-1")).resolves.toEqual({
       ok: false,
       reason: "nom_pris",
     });
@@ -333,7 +343,7 @@ describe("creerForfait", () => {
   it("laisse remonter une panne qui n'est pas un conflit de nom", async () => {
     create.mockRejectedValue(new Error("connexion perdue"));
 
-    await expect(creerForfait(SAISIE, "admin-1")).rejects.toThrow(
+    await expect(creerForfait(SAISIE_CREATION, "admin-1")).rejects.toThrow(
       "connexion perdue",
     );
   });
@@ -639,22 +649,28 @@ describe("modifierForfait, deux administrateurs sur des champs disjoints", () =>
   });
 });
 
-describe("creerForfait, forfait créé hors vente", () => {
-  it("trace l'état demandé et non le défaut du modèle", async () => {
-    // Le formulaire laisse décocher « Proposé à la réservation ». La SPEC
-    // écrit `is_active = true` par DÉFAUT, pas « toujours » : ce qui ne doit
-    // pas arriver, c'est qu'un forfait créé décoché soit journalisé actif.
-    await creerForfait({ ...SAISIE, isActive: false }, "admin-1");
+describe("creerForfait, disponibilité à la naissance", () => {
+  it("écrit `isActive: true` sans que l'appelant ait à le demander", async () => {
+    // ⚠️ **Renversement assumé de T-B1-01 (constat F5).** Ce fichier figeait
+    // l'inverse : un forfait créé avec « Proposé à la réservation » décoché
+    // devait être journalisé inactif. `US-FORFAIT-AJOUTER` n'énumère pas ce
+    // champ et pose `is_active = true` en défaut, donc la saisie ne le porte
+    // plus et la valeur est écrite ici.
+    //
+    // Écrite, et non laissée au défaut de colonne : c'est ce que la seconde
+    // assertion tient. Sans elle, l'audit `CREATE` ne dirait pas avec quoi la
+    // fiche est née.
+    await creerForfait(SAISIE_CREATION, "admin-1");
 
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ isActive: false }),
+        data: expect.objectContaining({ isActive: true }),
       }),
     );
     expect(writeAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({
         details: expect.objectContaining({
-          isActive: { before: null, after: false },
+          isActive: { before: null, after: true },
         }),
       }),
       tx,
@@ -756,5 +772,44 @@ describe("modifierForfait, réactivation", () => {
     expect(resultat).toEqual({ ok: false, reason: "nom_pris" });
     expect(historiqueCreate).not.toHaveBeenCalled();
     expect(writeAuditLog).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tests ajoutés par l'agent testeur (verify-only) sur la PR de fond de
+// T-B1-01, constat F5.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("creerForfait, le dernier filet sur la disponibilité", () => {
+  it("écrase un `isActive` que l'appelant aurait quand même fourni", async () => {
+    // ⚠️ Le chemin résiduel, côté helper. Le type `ChampsCreationForfait`
+    // arrête un appelant qui compile ; il n'arrête ni un `as`, ni un objet
+    // venu d'un `JSON.parse`, ni un futur appelant écrit hors de la Server
+    // Action - et `creerForfait` est exporté.
+    //
+    // Ce qui tient réellement est l'ORDRE du spread, `{ ...champs, isActive:
+    // true }` : inversé, la valeur de l'appelant gagnerait, et l'écriture
+    // comme l'audit porteraient un état que la SPEC ne prévoit pas. Rien ne le
+    // disait.
+    const forge = {
+      ...SAISIE_CREATION,
+      isActive: false,
+    } as unknown as typeof SAISIE_CREATION;
+
+    await creerForfait(forge, "attaquant");
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ isActive: true }),
+      }),
+    );
+    expect(writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: expect.objectContaining({
+          isActive: { before: null, after: true },
+        }),
+      }),
+      tx,
+    );
   });
 });

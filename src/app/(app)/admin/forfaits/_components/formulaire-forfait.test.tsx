@@ -65,13 +65,18 @@ beforeEach(() => {
 });
 
 describe("FormulaireForfait, ajout", () => {
-  it("part d'un formulaire vide, proposé à la réservation", () => {
-    // `is_active` vaut `true` par défaut au modèle : un forfait créé décoché
-    // n'apparaîtrait nulle part, ce qui n'est jamais l'intention d'un ajout.
+  it("part d'un formulaire vide, sans offrir la disponibilité", () => {
+    // ⚠️ **Renversement assumé de T-B1-01 (constat F5).** Ce test exigeait la
+    // case cochée ; `US-FORFAIT-AJOUTER` n'énumère pas ce champ et pose
+    // `is_active = true` en défaut. L'offrir permettait de créer un forfait
+    // déjà désactivé, état que rien ne spécifie - et la désactivation est une
+    // action sur une fiche qui existe (`US-FORFAIT-MODIFIER`).
     render(<FormulaireForfait />);
 
     expect(screen.getByLabelText("Nom du forfait")).toHaveValue("");
-    expect(screen.getByLabelText("Proposé à la réservation")).toBeChecked();
+    expect(
+      screen.queryByLabelText("Proposé à la réservation"),
+    ).not.toBeInTheDocument();
   });
 
   it("ne transporte aucun jeton de version", () => {
@@ -95,7 +100,6 @@ describe("FormulaireForfait, ajout", () => {
           label: "Diagnostic",
           price: "25",
           duration: "20",
-          isActive: true,
         }),
       );
     });
@@ -317,12 +321,13 @@ describe("FormulaireForfait, charge utile complète", () => {
     );
 
     await waitFor(() => {
+      // Charge utile EXACTE, et c'est l'oracle : `isActive` n'en fait plus
+      // partie, et un champ oublié dans la lecture du `FormData` rougirait ici.
       expect(ajouterForfait).toHaveBeenCalledWith({
         label: "Diagnostic",
         description: "Contrôle rapide",
         duration: "20",
         price: "25",
-        isActive: true,
       });
     });
   });
@@ -367,22 +372,23 @@ describe("FormulaireForfait, charge utile complète", () => {
     });
   });
 
-  it("permet de créer un forfait hors vente en décochant la case", async () => {
-    // `is_active = true` est un DÉFAUT, pas une contrainte : la case est
-    // décochable, et ce qui ne doit pas arriver est qu'un forfait créé décoché
-    // parte quand même actif.
+  it("n'envoie aucune disponibilité à la création", async () => {
+    // ⚠️ **Renversement assumé de T-B1-01 (constat F5).** Ce test exigeait
+    // l'inverse : qu'une case décochée fasse partir `isActive: false`. Le
+    // champ n'existe plus à la création, et ce qui compte désormais est qu'il
+    // ne se glisse pas dans la charge utile par un autre chemin - un `name`
+    // resté dans le DOM, un `FormData` relu trop largement.
     const utilisateur = userEvent.setup();
     render(<FormulaireForfait />);
 
     await remplir(utilisateur);
-    await utilisateur.click(screen.getByLabelText("Proposé à la réservation"));
     await utilisateur.click(
       screen.getByRole("button", { name: "Ajouter au catalogue" }),
     );
 
     await waitFor(() => {
       expect(ajouterForfait).toHaveBeenCalledWith(
-        expect.objectContaining({ isActive: false }),
+        expect.not.objectContaining({ isActive: expect.anything() }),
       );
     });
   });
@@ -411,6 +417,98 @@ describe("FormulaireForfait, le jeton ne se régénère pas tout seul", () => {
     });
     for (const appel of modifierForfaitAction.mock.calls) {
       expect(appel[0]).toMatchObject({ version: "jeton-de-la-fiche" });
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tests ajoutés par l'agent testeur (verify-only) sur la PR de fond de
+// T-B1-01, constats F1 et F5.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("FormulaireForfait, aucun reste de la case à la création", () => {
+  it("ne porte aucun contrôle nommé `isActive` dans le DOM", () => {
+    // ⚠️ L'oracle livré interroge le LABEL (`queryByLabelText`), et c'est
+    // exactement ce qu'un reste de la case ne porterait pas : un `<input
+    // type="hidden" name="isActive">` ou une case sans label passeraient
+    // inaperçus, tout en remettant la clé dans le `FormData` que la
+    // soumission relit.
+    const { container } = render(<FormulaireForfait />);
+
+    expect(container.querySelector('[name="isActive"]')).toBeNull();
+  });
+
+  it("la garde encore en modification, et une seule fois", () => {
+    // Contre-épreuve : le sélecteur ci-dessus trouve bien quelque chose quand
+    // le champ doit exister. Sans ce test, supprimer la case des DEUX
+    // formulaires laisserait le précédent vert.
+    const { container } = render(<FormulaireForfait forfait={FORFAIT} />);
+
+    expect(container.querySelectorAll('[name="isActive"]')).toHaveLength(1);
+  });
+});
+
+describe("FormulaireForfait, le câblage des champs survit au passage par la pièce partagée", () => {
+  // ⚠️ Le constat F1 remplace quatre triplets recopiés par `ChampTexte` /
+  // `ChampZoneTexte`. La pièce est testée chez elle, mais rien ne vérifiait
+  // que CE formulaire en reçoit bien le câblage : un `id` mal choisi, un
+  // `erreurs` non branché sur `validationErrors`, et l'attribut disparaît
+  // sans que l'écran change d'apparence.
+  it("marque les quatre champs refusés par Zod et les décrit par leur message", async () => {
+    ajouterForfait.mockResolvedValue({
+      validationErrors: {
+        label: { _errors: ["Le nom est requis"] },
+        description: { _errors: ["Description trop longue"] },
+        price: { _errors: ["Renseignez un montant"] },
+        duration: { _errors: ["Renseignez une durée"] },
+      },
+    });
+    const utilisateur = userEvent.setup();
+    render(<FormulaireForfait />);
+
+    // Les trois champs `required` sont remplis : jsdom applique la validation
+    // de contrainte HTML, et un formulaire incomplet n'émet jamais `submit`.
+    // Piège déjà payé plus haut dans ce fichier - c'est bien le refus de Zod
+    // qu'on exerce, pas l'absence de saisie.
+    await remplir(utilisateur);
+    await utilisateur.click(
+      screen.getByRole("button", { name: "Ajouter au catalogue" }),
+    );
+
+    const attendus: [string, string][] = [
+      ["Nom du forfait", "Le nom est requis"],
+      ["Description", "Description trop longue"],
+      ["Prix TTC (€)", "Renseignez un montant"],
+      ["Durée (min)", "Renseignez une durée"],
+    ];
+
+    for (const [libelle, message] of attendus) {
+      await waitFor(() =>
+        expect(screen.getByLabelText(libelle)).toHaveAttribute(
+          "aria-invalid",
+          "true",
+        ),
+      );
+      const champ = screen.getByLabelText(libelle);
+      const decrit = document.getElementById(
+        champ.getAttribute("aria-describedby") ?? "",
+      );
+      expect(decrit).toHaveTextContent(message);
+    }
+  });
+
+  it("ne marque aucun champ quand l'action ne refuse rien", () => {
+    render(<FormulaireForfait />);
+
+    for (const libelle of [
+      "Nom du forfait",
+      "Description",
+      "Prix TTC (€)",
+      "Durée (min)",
+    ]) {
+      expect(screen.getByLabelText(libelle)).not.toHaveAttribute(
+        "aria-invalid",
+      );
     }
   });
 });
