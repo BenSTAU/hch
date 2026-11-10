@@ -42,7 +42,21 @@ export function cheminIntervention(id: number): string {
 }
 
 /// Back-office - destination post-connexion de l'administrateur.
+///
+/// ⚠️ `/admin` ne porte **aucun écran** : elle redirige vers le catalogue des
+/// forfaits. Le tableau de bord d'administration (maquette A1) est du bloc 2,
+/// et une racine qui rendrait une page vide en attendant se ferait prendre
+/// pour l'écran manquant.
+export const CHEMIN_ADMIN = "/admin";
+export const CHEMIN_ADMIN_FORFAITS = "/admin/forfaits";
+export const CHEMIN_ADMIN_FORFAIT_NOUVEAU = "/admin/forfaits/nouveau";
 export const CHEMIN_ADMIN_PARAMETRES = "/admin/parametres";
+
+/// Fiche d'un forfait. Une fonction et non une constante, même motif que
+/// `cheminIntervention` : le chemin porte un identifiant.
+export function cheminAdminForfait(id: number): string {
+  return `/admin/forfaits/${String(id)}`;
+}
 
 /// Racine de l'espace « compte ». **Une seule racine par espace** : c'est ce
 /// préfixe que reprendra la fiche client, jamais `/profil`.

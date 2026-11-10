@@ -15,10 +15,17 @@ import { describe, expect, it } from "vitest";
 
 import { updateSettingsSchema, validateSettingValue } from "./parametres";
 
+/// Jeton de concurrence transporté par chaque ligne depuis T-B1-01 : l'écran
+/// renvoie l'`updated_at` qu'il a rendu, et le serveur refuse la soumission si
+/// la ligne a bougé entre-temps.
+const VERSION = "2026-08-05T10:00:00.000Z";
+
 describe("updateSettingsSchema — structure", () => {
   it("accepte une liste de couples clé/valeur", () => {
     const parsed = updateSettingsSchema.safeParse({
-      settings: [{ key: "company.name", value: "LeCycleLyonnais" }],
+      settings: [
+        { key: "company.name", value: "LeCycleLyonnais", version: VERSION },
+      ],
     });
 
     expect(parsed.success).toBe(true);
@@ -28,7 +35,7 @@ describe("updateSettingsSchema — structure", () => {
     // `company.siret` et `company.address` sont seedées à chaîne vide
     // (prisma/seed.ts). Refuser le vide interdirait d'effacer un champ.
     const parsed = updateSettingsSchema.safeParse({
-      settings: [{ key: "company.siret", value: "" }],
+      settings: [{ key: "company.siret", value: "", version: VERSION }],
     });
 
     expect(parsed.success).toBe(true);
@@ -42,8 +49,9 @@ describe("updateSettingsSchema — structure", () => {
 
   it("refuse une clé vide", () => {
     expect(
-      updateSettingsSchema.safeParse({ settings: [{ key: "", value: "x" }] })
-        .success,
+      updateSettingsSchema.safeParse({
+        settings: [{ key: "", value: "x", version: VERSION }],
+      }).success,
     ).toBe(false);
   });
 
@@ -74,8 +82,8 @@ describe("updateSettingsSchema — structure", () => {
     expect(
       updateSettingsSchema.safeParse({
         settings: [
-          { key: "company.name", value: "A" },
-          { key: "company.name", value: "B" },
+          { key: "company.name", value: "A", version: VERSION },
+          { key: "company.name", value: "B", version: VERSION },
         ],
       }).success,
     ).toBe(false);
@@ -87,7 +95,12 @@ describe("updateSettingsSchema — structure", () => {
     // d'un administrateur.
     const parsed = updateSettingsSchema.safeParse({
       settings: [
-        { key: "company.name", value: "X", updatedBy: "un-autre-admin" },
+        {
+          key: "company.name",
+          value: "X",
+          version: VERSION,
+          updatedBy: "un-autre-admin",
+        },
       ],
     });
 
@@ -95,6 +108,7 @@ describe("updateSettingsSchema — structure", () => {
     expect(parsed.success && parsed.data.settings[0]).toEqual({
       key: "company.name",
       value: "X",
+      version: VERSION,
     });
   });
 });

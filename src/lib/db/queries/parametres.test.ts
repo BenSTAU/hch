@@ -11,13 +11,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findMany = vi.fn();
-const update = vi.fn();
-const tx = { appSetting: { findMany, update } };
+const updateMany = vi.fn();
+const tx = { appSetting: { findMany, updateMany } };
+
+/// Ajouté par l'agent testeur (T-B1-01). Un `$transaction` qui se contente
+/// d'appeler son rappel ne distingue pas un `return` d'un `throw`, et c'est
+/// exactement la distinction dont dépend le « tout ou rien » : seul un `throw`
+/// annule les lignes déjà écrites par la boucle. Ce mouchard rend la
+/// différence observable, sinon remplacer le `throw` par un `return` laisserait
+/// toute la suite verte.
+const transactionAnnulee = vi.fn();
 
 vi.mock("@/lib/db/client", () => ({
   db: {
     appSetting: { findMany },
-    $transaction: (callback: (client: typeof tx) => unknown) => callback(tx),
+    $transaction: async (callback: (client: typeof tx) => unknown) => {
+      try {
+        return await callback(tx);
+      } catch (erreur) {
+        transactionAnnulee(erreur);
+        throw erreur;
+      }
+    },
   },
 }));
 
@@ -29,6 +44,11 @@ vi.mock("@/lib/audit/log", () => ({
 
 const { listAppSettings, lireContactSociete, updateAppSettings } =
   await import("./parametres");
+
+/// Le jeton de concurrence que l'écran a rendu : l'`updated_at` des fixtures,
+/// en ISO. Une soumission qui le porte décrit l'état courant ; toute autre
+/// valeur décrit une fiche périmée.
+const VERSION = "2026-08-05T10:00:00.000Z";
 
 const CURRENT = [
   {
@@ -50,6 +70,9 @@ const CURRENT = [
 beforeEach(() => {
   vi.clearAllMocks();
   findMany.mockResolvedValue(CURRENT);
+  // L'écriture conditionnelle apparie par défaut. Les tests de concurrence
+  // forcent `{ count: 0 }` pour simuler le commit d'un concurrent.
+  updateMany.mockResolvedValue({ count: 1 });
 });
 
 describe("listAppSettings", () => {
@@ -68,20 +91,20 @@ describe("listAppSettings", () => {
 describe("updateAppSettings — cas nominal", () => {
   it("écrit la valeur modifiée et signe la ligne", async () => {
     const result = await updateAppSettings(
-      [{ key: "company.name", value: "Le Cycle Lyonnais" }],
+      [{ key: "company.name", value: "Le Cycle Lyonnais", version: VERSION }],
       "admin-1",
     );
 
     expect(result).toEqual({ ok: true, changedKeys: ["company.name"] });
-    expect(update).toHaveBeenCalledWith({
-      where: { key: "company.name" },
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { key: "company.name", updatedAt: new Date(VERSION) },
       data: { value: "Le Cycle Lyonnais", updatedBy: "admin-1" },
     });
   });
 
   it("écrit une entrée d'audit portant le diff", async () => {
     await updateAppSettings(
-      [{ key: "company.name", value: "Le Cycle Lyonnais" }],
+      [{ key: "company.name", value: "Le Cycle Lyonnais", version: VERSION }],
       "admin-1",
     );
 
@@ -100,25 +123,29 @@ describe("updateAppSettings — cas nominal", () => {
   it("n'écrit pas les valeurs inchangées", async () => {
     const result = await updateAppSettings(
       [
-        { key: "company.name", value: "LeCycleLyonnais" },
-        { key: "company.email", value: "nouveau@homecyclhome.fr" },
+        { key: "company.name", value: "LeCycleLyonnais", version: VERSION },
+        {
+          key: "company.email",
+          value: "nouveau@homecyclhome.fr",
+          version: VERSION,
+        },
       ],
       "admin-1",
     );
 
     expect(result).toEqual({ ok: true, changedKeys: ["company.email"] });
-    expect(update).toHaveBeenCalledOnce();
+    expect(updateMany).toHaveBeenCalledOnce();
     expect(writeAuditLog).toHaveBeenCalledOnce();
   });
 
   it("ne touche à rien quand rien n'a changé", async () => {
     const result = await updateAppSettings(
-      [{ key: "company.name", value: "LeCycleLyonnais" }],
+      [{ key: "company.name", value: "LeCycleLyonnais", version: VERSION }],
       "admin-1",
     );
 
     expect(result).toEqual({ ok: true, changedKeys: [] });
-    expect(update).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
     expect(writeAuditLog).not.toHaveBeenCalled();
   });
 
@@ -127,7 +154,7 @@ describe("updateAppSettings — cas nominal", () => {
     // transaction laisserait une entrée d'audit décrivant une modification
     // qui n'a jamais été committée.
     await updateAppSettings(
-      [{ key: "company.name", value: "Autre" }],
+      [{ key: "company.name", value: "Autre", version: VERSION }],
       "admin-1",
     );
 
@@ -141,7 +168,7 @@ describe("updateAppSettings — refus", () => {
     // une clé inconnue vient forcément d'ailleurs que de l'écran. `upsert`
     // ici laisserait n'importe qui peupler la configuration société.
     const result = await updateAppSettings(
-      [{ key: "company.inexistante", value: "x" }],
+      [{ key: "company.inexistante", value: "x", version: VERSION }],
       "admin-1",
     );
 
@@ -150,7 +177,7 @@ describe("updateAppSettings — refus", () => {
       reason: "unknown_keys",
       keys: ["company.inexistante"],
     });
-    expect(update).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
     expect(writeAuditLog).not.toHaveBeenCalled();
   });
 
@@ -161,12 +188,12 @@ describe("updateAppSettings — refus", () => {
         value: "20",
         valueType: "number",
         description: "Taux de TVA",
-        updatedAt: new Date(),
+        updatedAt: new Date(VERSION),
       },
     ]);
 
     const result = await updateAppSettings(
-      [{ key: "company.tva", value: "vingt" }],
+      [{ key: "company.tva", value: "vingt", version: VERSION }],
       "admin-1",
     );
 
@@ -175,7 +202,7 @@ describe("updateAppSettings — refus", () => {
       reason: "invalid_values",
       keys: ["company.tva"],
     });
-    expect(update).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
   });
 
   it("refuse le lot entier plutôt que d'en écrire la moitié", async () => {
@@ -183,14 +210,14 @@ describe("updateAppSettings — refus", () => {
     // la base en désaccord, et l'administrateur ne sait pas ce qui est passé.
     const result = await updateAppSettings(
       [
-        { key: "company.name", value: "Le Cycle Lyonnais" },
-        { key: "company.inexistante", value: "x" },
+        { key: "company.name", value: "Le Cycle Lyonnais", version: VERSION },
+        { key: "company.inexistante", value: "x", version: VERSION },
       ],
       "admin-1",
     );
 
     expect(result.ok).toBe(false);
-    expect(update).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
   });
 });
 
@@ -219,12 +246,12 @@ describe("updateAppSettings — frontière NULL / chaîne vide", () => {
     findMany.mockResolvedValue(NULLABLE);
 
     const result = await updateAppSettings(
-      [{ key: "company.siret", value: "" }],
+      [{ key: "company.siret", value: "", version: VERSION }],
       "admin-1",
     );
 
     expect(result).toEqual({ ok: true, changedKeys: [] });
-    expect(update).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
     expect(writeAuditLog).not.toHaveBeenCalled();
   });
 
@@ -234,7 +261,7 @@ describe("updateAppSettings — frontière NULL / chaîne vide", () => {
     findMany.mockResolvedValue(NULLABLE);
 
     await updateAppSettings(
-      [{ key: "company.siret", value: "12345678900011" }],
+      [{ key: "company.siret", value: "12345678900011", version: VERSION }],
       "admin-1",
     );
 
@@ -254,13 +281,13 @@ describe("updateAppSettings — frontière NULL / chaîne vide", () => {
     // que toute lecture passe par `value ?? ""` — mais une requête SQL directe
     // écrite plus tard avec `WHERE value IS NULL` ne verrait pas ces lignes.
     const result = await updateAppSettings(
-      [{ key: "company.name", value: "" }],
+      [{ key: "company.name", value: "", version: VERSION }],
       "admin-1",
     );
 
     expect(result).toEqual({ ok: true, changedKeys: ["company.name"] });
-    expect(update).toHaveBeenCalledWith({
-      where: { key: "company.name" },
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { key: "company.name", updatedAt: new Date(VERSION) },
       data: { value: "", updatedBy: "admin-1" },
     });
     expect(writeAuditLog).toHaveBeenCalledWith(
@@ -291,8 +318,8 @@ describe("updateAppSettings — ordre des contrôles", () => {
 
     const result = await updateAppSettings(
       [
-        { key: "company.tva", value: "vingt" },
-        { key: "<img src=x onerror=alert(1)>", value: "x" },
+        { key: "company.tva", value: "vingt", version: VERSION },
+        { key: "<img src=x onerror=alert(1)>", value: "x", version: VERSION },
       ],
       "admin-1",
     );
@@ -302,7 +329,7 @@ describe("updateAppSettings — ordre des contrôles", () => {
       reason: "unknown_keys",
       keys: ["<img src=x onerror=alert(1)>"],
     });
-    expect(update).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
     expect(writeAuditLog).not.toHaveBeenCalled();
   });
 
@@ -325,8 +352,8 @@ describe("updateAppSettings — ordre des contrôles", () => {
 
     const result = await updateAppSettings(
       [
-        { key: "company.name", value: "Le Cycle Lyonnais" },
-        { key: "company.tva", value: "vingt" },
+        { key: "company.name", value: "Le Cycle Lyonnais", version: VERSION },
+        { key: "company.tva", value: "vingt", version: VERSION },
       ],
       "admin-1",
     );
@@ -336,7 +363,7 @@ describe("updateAppSettings — ordre des contrôles", () => {
       reason: "invalid_values",
       keys: ["company.tva"],
     });
-    expect(update).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
     expect(writeAuditLog).not.toHaveBeenCalled();
   });
 
@@ -358,16 +385,18 @@ describe("updateAppSettings — ordre des contrôles", () => {
 
     const result = await updateAppSettings(
       [
-        { key: "company.tva", value: "vingt" },
-        { key: "company.name", value: "Le Cycle Lyonnais" },
+        { key: "company.tva", value: "vingt", version: VERSION },
+        { key: "company.name", value: "Le Cycle Lyonnais", version: VERSION },
       ],
       "admin-1",
     );
 
     expect(result).toEqual({ ok: true, changedKeys: ["company.name"] });
-    expect(update).toHaveBeenCalledOnce();
-    expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { key: "company.name" } }),
+    expect(updateMany).toHaveBeenCalledOnce();
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { key: "company.name", updatedAt: new Date(VERSION) },
+      }),
     );
   });
 });
@@ -381,15 +410,21 @@ describe("updateAppSettings — signature de l'écriture", () => {
     // faite.
     await updateAppSettings(
       [
-        { key: "company.name", value: "Le Cycle Lyonnais" },
-        { key: "company.email", value: "contact@homecyclhome.fr" },
+        { key: "company.name", value: "Le Cycle Lyonnais", version: VERSION },
+        {
+          key: "company.email",
+          value: "contact@homecyclhome.fr",
+          version: VERSION,
+        },
       ],
       "admin-1",
     );
 
-    expect(update).toHaveBeenCalledOnce();
-    expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { key: "company.name" } }),
+    expect(updateMany).toHaveBeenCalledOnce();
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { key: "company.name", updatedAt: new Date(VERSION) },
+      }),
     );
     expect(writeAuditLog).toHaveBeenCalledOnce();
     expect(writeAuditLog).toHaveBeenCalledWith(
@@ -406,7 +441,7 @@ describe("updateAppSettings — signature de l'écriture", () => {
     // L'index `(entity_type, entity_id)` de la migration 003 sert à relire le
     // journal en SQL. `AppSetting` y serait introuvable.
     await updateAppSettings(
-      [{ key: "company.name", value: "Autre" }],
+      [{ key: "company.name", value: "Autre", version: VERSION }],
       "admin-1",
     );
 
@@ -462,5 +497,256 @@ describe("lireContactSociete", () => {
       telephone: null,
       email: null,
     });
+  });
+});
+
+describe("updateAppSettings, refus d'une ligne modifiée entre-temps", () => {
+  // Ferme le constat B5 de l'agent testeur sur T-J0-05 : deux administrateurs
+  // simultanés, la modification du premier écrasée sans avertissement, et une
+  // entrée d'audit du second affirmant un `before` qui n'était déjà plus
+  // l'état réel. Un journal qui ment est pire qu'un journal absent.
+  it("refuse un jeton qui ne décrit plus l'état courant", async () => {
+    const resultat = await updateAppSettings(
+      [
+        {
+          key: "company.name",
+          value: "Le Cycle Lyonnais",
+          version: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      "admin-2",
+    );
+
+    expect(resultat).toEqual({
+      ok: false,
+      reason: "stale",
+      keys: ["company.name"],
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("refuse quand l'écriture conditionnelle n'apparie aucune ligne", async () => {
+    // Le jeton était bon à la lecture, mais un concurrent a commité juste
+    // après : PostgreSQL réévalue le `WHERE` et le second n'apparie plus rien.
+    updateMany.mockResolvedValue({ count: 0 });
+
+    const resultat = await updateAppSettings(
+      [{ key: "company.name", value: "Le Cycle Lyonnais", version: VERSION }],
+      "admin-2",
+    );
+
+    expect(resultat).toEqual({
+      ok: false,
+      reason: "stale",
+      keys: ["company.name"],
+    });
+    // La trace ne doit PAS être écrite : elle décrirait une modification qui
+    // n'a pas eu lieu.
+    expect(writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("annule les lignes déjà écrites quand une suivante est périmée", async () => {
+    // Le point dur du lot tout-ou-rien : ce refus survient APRÈS une écriture.
+    // Un `return` depuis le rappel de `$transaction` commiterait la première
+    // ligne ; seul un `throw` annule.
+    updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    const resultat = await updateAppSettings(
+      [
+        { key: "company.name", value: "Le Cycle Lyonnais", version: VERSION },
+        {
+          key: "company.email",
+          value: "nouveau@homecyclhome.fr",
+          version: VERSION,
+        },
+      ],
+      "admin-2",
+    );
+
+    expect(resultat).toEqual({
+      ok: false,
+      reason: "stale",
+      keys: ["company.email"],
+    });
+  });
+
+  it("conditionne l'écriture à l'`updated_at` de la ligne", async () => {
+    // ⚠️ Ce test fige la PRÉSENCE du prédicat de version, pas sa provenance.
+    //
+    // Son libellé disait « sur l'`updated_at` lu, pas sur celui du
+    // navigateur », et c'était une affirmation invérifiable : le contrôle de
+    // version qui précède garantit que les deux valeurs sont égales sur tout
+    // chemin qui atteint l'écriture, donc un prédicat construit depuis la
+    // charge utile rendrait ce test vert à l'identique. Relevé par la session
+    // vérificatrice (É3).
+    //
+    // Ce qui mord ici : retirer `updatedAt` du `where` fait rougir, et c'est
+    // cette clause qui ferme la fenêtre des millisecondes.
+    await updateAppSettings(
+      [{ key: "company.name", value: "Le Cycle Lyonnais", version: VERSION }],
+      "admin-1",
+    );
+
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { key: "company.name", updatedAt: new Date(VERSION) },
+      }),
+    );
+  });
+
+  it("ne refuse pas une ligne resoumise sans modification", async () => {
+    // Un champ non touché est resoumis tel quel à chaque envoi. Son jeton EST
+    // contrôlé comme les autres - le contrôle précède la comparaison de
+    // valeur - mais il décrit l'état courant, donc rien ne le refuse, et
+    // l'absence de changement le sort du lot avant l'écriture.
+    //
+    // ⚠️ Ne pas lire ce test comme « une ligne non modifiée échappe au
+    // contrôle » : c'est l'inverse, et T11 ci-dessus fige ce que donne une
+    // ligne non modifiée dont le jeton a vieilli.
+    const resultat = await updateAppSettings(
+      [{ key: "company.name", value: "LeCycleLyonnais", version: VERSION }],
+      "admin-1",
+    );
+
+    expect(resultat).toEqual({ ok: true, changedKeys: [] });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tests ajoutés par l'agent testeur (verify-only) sur T-B1-01.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("updateAppSettings, le lot est vraiment annulé", () => {
+  it("sort du rappel de transaction par une exception, pas par un `return`", async () => {
+    // Le test « annule les lignes déjà écrites » ci-dessus n'observe que le
+    // RÉSULTAT, et un `return { ok: false, reason: "stale" }` depuis le rappel
+    // produirait exactement le même résultat tout en COMMITANT la première
+    // ligne. C'est le mutant qu'il faut tuer : ici, l'oracle est le fait que
+    // le rappel ait rejeté.
+    updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    await updateAppSettings(
+      [
+        { key: "company.name", value: "Le Cycle Lyonnais", version: VERSION },
+        {
+          key: "company.email",
+          value: "nouveau@homecyclhome.fr",
+          version: VERSION,
+        },
+      ],
+      "admin-2",
+    );
+
+    expect(transactionAnnulee).toHaveBeenCalledOnce();
+    expect(transactionAnnulee).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "ConcurrenceDetectee" }),
+    );
+  });
+
+  it("n'annule rien quand le lot passe", async () => {
+    // Contrôle du mouchard : sans ce test, un `$transaction` qui annulerait
+    // toujours rendrait le précédent vert pour une mauvaise raison.
+    await updateAppSettings(
+      [{ key: "company.name", value: "Le Cycle Lyonnais", version: VERSION }],
+      "admin-1",
+    );
+
+    expect(transactionAnnulee).not.toHaveBeenCalled();
+  });
+
+  it("n'annule rien sur un refus qui précède toute écriture", async () => {
+    // `unknown_keys`, `invalid_values` et le refus de jeton surviennent AVANT
+    // la boucle d'écriture : ils peuvent sortir par `return`, et ils doivent,
+    // sinon chaque refus de saisie remonterait une exception au lieu d'un
+    // résultat.
+    const resultat = await updateAppSettings(
+      [{ key: "company.inexistante", value: "x", version: VERSION }],
+      "admin-1",
+    );
+
+    expect(resultat.ok).toBe(false);
+    expect(transactionAnnulee).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateAppSettings, lot hostile", () => {
+  it("ne laisse pas une clé répétée écrire deux fois", async () => {
+    // **Second filet, pas premier.** `updateSettingsSchema` refuse déjà les
+    // clés répétées (`src/lib/validations/parametres.ts`, `.refine` d'unicité),
+    // donc la Server Action n'en laisse pas passer. Ce test couvre l'appel
+    // DIRECT du helper, que la prochaine surface d'administration fera peut-être
+    // sans repasser par ce schéma : les deux entrées portent le même jeton, la
+    // seconde écriture n'apparie plus, et l'écriture conditionnelle annule le
+    // lot au lieu de laisser l'ordre d'écriture désigner un gagnant.
+    //
+    // ⚠️ L'oracle porte sur la SÛRETÉ, pas sur le libellé du refus : le lot
+    // doit être annulé et aucune trace écrite. Le `reason` retourné est
+    // aujourd'hui `stale`, ce qui décrit mal la cause ; ce test reste valable
+    // si ce libellé change.
+    updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    const resultat = await updateAppSettings(
+      [
+        { key: "company.name", value: "Premier", version: VERSION },
+        { key: "company.name", value: "Second", version: VERSION },
+      ],
+      "attaquant",
+    );
+
+    expect(resultat.ok).toBe(false);
+    expect(transactionAnnulee).toHaveBeenCalledOnce();
+  });
+});
+
+describe("updateAppSettings, portée du jeton sur le lot", () => {
+  it("refuse le lot quand une ligne NON éditée a bougé", async () => {
+    // Le formulaire resoumet ses cinq champs à chaque envoi, chacun avec son
+    // jeton. Si un autre administrateur a touché `company.email` pendant que
+    // celui-ci ne modifiait que `company.name`, le lot est refusé EN ENTIER.
+    //
+    // ⚠️ C'est la lecture stricte, et elle contredit le commentaire du test
+    // « ne refuse pas une ligne resoumise sans modification », qui affirme
+    // qu'un champ non touché n'a « aucune raison d'être contrôlé ». Le code
+    // contrôle le jeton AVANT de comparer la valeur
+    // (`src/lib/db/queries/parametres.ts`, boucle de `transactionSettings`) :
+    // ce test fixe le comportement réel, pour qu'un relâchement futur de
+    // l'ordre des contrôles ne passe pas inaperçu.
+    findMany.mockResolvedValue([
+      { ...CURRENT[0], updatedAt: new Date(VERSION) },
+      {
+        ...CURRENT[1],
+        // Ligne touchée par quelqu'un d'autre depuis le rendu de l'écran.
+        updatedAt: new Date("2026-08-05T11:30:00.000Z"),
+      },
+    ]);
+
+    const resultat = await updateAppSettings(
+      [
+        { key: "company.name", value: "Le Cycle Lyonnais", version: VERSION },
+        {
+          key: "company.email",
+          // Valeur INCHANGÉE : l'administrateur n'a pas touché ce champ.
+          value: "contact@homecyclhome.fr",
+          version: VERSION,
+        },
+      ],
+      "admin-2",
+    );
+
+    expect(resultat).toEqual({
+      ok: false,
+      reason: "stale",
+      keys: ["company.email"],
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(writeAuditLog).not.toHaveBeenCalled();
   });
 });

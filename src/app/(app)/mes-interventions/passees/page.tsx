@@ -9,7 +9,7 @@ import {
 import { lireJourCivil, lirePage } from "@/lib/interventions/fenetre";
 import { CHEMIN_ESPACE_CLIENT_PASSEES } from "@/lib/routes";
 import { FiltrePeriode } from "@/components/features/interventions/filtre-periode";
-import { PaginationInterventions } from "@/components/features/interventions/pagination-interventions";
+import { Pagination } from "@/components/ui/pagination";
 import { CHEMIN_RESERVATION } from "@/components/layouts/site-navigation";
 
 import { EnTeteEspace } from "../_components/en-tete-espace";
@@ -102,11 +102,12 @@ export default async function InterventionsPasseesPage({
         />
       </NuqsAdapter>
 
-      <PaginationInterventions
+      <Pagination
+        libelle="Pagination de l'historique"
         page={passees.page}
         pages={passees.pages}
         base={CHEMIN_ESPACE_CLIENT_PASSEES}
-        periode={{
+        parametres={{
           ...(parametres.du ? { du: parametres.du } : {}),
           ...(parametres.au ? { au: parametres.au } : {}),
         }}

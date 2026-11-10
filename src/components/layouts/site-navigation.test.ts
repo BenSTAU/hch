@@ -10,7 +10,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  CHEMIN_ADMIN_PARAMETRES,
+  CHEMIN_ADMIN,
   CHEMIN_ESPACE_CLIENT,
   CHEMIN_TOURNEE_DU_JOUR,
 } from "@/lib/routes";
@@ -66,7 +66,7 @@ describe("navigationPrincipale - l'entrée d'espace suit le rôle", () => {
   it("mène l'administrateur au back-office", () => {
     // Livré depuis T-J0-05, mais qu'aucune navigation ne proposait : il fallait
     // taper l'URL de son propre espace.
-    expect(chemins([ROLE_ADMIN])).toContain(CHEMIN_ADMIN_PARAMETRES);
+    expect(chemins([ROLE_ADMIN])).toContain(CHEMIN_ADMIN);
     expect(chemins([ROLE_ADMIN])).not.toContain(CHEMIN_ESPACE_CLIENT);
   });
 
@@ -97,13 +97,9 @@ describe("navigationPrincipale - l'entrée d'espace suit le rôle", () => {
     // l'administrateur du seed a longtemps porté aussi `ROLE_CLIENT`. Se fier
     // au premier élément ferait dépendre la navigation de l'ordre d'insertion
     // en base.
-    expect(chemins([ROLE_CLIENT, ROLE_ADMIN])).toContain(
-      CHEMIN_ADMIN_PARAMETRES,
-    );
-    expect(chemins([ROLE_ADMIN, ROLE_CLIENT])).toContain(
-      CHEMIN_ADMIN_PARAMETRES,
-    );
-    expect(chemins([ROLE_TECH, ROLE_ADMIN])).toContain(CHEMIN_ADMIN_PARAMETRES);
+    expect(chemins([ROLE_CLIENT, ROLE_ADMIN])).toContain(CHEMIN_ADMIN);
+    expect(chemins([ROLE_ADMIN, ROLE_CLIENT])).toContain(CHEMIN_ADMIN);
+    expect(chemins([ROLE_TECH, ROLE_ADMIN])).toContain(CHEMIN_ADMIN);
     expect(chemins([ROLE_CLIENT, ROLE_TECH])).toContain(CHEMIN_TOURNEE_DU_JOUR);
   });
 

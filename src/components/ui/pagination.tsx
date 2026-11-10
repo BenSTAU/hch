@@ -2,43 +2,47 @@ import Link from "next/link";
 
 import { cn } from "@/lib/utils";
 
-/// Pagination d'un historique d'interventions - **C10** côté client, et
-/// l'onglet « Historique » du technicien. La destination est reçue en prop, la
-/// taille de page vit dans `TAILLE_PAGE_PASSEES`.
+/// Pagination par liens, sans connaissance du domaine. Née en
+/// `features/interventions/` pour C10 et l'historique technicien, montée ici à
+/// son deuxième usage (le catalogue des forfaits), règle des 2 usages.
 ///
 /// Des `<Link>` plutôt que `nuqs` : la navigation reste fonctionnelle sans
-/// JavaScript, chaque page est atteignable au clavier comme un lien ordinaire,
-/// et un composant **serveur** n'ajoute rien au paquet envoyé au navigateur.
-///
-/// Les paramètres de période sont recopiés dans chaque lien : les perdre en
-/// changeant de page afficherait la page 2 d'une autre liste que celle qu'on
-/// regarde.
-export function PaginationInterventions({
+/// JavaScript, chaque page est un lien atteignable au clavier, et le composant
+/// reste serveur, donc hors du paquet envoyé au navigateur. L'état vit bien
+/// dans l'URL, ce que CLAUDE.md §State management exige.
+export function Pagination({
   page,
   pages,
-  periode,
   base,
+  parametres = {},
+  libelle,
 }: {
   page: number;
   pages: number;
-  periode: { du?: string; au?: string };
-  /// Chemin de la liste paginée - `/mes-interventions/passees` ou
-  /// `/interventions/passees`.
+  /// Chemin de la liste paginée.
   base: string;
+  /// Les paramètres d'URL à conserver d'une page à l'autre - filtres, tri.
+  /// Les perdre afficherait la page 2 d'une autre liste que celle regardée.
+  parametres?: Record<string, string | undefined>;
+  /// Ce que la navigation pagine, pour `aria-label`. Deux paginations sur un
+  /// même écran doivent être distinguables au lecteur d'écran.
+  libelle: string;
 }) {
   if (pages <= 1) return null;
 
   const lien = (cible: number): string => {
-    const parametres = new URLSearchParams();
-    if (periode.du) parametres.set("du", periode.du);
-    if (periode.au) parametres.set("au", periode.au);
-    if (cible > 1) parametres.set("page", String(cible));
-    const requete = parametres.toString();
+    const recherche = new URLSearchParams();
+    for (const [cle, valeur] of Object.entries(parametres)) {
+      if (valeur !== undefined && valeur !== "") recherche.set(cle, valeur);
+    }
+    if (cible > 1) recherche.set("page", String(cible));
+
+    const requete = recherche.toString();
     return requete ? `${base}?${requete}` : base;
   };
 
   return (
-    <nav aria-label="Pagination de l'historique" className="flex justify-end">
+    <nav aria-label={libelle} className="flex justify-end">
       <ul className="flex items-center gap-1">
         {Array.from({ length: pages }, (_, index) => index + 1).map((cible) => {
           const courante = cible === page;

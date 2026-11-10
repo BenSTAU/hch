@@ -21,12 +21,17 @@ export type AppSettingRow = {
   updatedAt: Date;
 };
 
-export type SettingEntry = { key: string; value: string };
+/// `version` est l'`updated_at` lu à l'ouverture de l'écran, en ISO. C'est le
+/// jeton de concurrence : `app_settings` porte une colonne de version, on n'en
+/// fabrique donc pas une (contrairement à `services`, qui n'en a aucune et
+/// passe par une empreinte de contenu).
+export type SettingEntry = { key: string; value: string; version: string };
 
 export type UpdateSettingsResult =
   | { ok: true; changedKeys: string[] }
   | { ok: false; reason: "unknown_keys"; keys: string[] }
-  | { ok: false; reason: "invalid_values"; keys: string[] };
+  | { ok: false; reason: "invalid_values"; keys: string[] }
+  | { ok: false; reason: "stale"; keys: string[] };
 
 /// Tri par clé : la page est un formulaire, et des champs qui changent de
 /// place d'un rendu à l'autre sont un défaut d'utilisabilité autant qu'un test
@@ -53,15 +58,48 @@ export async function listAppSettings(): Promise<AppSettingRow[]> {
 ///   · **diff** - écrire les cinq champs à chaque envoi produirait cinq
 ///     entrées d'audit dont quatre décrivent un changement qui n'a pas eu
 ///     lieu, et tamponnerait `updated_by` sur des lignes intactes ;
-///   · **audit dans la transaction** - cf. `src/lib/audit/log.ts`.
+///   · **audit dans la transaction** - cf. `src/lib/audit/log.ts` ;
+///   · **refus d'écraser une ligne modifiée depuis l'ouverture de l'écran** -
+///     ferme le défaut ouvert par l'agent testeur en T-J0-05 (constat B5) :
+///     la modification du premier administrateur écrasée sans avertissement,
+///     et une entrée d'audit du second affirmant un `before` qui n'était déjà
+///     plus l'état réel.
+///
+/// Le patron est décrit au-dessus de `modifierForfait`. Ici le jeton est la
+/// colonne `updated_at`, qui existe, plutôt qu'une empreinte de contenu.
 export async function updateAppSettings(
+  entries: SettingEntry[],
+  actorId: string,
+): Promise<UpdateSettingsResult> {
+  try {
+    return await transactionSettings(entries, actorId);
+  } catch (erreur) {
+    if (erreur instanceof ConcurrenceDetectee) {
+      return { ok: false, reason: "stale", keys: [erreur.cle] };
+    }
+    throw erreur;
+  }
+}
+
+/// ⚠️ **Une exception, et non un `return`.** Un `return` depuis le rappel de
+/// `$transaction` **commite** : les lignes déjà écrites par la boucle
+/// resteraient, et le « tout ou rien » serait faux. Seul un `throw` annule.
+/// C'est le premier refus du module à survenir **après** une écriture.
+class ConcurrenceDetectee extends Error {
+  constructor(readonly cle: string) {
+    super(`Ligne de configuration modifiée entre-temps : ${cle}`);
+    this.name = "ConcurrenceDetectee";
+  }
+}
+
+async function transactionSettings(
   entries: SettingEntry[],
   actorId: string,
 ): Promise<UpdateSettingsResult> {
   return db.$transaction(async (tx) => {
     const current = await tx.appSetting.findMany({
       where: { key: { in: entries.map((entry) => entry.key) } },
-      select: { key: true, value: true, valueType: true },
+      select: { key: true, value: true, valueType: true, updatedAt: true },
     });
     const byKey = new Map(current.map((row) => [row.key, row]));
 
@@ -76,11 +114,27 @@ export async function updateAppSettings(
     }
 
     const invalidKeys: string[] = [];
-    const changed: { key: string; before: string | null; after: string }[] = [];
+    const staleKeys: string[] = [];
+    const changed: {
+      key: string;
+      before: string | null;
+      after: string;
+      /// L'`updated_at` lu dans CETTE transaction, pas celui envoyé par le
+      /// navigateur : c'est lui qui sert de prédicat à l'écriture.
+      version: Date;
+    }[] = [];
 
     for (const entry of entries) {
       const row = byKey.get(entry.key);
       if (!row) continue; // inatteignable : `unknownKeys` a déjà filtré
+
+      // Fenêtre des minutes. Comparé avant la validation de la valeur : un
+      // refus de concurrence ne se corrige pas en changeant le champ, il se
+      // corrige en rechargeant.
+      if (row.updatedAt.toISOString() !== entry.version) {
+        staleKeys.push(entry.key);
+        continue;
+      }
 
       // `null` en base et chaîne vide dans le formulaire décrivent le même
       // état - « non renseigné ». Les distinguer ferait passer un champ vide
@@ -97,7 +151,19 @@ export async function updateAppSettings(
         continue;
       }
 
-      changed.push({ key: entry.key, before: row.value, after: entry.value });
+      changed.push({
+        key: entry.key,
+        before: row.value,
+        after: entry.value,
+        version: row.updatedAt,
+      });
+    }
+
+    // Le refus de concurrence passe AVANT celui de validation : une valeur
+    // invalide dans un formulaire déjà périmé n'a plus d'intérêt, la ligne
+    // fautive n'étant même plus celle que l'administrateur a sous les yeux.
+    if (staleKeys.length > 0) {
+      return { ok: false, reason: "stale", keys: staleKeys };
     }
 
     if (invalidKeys.length > 0) {
@@ -105,12 +171,27 @@ export async function updateAppSettings(
     }
 
     for (const change of changed) {
-      await tx.appSetting.update({
-        where: { key: change.key },
+      // `updateMany` et non `update`, pour le `where` élargi : c'est lui qui
+      // ferme la fenêtre des millisecondes.
+      //
+      // ⚠️ **Piège de précision.** La colonne est un `TIMESTAMP(6)` lu en
+      // `Date` JavaScript, qui ne va qu'à la milliseconde. Les lignes
+      // actuelles ont toutes été écrites par Prisma, donc à la milliseconde
+      // (vérifié en base le 2026-11-09). Une ligne insérée en SQL brut
+      // tomberait sur le `DEFAULT CURRENT_TIMESTAMP`, qui porte des
+      // microsecondes, et serait refusée en boucle sans cause visible : si
+      // `app_settings` reçoit un jour des lignes par migration, ce prédicat
+      // devra tronquer.
+      const ecriture = await tx.appSetting.updateMany({
+        where: { key: change.key, updatedAt: change.version },
         // `updatedBy` vient de l'appelant, jamais de la soumission - c'est la
         // Server Action qui le tire de la session.
         data: { value: change.after, updatedBy: actorId },
       });
+
+      // Un succès vide est un refus. Le traiter autrement écrirait une trace
+      // d'audit pour une modification qui n'a pas eu lieu.
+      if (ecriture.count === 0) throw new ConcurrenceDetectee(change.key);
 
       await writeAuditLog(
         {

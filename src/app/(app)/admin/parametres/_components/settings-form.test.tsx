@@ -26,6 +26,12 @@ vi.mock("@/lib/actions/parametres/update-settings", () => ({
 
 const { SettingsForm } = await import("./settings-form");
 
+/// Le jeton de concurrence que la page rend avec chaque ligne, depuis
+/// T-B1-01 : c'est l'`updatedAt` des fixtures ci-dessous, et le formulaire
+/// doit le renvoyer tel quel pour que le serveur sache sur quelle version
+/// porte la soumission.
+const VERSION = new Date("2026-08-05T10:00:00Z").toISOString();
+
 const SETTINGS = [
   {
     key: "company.name",
@@ -115,8 +121,8 @@ describe("SettingsForm — soumission", () => {
     await waitFor(() =>
       expect(updateSettings).toHaveBeenCalledWith({
         settings: [
-          { key: "company.name", value: "Le Cycle Lyonnais" },
-          { key: "company.siret", value: "" },
+          { key: "company.name", value: "Le Cycle Lyonnais", version: VERSION },
+          { key: "company.siret", value: "", version: VERSION },
         ],
       }),
     );
@@ -247,8 +253,8 @@ describe("SettingsForm — état de la valeur", () => {
     await waitFor(() =>
       expect(updateSettings).toHaveBeenCalledWith({
         settings: [
-          { key: "company.name", value: "" },
-          { key: "company.siret", value: "" },
+          { key: "company.name", value: "", version: VERSION },
+          { key: "company.siret", value: "", version: VERSION },
         ],
       }),
     );
